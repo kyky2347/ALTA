@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Isolated Paper-only capital boundary for ALTA"
 requires-python = "==3.12.*"
 dependencies = [
-  "setuptools>=83,<84",
+  "setuptools>=83,<85",
   "tigeropen==3.7.0",
 ]
 
