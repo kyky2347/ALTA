@@ -8,12 +8,12 @@ version = "0.1.0"
 description = "Isolated Paper-only capital boundary for ALTA"
 requires-python = "==3.12.*"
 dependencies = [
-  "setuptools>=83,<84",
+  "setuptools>=83,<85",
   "tigeropen==3.7.0",
 ]
 
 [dependency-groups]
-dev = ["pytest>=9.0.3,<10", "ruff>=0.12,<0.13"]
+dev = ["pytest>=9.0.3,<10", "ruff>=0.12,<0.17"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/alta_capitald"]
