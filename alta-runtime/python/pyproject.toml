@@ -1,0 +1,41 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "alta-asterism"
+version = "0.25.0"
+description = "Research-only virtual trading platform operated by specialized LLM agents"
+requires-python = "==3.12.*"
+dependencies = [
+  "finlight-client>=2.4.0,<3",
+  "massive>=2.8.0,<3",
+  "openai-codex==0.144.4",
+  "pgvector>=0.5.0,<0.6",
+  "psycopg[binary,pool]>=3.3.4,<4",
+  "pydantic>=2.12,<3",
+  "pydantic-settings>=2.10,<3",
+  "redis[hiredis]>=8.1.0,<9",
+]
+
+[project.scripts]
+opportunityd = "alta_asterism.__main__:opportunityd_main"
+
+[dependency-groups]
+dev = [
+  "pytest>=9.0.3,<10",
+  "ruff>=0.12,<0.13",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/alta_asterism"]
+
+[tool.uv]
+package = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88

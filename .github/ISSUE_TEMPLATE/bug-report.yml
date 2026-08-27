@@ -1,0 +1,46 @@
+name: Bug report
+description: Report a reproducible defect in ALTA's research-only paths.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Remove credentials, account identifiers, licensed market data, and
+        private provider responses before submitting.
+  - type: checkboxes
+    attributes:
+      label: Safety confirmation
+      options:
+        - label: This report does not contain credentials or account data.
+          required: true
+        - label: This report does not request live trading or real-capital support.
+          required: true
+  - type: textarea
+    attributes:
+      label: What happened?
+      description: Describe the observed behavior and the expected behavior.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Minimal reproduction
+      description: Include the smallest credential-free sequence that reproduces the issue.
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: ALTA version
+      placeholder: 0.25.0
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Environment
+      description: Operating system, Node, pnpm, uv, Python, and container runtime versions.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Redacted logs
+      description: Optional. Do not include secrets, local paths, account data, or licensed content.

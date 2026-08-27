@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  node:
+    name: Node and documentation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Set up pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install locked dependencies
+        run: corepack pnpm install --frozen-lockfile
+      - name: Run Node tests
+        run: ./alta test
+      - name: Check formatting and Markdown
+        run: corepack pnpm check
+
+  python:
+    name: Python and deterministic services
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Set up uv
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
+        with:
+          version: "0.8.13"
+      - name: Prepare locked research runtime
+        run: ./alta env setup --dev
+      - name: Run Opportunity OS tests
+        run: ./alta env python -m pytest -q alta-runtime/python/tests
+      - name: Check Opportunity OS formatting and lint
+        run: |
+          ./alta env python -m ruff check alta-runtime/python/src alta-runtime/python/tests
+          ./alta env python -m ruff format --check alta-runtime/python/src alta-runtime/python/tests
+      - name: Run isolated Paper-boundary tests
+        run: uv run --frozen --project alta-runtime/capital-python pytest -q alta-runtime/capital-python/tests
+      - name: Stop managed services
+        if: always()
+        run: ./alta env down || true

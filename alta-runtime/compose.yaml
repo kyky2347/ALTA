@@ -1,0 +1,131 @@
+name: ${ALTA_COMPOSE_PROJECT}
+
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.6-pg16-trixie@sha256:c8483555ce48101872f888c1df8a895ff689d6c7c7a5f7ac266475f9dfe89e0b
+    init: true
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      PGDATA: /var/lib/postgresql/data/pgdata
+    secrets:
+      - postgres_password
+    command:
+      - postgres
+      - -c
+      - max_connections=${ALTA_POSTGRES_MAX_CONNECTIONS:-100}
+      - -c
+      - shared_buffers=${ALTA_POSTGRES_SHARED_BUFFERS:-256MB}
+      - -c
+      - effective_cache_size=${ALTA_POSTGRES_EFFECTIVE_CACHE_SIZE:-768MB}
+      - -c
+      - work_mem=${ALTA_POSTGRES_WORK_MEM:-8MB}
+      - -c
+      - maintenance_work_mem=${ALTA_POSTGRES_MAINTENANCE_WORK_MEM:-64MB}
+      - -c
+      - wal_compression=on
+      - -c
+      - max_wal_size=${ALTA_POSTGRES_MAX_WAL_SIZE:-1GB}
+      - -c
+      - min_wal_size=${ALTA_POSTGRES_MIN_WAL_SIZE:-128MB}
+      - -c
+      - temp_file_limit=${ALTA_POSTGRES_TEMP_FILE_LIMIT:-1GB}
+      - -c
+      - statement_timeout=${ALTA_POSTGRES_STATEMENT_TIMEOUT:-5min}
+      - -c
+      - idle_in_transaction_session_timeout=${ALTA_POSTGRES_IDLE_TX_TIMEOUT:-5min}
+      - -c
+      - idle_session_timeout=${ALTA_POSTGRES_IDLE_TIMEOUT:-30min}
+      - -c
+      - timezone=UTC
+    ports:
+      - 127.0.0.1:${ALTA_POSTGRES_PORT:-55432}:5432
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    stop_grace_period: 60s
+    shm_size: 256mb
+    mem_limit: ${ALTA_POSTGRES_MEMORY:-1g}
+    cpus: ${ALTA_POSTGRES_CPUS:-2}
+    pids_limit: 256
+    security_opt:
+      - no-new-privileges:true
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  redis:
+    image: redis:8.10.0-alpine3.23@sha256:978f0e01593e65eed801f2402944efcd936d43b5027e4908a7897baf88ed6241
+    init: true
+    restart: unless-stopped
+    environment:
+      REDIS_MAXMEMORY: ${ALTA_REDIS_MAXMEMORY:-512mb}
+    secrets:
+      - redis_password
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        umask 077
+        {
+          printf 'bind 0.0.0.0\nprotected-mode yes\nappendonly yes\nappendfsync everysec\n'
+          printf 'auto-aof-rewrite-percentage 100\nauto-aof-rewrite-min-size 64mb\n'
+          printf 'save ""\nmaxmemory %s\nmaxmemory-policy allkeys-lru\n' "$${REDIS_MAXMEMORY}"
+          printf 'timeout 0\ntcp-keepalive 60\nrequirepass %s\n' "$$(cat /run/secrets/redis_password)"
+        } > /run/redis/redis.conf
+        exec redis-server /run/redis/redis.conf
+    ports:
+      - 127.0.0.1:${ALTA_REDIS_PORT:-56379}:6379
+    volumes:
+      - redis_data:/data
+    tmpfs:
+      - /run/redis:size=1m,mode=0700
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - REDISCLI_AUTH="$$(cat /run/secrets/redis_password)" redis-cli --no-auth-warning ping | grep -qx PONG
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    stop_grace_period: 30s
+    mem_limit: ${ALTA_REDIS_MEMORY:-768m}
+    cpus: ${ALTA_REDIS_CPUS:-1}
+    pids_limit: 128
+    security_opt:
+      - no-new-privileges:true
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+secrets:
+  postgres_password:
+    file: ${ALTA_STATE_DIR}/secrets/postgres_password
+  redis_password:
+    file: ${ALTA_STATE_DIR}/secrets/redis_password
+
+volumes:
+  postgres_data:
+  redis_data:

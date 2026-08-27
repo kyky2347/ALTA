@@ -1,0 +1,57 @@
+{
+  "fresh": {
+    "symbol": "DEMO",
+    "bid": "99.90",
+    "ask": "100.10",
+    "currency": "USD",
+    "as_of": "2026-08-23T14:00:00Z",
+    "known_at": "2026-08-23T14:00:03Z",
+    "raw_id": "raw_quote_fresh",
+    "raw_version": 1,
+    "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "wide": {
+    "symbol": "DEMO",
+    "bid": "99.00",
+    "ask": "101.00",
+    "currency": "USD",
+    "as_of": "2026-08-23T14:00:00Z",
+    "known_at": "2026-08-23T14:00:03Z",
+    "raw_id": "raw_quote_wide",
+    "raw_version": 1,
+    "content_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "stale": {
+    "symbol": "DEMO",
+    "bid": "99.90",
+    "ask": "100.10",
+    "currency": "USD",
+    "as_of": "2026-08-23T13:58:00Z",
+    "known_at": "2026-08-23T14:00:03Z",
+    "raw_id": "raw_quote_stale",
+    "raw_version": 1,
+    "content_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  },
+  "entry": {
+    "symbol": "DEMO",
+    "bid": "100.00",
+    "ask": "100.20",
+    "currency": "USD",
+    "as_of": "2026-08-23T14:00:07Z",
+    "known_at": "2026-08-23T14:00:08Z",
+    "raw_id": "raw_quote_entry",
+    "raw_version": 1,
+    "content_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  },
+  "exit": {
+    "symbol": "DEMO",
+    "bid": "104.80",
+    "ask": "105.00",
+    "currency": "USD",
+    "as_of": "2026-08-30T14:00:11Z",
+    "known_at": "2026-08-30T14:00:12Z",
+    "raw_id": "raw_quote_exit",
+    "raw_version": 1,
+    "content_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  }
+}

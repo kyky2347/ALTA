@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "alta-capitald-paper"
+version = "0.1.0"
+description = "Isolated Paper-only capital boundary for ALTA"
+requires-python = "==3.12.*"
+dependencies = [
+  "setuptools>=83,<84",
+  "tigeropen==3.7.0",
+]
+
+[dependency-groups]
+dev = ["pytest>=9.0.3,<10", "ruff>=0.12,<0.13"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/alta_capitald"]
+
+[tool.uv]
+package = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88

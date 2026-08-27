@@ -1,0 +1,29 @@
+name: Research proposal
+description: Propose a bounded research, evaluation, or reliability improvement.
+title: "[Research]: "
+labels: [research]
+body:
+  - type: textarea
+    attributes:
+      label: Research question
+      description: State the falsifiable question or engineering problem.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Proposed method
+      description: Explain evidence, controls, point-in-time handling, and evaluation.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Safety and data boundaries
+      description: Explain credentials, licensing, capital, and failure behavior.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Acceptance criteria
+      description: Define deterministic tests or a forward Shadow evaluation plan.
+    validations:
+      required: true

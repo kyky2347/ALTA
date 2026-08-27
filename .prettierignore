@@ -1,0 +1,9 @@
+pnpm-lock.yaml
+vendor/**
+docs/archive/**
+docs/architecture/opportunity-os.zh-CN.md
+docs/implementation/phased-build-plan.zh-CN.md
+
+prompt.md
+*_prompt.md
+*_instructions.md

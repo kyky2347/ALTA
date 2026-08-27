@@ -1,0 +1,6 @@
+* text=auto eol=lf
+
+# Third-party and generated boundaries
+vendor/** linguist-vendored
+vendor/openai-codex/codex-rs/app-server-protocol/schema/** linguist-generated
+*.snap linguist-generated

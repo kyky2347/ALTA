@@ -1,0 +1,76 @@
+{
+  "fixture_version": "b6-demo-v1",
+  "universe": ["DEMO", "SPY"],
+  "symbol": "DEMO",
+  "sources": [
+    {
+      "source_id": "finlight",
+      "raw_source": "finlight_fixture",
+      "territory": "finlight_event",
+      "summary": "A fixed company event changed the near-term operating path.",
+      "default_posture": "healthy"
+    },
+    {
+      "source_id": "massive",
+      "raw_source": "massive_fixture",
+      "territory": "massive_bar",
+      "summary": "A fixed market dislocation snapshot for disabled-source testing.",
+      "default_posture": "disabled"
+    },
+    {
+      "source_id": "official_policy",
+      "raw_source": "official_fixture",
+      "territory": "official_policy",
+      "summary": "A fixed official policy change has a measurable second-order effect.",
+      "default_posture": "healthy"
+    },
+    {
+      "source_id": "expectation",
+      "raw_source": "expectation_fixture",
+      "territory": "expectation_primitive",
+      "summary": "A fixed expectation primitive differs from the observable path.",
+      "default_posture": "healthy"
+    }
+  ],
+  "candidate_templates": {
+    "change_event_scout": {
+      "title": "Fixture event propagation gap",
+      "why_now": "A new versioned company fact arrived before broad repricing.",
+      "expectation": "Consensus assumes the old operating path persists.",
+      "variant_wedge": "The fixture implies faster adoption than consensus.",
+      "falsifier": "Reject if the next measured update reverts to the old path.",
+      "confidence": 0.74
+    },
+    "market_dislocation_scout": {
+      "title": "Fixture market dislocation",
+      "why_now": "A bounded price and volume move diverges from fixed evidence.",
+      "expectation": "The move implies a larger deterioration than the fixture supports.",
+      "variant_wedge": "Normalized conditions imply partial mean reversion.",
+      "falsifier": "Reject if the next bounded snapshot confirms deterioration.",
+      "confidence": 0.66
+    },
+    "causal_policy_scout": {
+      "title": "Fixture policy second-order beneficiary",
+      "why_now": "An official change has entered its implementation window.",
+      "expectation": "Consensus focuses on the direct effect only.",
+      "variant_wedge": "A measurable second-order beneficiary is underweighted.",
+      "falsifier": "Reject if the implementation milestone is delayed.",
+      "confidence": 0.69
+    },
+    "expectation_gap_scout": {
+      "title": "Fixture expectation gap",
+      "why_now": "Observable progress now differs from the frozen expectation.",
+      "expectation": "The price path implies no improvement.",
+      "variant_wedge": "The fixed primitive shows improvement before consensus updates.",
+      "falsifier": "Reject if the next primitive loses its positive direction.",
+      "confidence": 0.71
+    }
+  },
+  "prices": {
+    "validation": {"bid": "99.90", "ask": "100.10"},
+    "entry": {"bid": "100.00", "ask": "100.20"},
+    "hold": {"bid": "101.00", "ask": "101.20"},
+    "exit_monitor": {"bid": "104.80", "ask": "105.00"},
+    "exit_fill": {"bid": "104.70", "ask": "104.90"}
+  }
+}

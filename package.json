@@ -1,0 +1,21 @@
+{
+  "name": "alta-opportunity-os",
+  "private": true,
+  "description": "A research-only virtual trading platform operated by specialized LLM agents.",
+  "scripts": {
+    "check": "pnpm format && pnpm lint:markdown",
+    "format": "prettier --check *.json *.md docs/**/*.md alta-src/**/*.mjs",
+    "format:fix": "prettier --write *.json *.md docs/**/*.md alta-src/**/*.mjs",
+    "lint:markdown": "markdownlint-cli2",
+    "write-hooks-schema": "cargo run --manifest-path ./vendor/openai-codex/codex-rs/Cargo.toml -p codex-hooks --bin write_hooks_schema_fixtures"
+  },
+  "devDependencies": {
+    "markdownlint-cli2": "0.23.2",
+    "prettier": "3.5.3"
+  },
+  "engines": {
+    "node": ">=22",
+    "pnpm": ">=10.33.0"
+  },
+  "packageManager": "pnpm@10.33.0+sha512.10568bb4a6afb58c9eb3630da90cc9516417abebd3fabbe6739f0ae795728da1491e9db5a544c76ad8eb7570f5c4bb3d6c637b2cb41bfdcdb47fa823c8649319"
+}

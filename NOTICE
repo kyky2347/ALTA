@@ -1,0 +1,14 @@
+OpenAI Codex
+Copyright 2025 OpenAI
+
+This project includes code derived from [Ratatui](https://github.com/ratatui/ratatui), licensed under the MIT license.
+Copyright (c) 2016-2022 Florian Dehau
+Copyright (c) 2023-2025 The Ratatui Developers
+
+ALTA (Autonomous LLM Trading Asterism) contains a modified source snapshot of OpenAI
+Codex. ALTA-specific launchers, provider adapters, bounded research tools,
+managed runtime, and Opportunity OS components are identified in
+ATTRIBUTION.md. ALTA is independently maintained and is not an OpenAI fork,
+release, product, or endorsed project. This does not alter the retained Codex
+attribution. No compatibility statement in this source distribution implies endorsement by OpenAI
+or by any referenced model, data, market-data, or brokerage provider.

@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+
+if [ -n "${ALTA_HTTPS_PROXY:-}" ]; then
+  HTTPS_PROXY="$ALTA_HTTPS_PROXY"
+  export HTTPS_PROXY
+fi
+NODE_USE_ENV_PROXY=1
+export NODE_USE_ENV_PROXY
+
+exec node "$(dirname "$0")/alta-src/cli.mjs" "$@"

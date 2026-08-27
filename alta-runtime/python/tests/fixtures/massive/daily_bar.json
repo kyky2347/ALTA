@@ -1,0 +1,19 @@
+{
+  "source_id": "massive",
+  "source_record_id": "fixture-massive-DEMO-2026-08-22",
+  "channel": "rest",
+  "source_url": "https://fixture.invalid/v2/aggs/ticker/DEMO/range/1/day/2026-08-22/2026-08-22",
+  "period_end": "2026-08-22T20:00:00Z",
+  "received_at": "2026-08-23T12:01:00Z",
+  "source_revision": "fixture-r1",
+  "media_type": "application/json",
+  "parser_version": "fixture-v1",
+  "payload": {
+    "ticker": "DEMO",
+    "open": 100.0,
+    "high": 101.0,
+    "low": 99.0,
+    "close": 100.5,
+    "volume": 1000
+  }
+}

@@ -1,0 +1,40 @@
+# Project-managed runtime and dependency state
+.alta/
+node_modules/
+.pnpm-store/
+**/.venv/
+**/__pycache__/
+**/.pytest_cache/
+**/.ruff_cache/
+**/*.py[cod]
+target/
+
+# Coverage, logs, and local reports
+coverage/
+.coverage
+htmlcov/
+*.log
+*.pid
+
+# Credentials and local configuration
+.env
+.env.*
+!.env.example
+/Resource API Keys/
+/LLM API Keys/
+/credentials/
+/secrets/
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Reviewed public certificate fixtures required by the pinned Codex tests.
+!vendor/openai-codex/codex-rs/http-client/tests/fixtures/*.pem
+
+# Editor and operating-system state
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~

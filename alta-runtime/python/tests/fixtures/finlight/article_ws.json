@@ -1,0 +1,16 @@
+{
+  "source_id": "finlight",
+  "source_record_id": "fixture-finlight-001",
+  "channel": "websocket",
+  "source_url": "https://fixture.invalid/news/fixture-finlight-001",
+  "published_at": "2026-08-23T12:00:00Z",
+  "received_at": "2026-08-23T12:00:01Z",
+  "source_revision": "fixture-r1",
+  "media_type": "application/json",
+  "parser_version": "fixture-v1",
+  "payload": {
+    "headline": "Desensitized fixture headline",
+    "symbols": ["DEMO"],
+    "summary": "Synthetic fixture content; not obtained from a live API."
+  }
+}

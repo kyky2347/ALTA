@@ -1,0 +1,33 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+    reviewers:
+      - kyky2347
+
+  - package-ecosystem: uv
+    directory: /alta-runtime/python
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+    reviewers:
+      - kyky2347
+
+  - package-ecosystem: uv
+    directory: /alta-runtime/capital-python
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+    reviewers:
+      - kyky2347
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+    reviewers:
+      - kyky2347

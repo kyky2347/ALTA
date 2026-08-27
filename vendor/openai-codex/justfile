@@ -1,0 +1,15 @@
+set working-directory := "codex-rs"
+
+fmt:
+    cargo fmt -- --config imports_granularity=Item
+
+fmt-check:
+    cargo fmt --check -- --config imports_granularity=Item
+
+[positional-arguments]
+test *args:
+    cargo nextest run --no-fail-fast "$@"
+
+[positional-arguments]
+fix *args:
+    cargo clippy --fix --tests --allow-dirty "$@"

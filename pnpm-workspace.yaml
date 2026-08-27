@@ -1,0 +1,12 @@
+# ALTA's gateway uses only Node built-ins. Retained upstream packages are not
+# part of ALTA's install graph; build the Codex App Server through Cargo/`./alta build`.
+packages: []
+
+minimumReleaseAge: 10080
+minimumReleaseAgeExclude: []
+
+blockExoticSubdeps: true
+strictDepBuilds: true
+trustPolicy: no-downgrade
+trustPolicyIgnoreAfter: 10080
+trustPolicyExclude: []

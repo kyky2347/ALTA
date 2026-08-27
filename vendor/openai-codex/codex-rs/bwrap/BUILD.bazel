@@ -1,0 +1,53 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//:defs.bzl", "codex_rust_crate")
+
+codex_rust_crate(
+    name = "bwrap",
+    # Bazel wires vendored bubblewrap + libcap via :bwrap-ffi below and sets
+    # bwrap_available explicitly, so we skip Cargo's build.rs in Bazel builds.
+    build_script_enabled = False,
+    crate_name = "codex_bwrap",
+    deps_extra = select({
+        "@platforms//os:linux": [":bwrap-ffi"],
+        "//conditions:default": [],
+    }),
+    rustc_flags_extra = select({
+        "@platforms//os:linux": [
+            "--cfg=bwrap_available",
+            # TODO(anp) Extract bwrap symbols before stripping.
+            "-Cstrip=symbols",
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+genrule(
+    name = "bwrap-sha256-env",
+    srcs = [":bwrap"],
+    outs = ["bwrap.sha256.env"],
+    cmd = " && ".join([
+        '$(execpath @bazel_tools//tools/build_defs/hash:sha256) $(execpath :bwrap) "$@"',
+        'digest=$$(<"$@")',
+        'printf "CODEX_BWRAP_SHA256=%s\\n" "$$digest" > "$@"',
+    ]),
+    target_compatible_with = ["@platforms//os:linux"],
+    tools = ["@bazel_tools//tools/build_defs/hash:sha256"],
+    visibility = ["//codex-rs/linux-sandbox:__pkg__"],
+)
+
+cc_library(
+    name = "bwrap-ffi",
+    srcs = ["//codex-rs/vendor:bubblewrap_c_sources"],
+    hdrs = [
+        "config.h",
+        "//codex-rs/vendor:bubblewrap_headers",
+    ],
+    copts = [
+        "-D_GNU_SOURCE",
+        "-Dmain=bwrap_main",
+    ],
+    includes = ["."],
+    target_compatible_with = ["@platforms//os:linux"],
+    visibility = ["//visibility:private"],
+    deps = ["@libcap"],
+)

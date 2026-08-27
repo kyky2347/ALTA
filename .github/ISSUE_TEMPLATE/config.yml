@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/kyky2347/ALTA/security/advisories/new
+    about: Report security issues privately. Never include credentials or account data in an issue.

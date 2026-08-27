@@ -1,0 +1,110 @@
+{
+  "change_event_scout": {
+    "output": {
+      "kind": "candidate",
+      "alpha_archetype": "revision inflection",
+      "title": "Synthetic event candidate",
+      "why_now": "A newly frozen primary-source event changed the observable state.",
+      "expectation": "The fixture baseline assumes no change.",
+      "variant_wedge": "The frozen event contradicts that fixture baseline.",
+      "falsifier": "A later primary-source revision retracts the event.",
+      "horizon": 10,
+      "confidence": 0.55,
+      "thesis_pillars": [
+        {
+          "statement": "The event changes the operating path.",
+          "observable": "The next primary-source operating update",
+          "confirmation_condition": "The update preserves the changed path",
+          "invalidation_condition": "The update retracts the changed path",
+          "expected_by_days": 5
+        }
+      ],
+      "evidence_ids": ["evidence_change"]
+    },
+    "tools": [
+      {
+        "id": "tool_change_1",
+        "tool": "alta_news_search",
+        "arguments": { "query": "synthetic primary event" },
+        "source_url": "https://fixture.invalid/event?api_key=REDACTION_CANARY"
+      }
+    ]
+  },
+  "market_dislocation_scout": {
+    "output": {
+      "kind": "candidate",
+      "alpha_archetype": "temporary dislocation",
+      "title": "Synthetic dislocation candidate",
+      "why_now": "The frozen bar deviates from its synthetic comparison window.",
+      "expectation": "The fixture comparison expects a stable relative move.",
+      "variant_wedge": "The bounded bar snapshot shows a deterministic deviation.",
+      "falsifier": "A corrected bar removes the relative deviation.",
+      "horizon": 5,
+      "confidence": 0.5,
+      "thesis_pillars": [
+        {
+          "statement": "The relative dislocation mean-reverts.",
+          "observable": "The bounded peer-relative spread",
+          "confirmation_condition": "The spread narrows without a fundamental revision",
+          "invalidation_condition": "A corrected bar or fundamental change explains the spread",
+          "expected_by_days": 3
+        }
+      ],
+      "evidence_ids": ["evidence_market"]
+    },
+    "tools": [
+      {
+        "id": "tool_market_1",
+        "tool": "alta_finance_data",
+        "arguments": { "dataset": "market_snapshot", "symbols": ["DEMO"] },
+        "source_url": "https://fixture.invalid/market"
+      }
+    ]
+  },
+  "causal_policy_scout": {
+    "output": {
+      "kind": "candidate",
+      "alpha_archetype": "policy second-order beneficiary",
+      "title": "Synthetic policy candidate",
+      "why_now": "A frozen official-policy fixture became effective.",
+      "expectation": "The fixture baseline omits the second-order effect.",
+      "variant_wedge": "The explicit policy mechanism affects the synthetic entity.",
+      "falsifier": "The official fixture is withdrawn before its effective date.",
+      "horizon": 30,
+      "confidence": 0.52,
+      "thesis_pillars": [
+        {
+          "statement": "The effective policy reaches the second-order beneficiary.",
+          "observable": "The next official implementation milestone",
+          "confirmation_condition": "The milestone transmits through the stated mechanism",
+          "invalidation_condition": "The policy is withdrawn or implementation bypasses the entity",
+          "expected_by_days": 20
+        }
+      ],
+      "evidence_ids": ["evidence_policy"]
+    },
+    "tools": [
+      {
+        "id": "tool_policy_1",
+        "tool": "alta_web_research",
+        "arguments": { "queries": ["synthetic official policy"] },
+        "source_url": "https://fixture.invalid/policy"
+      }
+    ]
+  },
+  "expectation_gap_scout": {
+    "output": {
+      "kind": "no_op",
+      "reason": "The frozen expectation posture is unavailable, so no gap is asserted.",
+      "evidence_ids": []
+    },
+    "tools": [
+      {
+        "id": "tool_expectation_1",
+        "tool": "alta_social_search",
+        "arguments": { "query": "synthetic expectation counterevidence" },
+        "source_url": "https://fixture.invalid/expectation"
+      }
+    ]
+  }
+}
