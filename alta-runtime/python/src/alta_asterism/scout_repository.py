@@ -14,6 +14,7 @@ from .mind_worker import (
     _canonical_hash,
     _utf8_prefix,
 )
+from .market_research_projection import MarketResearchAgendaProjector
 from .research_diligence import build_research_diligence
 from .research_incentive import build_research_incentives
 from .scouts import (
@@ -57,6 +58,7 @@ class ScoutRepository:
         expected_incentives = {
             item.scout_id: item for item in frozen_input.research_incentives
         }
+        expected_market_agenda = frozen_input.market_research_agenda
         with self.database.connect() as connection:
             rows = (
                 connection.execute(
@@ -169,6 +171,26 @@ class ScoutRepository:
             ):
                 raise ValueError(
                     "frozen Trader Mind research incentive does not match outcomes"
+                )
+        if expected_market_agenda is not None:
+            projected = MarketResearchAgendaProjector(self.database).at(
+                frozen_input.environment,
+                frozen_input.universe,
+                frozen_input.known_at,
+            )
+            if expected_market_agenda.model_copy(
+                update={"seeds": ()}
+            ) != projected.model_copy(update={"seeds": ()}):
+                raise ValueError(
+                    "frozen market research agenda does not match PostgreSQL"
+                )
+            projected_seeds = {item.seed_id: item for item in projected.seeds}
+            if any(
+                projected_seeds.get(item.seed_id) != item
+                for item in expected_market_agenda.seeds
+            ):
+                raise ValueError(
+                    "frozen market research seed does not match PostgreSQL"
                 )
 
     def reconcile_expired_activity(self, known_at: datetime) -> tuple[int, int]:

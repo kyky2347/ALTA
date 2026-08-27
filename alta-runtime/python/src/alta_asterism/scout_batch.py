@@ -216,11 +216,28 @@ class MindWorker:
             except ScoutBudgetExceeded as error:
                 return self._failed(spec, "budget_exceeded", turn, error)
             except ActiveResearchRequired as error:
-                return self._failed(spec, "active_research_required", turn, error)
+                outcome = self._failed(spec, "active_research_required", turn, error)
+                if self._retry(job_id, spec):
+                    continue
+                return outcome
             except (ValidationError, ValueError, json.JSONDecodeError) as error:
-                return self._failed(spec, "invalid_output", turn, error)
+                outcome = self._failed(spec, "invalid_output", turn, error)
+                if self._retry(job_id, spec):
+                    continue
+                return outcome
             except Exception as error:
-                return self._failed(spec, "app_server_error", turn, error)
+                outcome = self._failed(spec, "app_server_error", turn, error)
+                if self._retry(job_id, spec):
+                    continue
+                return outcome
+
+    def _retry(self, job_id: str, spec: ScoutRunSpec) -> bool:
+        retry_spec = spec.model_copy(
+            update={
+                "deadline_at": self.clock() + timedelta(seconds=self.deadline_seconds)
+            }
+        )
+        return self.repository.start_run(job_id, retry_spec)
 
     def _validate_budget(self, spec: ScoutRunSpec, turn: ModelTurn) -> None:
         if budget_charge_tool_calls(turn) > spec.budget.max_tool_calls:

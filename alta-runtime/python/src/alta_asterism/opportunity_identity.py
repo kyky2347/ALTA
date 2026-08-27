@@ -17,6 +17,13 @@ def normalize_key(value: str) -> str:
     return re.sub(r"[_\W]+", "-", normalized).strip("-")
 
 
+def normalize_catalyst_bucket(value: str | None) -> str:
+    """Return the shared portfolio bucket for a possibly legacy catalyst key."""
+
+    normalized = normalize_key(value) if value else ""
+    return normalized[:128] or "legacy-unclassified"
+
+
 def horizon_bucket(horizon_days: int) -> str:
     """Stabilize identity when an agent varies a nearby holding-period estimate."""
     if not 1 <= horizon_days <= 365:

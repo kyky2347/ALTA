@@ -6,18 +6,14 @@ from .alpha_isolation import (
     AlphaIsolation,
     SystematicExposure,
     legacy_alpha_isolation,
-    normalize_systematic_exposure,
 )
 from .alpha_lifecycle import AlphaClock, build_alpha_clock
 from .database import Database
 from .execution_planning import build_execution_plan
-from .implementation import (
-    ExposureBucket,
-    PortfolioRiskPolicy,
-    PortfolioState,
-    TradeImplementationPlan,
-)
+from .implementation import PortfolioRiskPolicy, PortfolioState, TradeImplementationPlan
 from .market_data import MarketInstrument
+from .opportunity_identity import normalize_catalyst_bucket
+from .portfolio_state import load_portfolio_state
 from .underwriting import (
     ScenarioUnderwriting,
     consensus_decision,
@@ -46,66 +42,11 @@ class PortfolioConstructor:
         self.policy = policy or PortfolioRiskPolicy()
         self.max_open_positions = max_open_positions
 
-    def load_state(self) -> PortfolioState:
-        with self.database.connect() as connection:
-            rows = connection.execute(
-                """SELECT GREATEST(
-                        p.entry_price,
-                        COALESCE(
-                            (SELECT (event.payload->'observation'->'quote'->>'ask')::numeric
-                             FROM ops.event event
-                             WHERE event.aggregate_id = p.id
-                               AND event.environment = 'shadow'
-                               AND event.event_type = 'position.monitored'
-                             ORDER BY event.sequence DESC LIMIT 1),
-                            p.entry_price
-                        )
-                    ) * p.quantity,
-                    p.position_thesis
-                FROM research.shadow_position p
-                WHERE p.environment = 'shadow' AND p.status = 'open'
-                ORDER BY p.opened_at, p.id"""
-            ).fetchall()
-        notionals = tuple(Decimal(row[0]) for row in rows)
-        exposure_totals: dict[SystematicExposure, Decimal] = {}
-        for notional, raw_thesis in rows:
-            implementation = (
-                raw_thesis.get("implementation_plan")
-                if isinstance(raw_thesis, dict)
-                else None
-            )
-            raw_exposures = (
-                implementation.get("systematic_exposures", ())
-                if isinstance(implementation, dict)
-                else ("unknown",)
-            )
-            exposures = (
-                raw_exposures
-                if isinstance(raw_exposures, (list, tuple))
-                else ("unknown",)
-            )
-            for exposure in tuple(
-                dict.fromkeys(
-                    normalize_systematic_exposure(item)
-                    for item in (exposures or ("unknown",))
-                )
-            ):
-                exposure_totals[exposure] = exposure_totals.get(
-                    exposure, Decimal(0)
-                ) + Decimal(notional)
-        replacement_credit = (
-            min(notionals)
-            if len(notionals) >= self.max_open_positions and notionals
-            else Decimal(0)
-        )
-        return PortfolioState(
-            known_open_positions=len(notionals),
-            gross_notional=sum(notionals, Decimal(0)),
-            prospective_replacement_credit=replacement_credit,
-            exposure_buckets=tuple(
-                ExposureBucket(tag=tag, gross_notional=value)
-                for tag, value in sorted(exposure_totals.items())
-            ),
+    def load_state(self, known_at: datetime | None = None) -> PortfolioState:
+        return load_portfolio_state(
+            self.database,
+            max_open_positions=self.max_open_positions,
+            known_at=known_at,
         )
 
     def load_alpha_governance(self) -> AlphaCapitalGovernance:
@@ -135,6 +76,7 @@ class PortfolioConstructor:
         alpha_isolation: AlphaIsolation | None = None,
         research_quality_score: Decimal | None = None,
         alpha_capital_governance: AlphaCapitalGovernance | None = None,
+        catalyst_key: str | None = None,
     ) -> TradeImplementationPlan:
         state = state or self.load_state()
         policy = self.policy
@@ -155,6 +97,26 @@ class PortfolioConstructor:
         loss_budget = policy.dollars(policy.per_trade_loss_budget_bps)
         position_limit = policy.dollars(policy.max_position_nav_bps)
         gross_limit = policy.dollars(policy.max_gross_nav_bps)
+        portfolio_stress_limit = policy.dollars(policy.max_portfolio_stress_nav_bps)
+        alpha_source_limit = policy.dollars(policy.max_alpha_source_nav_bps)
+        catalyst_limit = policy.dollars(policy.max_catalyst_nav_bps)
+        normalized_catalyst_key = normalize_catalyst_bucket(catalyst_key)
+        alpha_source_before = next(
+            (
+                item.gross_notional
+                for item in state.alpha_source_buckets
+                if item.source == isolation.alpha_source
+            ),
+            Decimal(0),
+        )
+        catalyst_before = next(
+            (
+                item.gross_notional
+                for item in state.catalyst_buckets
+                if item.catalyst_key == normalized_catalyst_key
+            ),
+            Decimal(0),
+        )
         common = {
             "policy_version": policy.version,
             "intended_alpha": intended_alpha,
@@ -175,6 +137,16 @@ class PortfolioConstructor:
             "gross_notional_before": state.gross_notional,
             "gross_replacement_credit": state.prospective_replacement_credit,
             "gross_notional_limit": gross_limit,
+            "portfolio_stress_loss_before": state.aggregate_stress_loss,
+            "portfolio_stress_replacement_credit": (
+                state.prospective_replacement_stress_credit
+            ),
+            "portfolio_stress_loss_limit": portfolio_stress_limit,
+            "alpha_source_notional_before": alpha_source_before,
+            "alpha_source_notional_limit": alpha_source_limit,
+            "catalyst_key": normalized_catalyst_key,
+            "catalyst_notional_before": catalyst_before,
+            "catalyst_notional_limit": catalyst_limit,
             "monitoring_triggers": monitoring_triggers,
         }
         admission_reason = self._admission_reason(
@@ -233,6 +205,10 @@ class PortfolioConstructor:
             loss_budget=loss_budget,
             position_limit=position_limit,
             gross_limit=gross_limit,
+            portfolio_stress_limit=portfolio_stress_limit,
+            alpha_source_limit=alpha_source_limit,
+            catalyst_before=catalyst_before,
+            catalyst_limit=catalyst_limit,
             isolation_multiplier=isolation_multiplier,
             research_multiplier=research_multiplier,
             capital_multiplier=capital_governance.capital_multiplier,
@@ -304,6 +280,13 @@ class PortfolioConstructor:
                 - state.prospective_replacement_credit
                 + target_notional
             ),
+            portfolio_stress_loss_after=(
+                state.aggregate_stress_loss
+                - state.prospective_replacement_stress_credit
+                + stress_loss
+            ),
+            alpha_source_notional_after=alpha_source_before + target_notional,
+            catalyst_notional_after=catalyst_before + target_notional,
             target_notional=target_notional,
             target_quantity=quantity,
             estimated_stress_loss=stress_loss,
@@ -361,6 +344,10 @@ class PortfolioConstructor:
         loss_budget: Decimal,
         position_limit: Decimal,
         gross_limit: Decimal,
+        portfolio_stress_limit: Decimal,
+        alpha_source_limit: Decimal,
+        catalyst_before: Decimal,
+        catalyst_limit: Decimal,
         isolation_multiplier: Decimal,
         research_multiplier: Decimal,
         capital_multiplier: Decimal,
@@ -390,6 +377,26 @@ class PortfolioConstructor:
                 + state.prospective_replacement_credit,
             ),
             "stress_loss_budget": loss_budget / stress_fraction,
+            "portfolio_stress_remaining": max(
+                Decimal(0),
+                portfolio_stress_limit
+                - state.aggregate_stress_loss
+                + state.prospective_replacement_stress_credit,
+            )
+            / stress_fraction,
+            "alpha_source_remaining": max(
+                Decimal(0),
+                alpha_source_limit
+                - next(
+                    (
+                        item.gross_notional
+                        for item in state.alpha_source_buckets
+                        if item.source == isolation.alpha_source
+                    ),
+                    Decimal(0),
+                ),
+            ),
+            "catalyst_remaining": max(Decimal(0), catalyst_limit - catalyst_before),
             "liquidity_exit_capacity": liquidity_capacity,
         }
         exposure_capacity, exposure_tag = self._exposure_capacity(state, isolation)
@@ -483,6 +490,45 @@ class PortfolioConstructor:
             reasons.append("alpha_governance_tightened_before_entry")
         if plan.estimated_stress_loss > plan.loss_budget:
             reasons.append("loss_budget_changed_before_entry")
+        stress_credit = (
+            plan.portfolio_stress_replacement_credit
+            if prospective_rotation
+            and plan.portfolio_stress_replacement_credit is not None
+            else Decimal(0)
+        )
+        if (
+            plan.portfolio_stress_loss_limit is not None
+            and state.aggregate_stress_loss - stress_credit + plan.estimated_stress_loss
+            > plan.portfolio_stress_loss_limit
+        ):
+            reasons.append("portfolio_stress_limit_changed_before_entry")
+        source_notional = next(
+            (
+                item.gross_notional
+                for item in state.alpha_source_buckets
+                if item.source == plan.alpha_source
+            ),
+            Decimal(0),
+        )
+        if (
+            plan.alpha_source_notional_limit is not None
+            and source_notional + plan.target_notional
+            > plan.alpha_source_notional_limit
+        ):
+            reasons.append("alpha_source_limit_changed_before_entry")
+        catalyst_notional = next(
+            (
+                item.gross_notional
+                for item in state.catalyst_buckets
+                if item.catalyst_key == plan.catalyst_key
+            ),
+            Decimal(0),
+        )
+        if (
+            plan.catalyst_notional_limit is not None
+            and catalyst_notional + plan.target_notional > plan.catalyst_notional_limit
+        ):
+            reasons.append("catalyst_limit_changed_before_entry")
         exposure_by_tag = {
             item.tag: item.gross_notional for item in state.exposure_buckets
         }
@@ -593,6 +639,9 @@ class PortfolioConstructor:
             expected_net_alpha_bps=expected_net_alpha,
             alpha_clock=alpha_clock,
             stress_loss_fraction=stress_fraction,
+            portfolio_stress_loss_after=common.get("portfolio_stress_loss_before"),
+            alpha_source_notional_after=common.get("alpha_source_notional_before"),
+            catalyst_notional_after=common.get("catalyst_notional_before"),
             gross_notional_after=common["gross_notional_before"],
             target_notional=Decimal(0),
             target_quantity=Decimal(0),

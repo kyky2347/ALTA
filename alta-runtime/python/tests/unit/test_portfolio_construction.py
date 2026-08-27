@@ -7,6 +7,8 @@ from alta_asterism.alpha_governance import AlphaCapitalGovernance
 from alta_asterism.alpha_isolation import AlphaIsolation
 from alta_asterism.expression import QuoteSnapshot
 from alta_asterism.implementation import (
+    AlphaSourceBucket,
+    CatalystBucket,
     ExposureBucket,
     PortfolioRiskPolicy,
     PortfolioState,
@@ -106,6 +108,7 @@ def plan(
     isolation: AlphaIsolation | None = None,
     research_quality_score: Decimal | None = None,
     alpha_capital_governance: AlphaCapitalGovernance | None = None,
+    catalyst_key: str | None = None,
 ):
     constructor = PortfolioConstructor(None, PortfolioRiskPolicy())  # type: ignore[arg-type]
     return constructor.plan(
@@ -119,6 +122,7 @@ def plan(
         alpha_isolation=isolation,
         research_quality_score=research_quality_score,
         alpha_capital_governance=alpha_capital_governance,
+        catalyst_key=catalyst_key,
     )
 
 
@@ -311,7 +315,7 @@ def test_research_quality_controls_capital_admission_and_starter_size() -> None:
 def test_alpha_capital_governance_caps_unproven_and_degraded_books() -> None:
     collecting = AlphaCapitalGovernance(
         policy_version="alta-alpha-capital-governance-v1",
-        source_portfolio_policy_version="alta-portfolio-risk-v5",
+        source_portfolio_policy_version="alta-portfolio-risk-v7",
         posture="collecting",
         capital_multiplier=Decimal("0.50"),
         sample_size=0,
@@ -344,7 +348,7 @@ def test_entry_revalidation_rejects_a_stale_larger_governance_budget(
 ) -> None:
     normal = AlphaCapitalGovernance(
         policy_version="alta-alpha-capital-governance-v1",
-        source_portfolio_policy_version="alta-portfolio-risk-v5",
+        source_portfolio_policy_version="alta-portfolio-risk-v7",
         posture="normal",
         capital_multiplier=Decimal(1),
         sample_size=30,
@@ -399,3 +403,99 @@ def test_shared_factor_capacity_binds_across_different_instruments() -> None:
     assert result.binding_constraint == "systematic_exposure:market_beta"
     assert result.exposure_binding_tag == "market_beta"
     assert result.exposure_capacity == Decimal("500")
+
+
+def test_aggregate_stress_budget_limits_incremental_book_drawdown() -> None:
+    state = PortfolioState(
+        known_open_positions=4,
+        gross_notional=Decimal("40000"),
+        aggregate_stress_loss=Decimal("9500"),
+    )
+
+    result = plan(instrument(), state)
+
+    assert result.status == "ready"
+    assert result.target_notional == Decimal("2000")
+    assert result.estimated_stress_loss == Decimal("500")
+    assert result.binding_constraint == "portfolio_stress_remaining"
+    assert result.portfolio_stress_loss_after == Decimal("10000")
+    assert result.portfolio_stress_loss_limit == Decimal("10000")
+
+
+def test_alpha_source_capacity_prevents_hidden_strategy_concentration() -> None:
+    state = PortfolioState(
+        known_open_positions=3,
+        gross_notional=Decimal("29500"),
+        aggregate_stress_loss=Decimal("7375"),
+        alpha_source_buckets=(
+            AlphaSourceBucket(
+                source="idiosyncratic",
+                open_positions=3,
+                gross_notional=Decimal("29500"),
+                estimated_stress_loss=Decimal("7375"),
+            ),
+        ),
+    )
+
+    result = plan(instrument(), state, audited_isolation("0.9", exposures=("none",)))
+
+    assert result.status == "ready"
+    assert result.target_notional == Decimal("500")
+    assert result.binding_constraint == "alpha_source_remaining"
+    assert result.alpha_source_notional_after == Decimal("30000")
+    assert result.alpha_source_notional_limit == Decimal("30000")
+
+
+def test_catalyst_capacity_prevents_cross_ticker_event_crowding() -> None:
+    state = PortfolioState(
+        known_open_positions=3,
+        gross_notional=Decimal("19500"),
+        aggregate_stress_loss=Decimal("4875"),
+        catalyst_buckets=(
+            CatalystBucket(
+                catalyst_key="shared-policy-reset",
+                open_positions=3,
+                gross_notional=Decimal("19500"),
+                estimated_stress_loss=Decimal("4875"),
+            ),
+        ),
+    )
+
+    result = plan(
+        instrument(),
+        state,
+        audited_isolation("0.9", exposures=("none",)),
+        catalyst_key="Shared policy reset",
+    )
+
+    assert result.status == "ready"
+    assert result.target_notional == Decimal("500")
+    assert result.binding_constraint == "catalyst_remaining"
+    assert result.catalyst_key == "shared-policy-reset"
+    assert result.catalyst_notional_after == Decimal("20000")
+    assert result.catalyst_notional_limit == Decimal("20000")
+
+
+def test_entry_revalidation_detects_new_catalyst_crowding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ready = plan(instrument(), catalyst_key="Shared policy reset")
+    constructor = PortfolioConstructor(None, PortfolioRiskPolicy())  # type: ignore[arg-type]
+    monkeypatch.setattr(
+        constructor,
+        "load_state",
+        lambda: PortfolioState(
+            known_open_positions=1,
+            gross_notional=Decimal("19500"),
+            catalyst_buckets=(
+                CatalystBucket(
+                    catalyst_key="shared-policy-reset",
+                    open_positions=1,
+                    gross_notional=Decimal("19500"),
+                    estimated_stress_loss=Decimal("4875"),
+                ),
+            ),
+        ),
+    )
+
+    assert "catalyst_limit_changed_before_entry" in constructor.revalidate(ready)

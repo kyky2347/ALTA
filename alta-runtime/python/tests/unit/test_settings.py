@@ -152,7 +152,7 @@ def test_shadow_portfolio_limits_are_internally_consistent() -> None:
         Settings(**baseline, ALTA_SHADOW_REFERENCE_NAV=100_000)
 
 
-def test_scouts_remain_flash_while_judgment_roles_are_heterogeneous() -> None:
+def test_scouts_default_to_flash_but_allow_a_validated_provider_fallback() -> None:
     baseline = {
         "DATABASE_URL": "postgresql://fixture.invalid/alta",
         "REDIS_URL": "redis://fixture.invalid/0",
@@ -164,10 +164,29 @@ def test_scouts_remain_flash_while_judgment_roles_are_heterogeneous() -> None:
         "deepseek",
         "deepseek-v4-flash",
     )
+    openai = Settings(
+        **baseline,
+        ALTA_AGENT_PROVIDER="openai",
+        ALTA_AGENT_MODEL="gpt-5.6-terra",
+    )
+    assert (openai.agent_provider, openai.agent_model) == (
+        "openai",
+        "gpt-5.6-terra",
+    )
     with pytest.raises(ValidationError):
-        Settings(**baseline, ALTA_AGENT_PROVIDER="openai")
-    with pytest.raises(ValidationError):
-        Settings(**baseline, ALTA_AGENT_MODEL="deepseek-v4-pro")
+        Settings(**baseline, ALTA_AGENT_PROVIDER="anthropic")
+    kimi = Settings(
+        **baseline,
+        ALTA_AGENT_PROVIDER="kimi",
+        ALTA_AGENT_MODEL="kimi-k3",
+    )
+    assert (kimi.agent_provider, kimi.agent_model) == ("kimi", "kimi-k3")
+    with pytest.raises(ValidationError, match="Scout model does not belong"):
+        Settings(
+            **baseline,
+            ALTA_AGENT_PROVIDER="kimi",
+            ALTA_AGENT_MODEL="deepseek-v4-pro",
+        )
 
     with pytest.raises(ValidationError, match="private debate"):
         Settings(

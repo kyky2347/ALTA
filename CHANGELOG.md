@@ -6,6 +6,61 @@ semantic versioning while the project remains experimental.
 
 ## [Unreleased]
 
+### Added
+
+- A portfolio-wide catalyst-risk ledger that groups different instruments by
+  their normalized causal catalyst, exposes saturated catalyst clusters to the
+  frozen research mandate, and applies a shared notional limit during
+  construction and immediately before entry.
+- A shared canonical UTF-8 JSON budget registry for Scout snapshots, Scout
+  prompts, private-role inputs, and private-role prompts.
+- Exponential in-process retry gates for optional Finlight and Massive
+  connectors so a degraded upstream is not hammered on every autonomous wake.
+- A frozen, point-in-time market research agenda built from completed Massive
+  daily bars. It screens relative return, price-volume behavior, range, breadth,
+  and dispersion into at most one verification question per Trader Mind.
+- A frozen, non-Evidence portfolio research mandate that exposes current book
+  stress, saturated Alpha sources, systematic exposures, and bounded
+  diversification search targets to every live Trader Mind wake.
+- Aggregate portfolio stress-loss and per-Alpha-source capacity in deterministic
+  position construction and pre-intent revalidation.
+
+### Changed
+
+- The portfolio policy is now `alta-portfolio-risk-v7`. A ready implementation
+  carries a complete catalyst-notional bridge, while legacy positions are
+  conservatively assigned to `legacy-unclassified` rather than assumed
+  independent.
+- Production Candidates must now be decision-complete before Foundry admission:
+  identity, changed fact, mechanism, direction, first rejection, prediction,
+  beneficiary path, counterevidence, next test, investability, and freshness are
+  all explicit or the Scout returns `no_op`.
+- Invalid structured Scout output, a missed active-research requirement, or a
+  transient App Server failure receives one fresh bounded attempt under the same
+  durable Run identity. The first failure remains append-only and auditable.
+- Private assessment is no longer invoked for Opportunities that deterministic
+  horizon, evidence, completeness, expectation, or research-quality gates
+  already know cannot enter the ranking book.
+- The production discovery allowance is four research calls and 40,000 charged
+  tokens per Mind; private judgment roles are capped at 30,000 charged tokens.
+  Mature, outcome-backed incentives remain the only bounded expansion path.
+- Same-wake recovery now reunifies per-Mind research incentives and scoped
+  market-screen seeds instead of inheriting only the first Scout's subset.
+- Full-book replacement now compares remaining Alpha bps, expected Alpha
+  dollars, and expected Alpha per dollar of stress loss instead of rotating on
+  a bps hurdle alone.
+
+### Safety
+
+- These changes affect research reliability and cost control only. They do not
+  loosen `Wait`, capital, market-data, Paper-account, or broker boundaries.
+- Market-screen seeds exclude incomplete current-session and future-known rows,
+  are revalidated against PostgreSQL, and cannot be cited as Evidence or bypass
+  causal research, independent assessment, expression audit, or capital gates.
+- Portfolio context cannot become Evidence, lower research standards, rank an
+  Opportunity, select an instrument, or authorize capital. Missing incumbent
+  risk-capital records fail closed to `Wait`.
+
 ## [0.25.0] - 2026-08-27
 
 ### Added

@@ -182,6 +182,10 @@ def _bounded_rationale(value: dict, maximum_bytes: int = 3_900) -> str:
                 )
             },
             "exposure_binding_tag": implementation.get("exposure_binding_tag"),
+            "catalyst_key": implementation.get("catalyst_key"),
+            "catalyst_notional_before": implementation.get("catalyst_notional_before"),
+            "catalyst_notional_limit": implementation.get("catalyst_notional_limit"),
+            "catalyst_notional_after": implementation.get("catalyst_notional_after"),
         },
         "capital_allocation": {
             "status": capital_allocation.get("status"),
@@ -549,6 +553,7 @@ class AgenticExpressionFlow:
                 opportunity.research_diligence
             )["research_quality"],
             alpha_capital_governance=alpha_capital_governance,
+            catalyst_key=opportunity.catalyst_key,
         )
         if implementation.status == "wait":
             return self._persist_wait(
@@ -705,6 +710,7 @@ class AgenticExpressionFlow:
                 alpha_isolation=provisional_isolation,
                 research_quality_score=research_quality,
                 alpha_capital_governance=alpha_capital_governance,
+                catalyst_key=opportunity.catalyst_key,
             )
             allocation = self.positions.assess_capital(plan, datetime.now(UTC))
             instrument = (

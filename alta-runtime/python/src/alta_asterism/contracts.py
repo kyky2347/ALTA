@@ -15,7 +15,7 @@ from pydantic import (
 )
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-AgentProvider = Literal["deepseek", "grok", "kimi"]
+AgentProvider = Literal["openai", "deepseek", "grok", "kimi"]
 MODEL_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._-]{1,127}$"
 
 
@@ -216,12 +216,13 @@ class Settings(BaseSettings):
         le=600,
         validation_alias="ALTA_SUPERVISOR_SHUTDOWN_GRACE_SECONDS",
     )
-    agent_provider: Literal["deepseek"] = Field(
+    agent_provider: AgentProvider = Field(
         default="deepseek",
         validation_alias="ALTA_AGENT_PROVIDER",
     )
-    agent_model: Literal["deepseek-v4-flash"] = Field(
+    agent_model: str = Field(
         default="deepseek-v4-flash",
+        pattern=MODEL_ID_PATTERN,
         validation_alias="ALTA_AGENT_MODEL",
     )
     agent_reasoning_effort: Literal["low", "medium", "high"] = Field(
@@ -345,7 +346,14 @@ class Settings(BaseSettings):
             "expression": (self.expression_provider, self.expression_model),
             "audit": (self.audit_provider, self.audit_model),
         }
-        prefixes = {"deepseek": "deepseek-", "grok": "grok-", "kimi": "kimi-"}
+        prefixes = {
+            "openai": "gpt-",
+            "deepseek": "deepseek-",
+            "grok": "grok-",
+            "kimi": "kimi-",
+        }
+        if not self.agent_model.lower().startswith(prefixes[self.agent_provider]):
+            raise ValueError("Scout model does not belong to Scout provider")
         for role, (provider, model) in routes.items():
             if not model.lower().startswith(prefixes[provider]):
                 raise ValueError(f"{role} model does not belong to {provider}")

@@ -21,7 +21,7 @@ from alta_asterism.foundry import (
     apply_completion,
     deduplicate,
 )
-from alta_asterism.ranking import build_ranking_book
+from alta_asterism.ranking import build_ranking_book, pre_assessment_rejections
 from alta_asterism.research_diligence import ResearchDiligence
 from alta_asterism.underwriting import (
     DecisionIntelligence,
@@ -535,6 +535,10 @@ def test_ranking_rewards_cross_checked_non_news_research() -> None:
     )
     assert screen_gate.status == "rejected"
     assert screen_gate.reason_codes == ("research_quality_below_decision_hurdle",)
+    assert pre_assessment_rejections(strong) == ()
+    assert pre_assessment_rejections(screen) == (
+        "research_quality_below_decision_hurdle",
+    )
 
 
 def test_ranking_rejects_when_each_assessor_cannot_beat_its_base_rate() -> None:

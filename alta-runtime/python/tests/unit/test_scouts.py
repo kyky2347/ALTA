@@ -6,6 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from alta_asterism.agent_launch import agent_safe_environment
+from alta_asterism.implementation import PortfolioRiskPolicy, PortfolioState
 from alta_asterism.mind_worker import (
     ModelTurn,
     _source_locators,
@@ -34,6 +35,7 @@ from alta_asterism.scout_batch import (
     tools_within_scout_territory,
 )
 from alta_asterism.research_agenda import OpenResearchQuestion, OpportunityDrive
+from alta_asterism.portfolio_intelligence import build_portfolio_research_mandate
 from alta_asterism.trader_mind import TraderMindMemory, experience_summary
 
 
@@ -99,6 +101,25 @@ def candidate(evidence_id: str = "evidence_change") -> dict:
             }
         ],
         "evidence_ids": [evidence_id],
+    }
+
+
+def decision_complete_candidate(evidence_id: str = "evidence_change") -> dict:
+    return {
+        **candidate(evidence_id),
+        "entity_key": "demo",
+        "event_key": "demo-event",
+        "catalyst_key": "demo-catalyst",
+        "observed_change": "The frozen fixture metric changed.",
+        "mechanism": "The change propagates through the fixture operating line.",
+        "direction": "positive",
+        "first_rejection": "Reject if the source retracts the changed metric.",
+        "prediction": "The next fixture update preserves the changed path.",
+        "beneficiary_path": "Metric to operating line to forward fixture estimate.",
+        "disconfirming_evidence": "The comparison source still supports the baseline.",
+        "next_test": "Read the next versioned primary fixture update.",
+        "investability": "limited",
+        "freshness_at": "2026-08-23T13:59:00+00:00",
     }
 
 
@@ -190,20 +211,25 @@ def test_active_candidate_must_use_its_trader_mind_alpha_archetype() -> None:
         }
     )
 
-    accepted = parse_output(json.dumps(candidate()), spec)
+    accepted = parse_output(json.dumps(decision_complete_candidate()), spec)
     assert accepted.alpha_archetype == "revision inflection"
     with pytest.raises(ValueError, match="requires a falsifiable thesis pillar"):
-        parse_output(json.dumps({**candidate(), "thesis_pillars": []}), spec)
+        parse_output(
+            json.dumps({**decision_complete_candidate(), "thesis_pillars": []}),
+            spec,
+        )
     with pytest.raises(ValueError, match="outside its Trader Mind mandate"):
         parse_output(
             json.dumps(
                 {
-                    **candidate(),
+                    **decision_complete_candidate(),
                     "alpha_archetype": "temporary dislocation",
                 }
             ),
             spec,
         )
+    with pytest.raises(ValueError, match="not decision-complete"):
+        parse_output(json.dumps(candidate()), spec)
 
 
 def test_complete_scout_snapshot_is_fitted_before_database_persistence() -> None:
@@ -280,6 +306,80 @@ def test_complete_scout_snapshot_is_fitted_before_database_persistence() -> None
     assert persisted_scout_snapshot_bytes(SCOUTS[0], prompt_fitted) <= 7_000
 
 
+def test_snapshot_fitting_preserves_prioritized_follow_up_parent() -> None:
+    base = frozen_input()
+    evidence = tuple(
+        base.evidence[0].model_copy(
+            update={
+                "evidence_id": f"evidence_priority_{index}",
+                "raw_id": f"raw_priority_{index}",
+                "content_hash": f"{index:x}" * 64,
+                "summary": "x" * 480,
+            }
+        )
+        for index in range(1, 9)
+    )
+    question = OpenResearchQuestion(
+        question_id="a" * 16,
+        origin="scout_next_test",
+        prompt="Verify whether the operating change reached forward estimates.",
+    )
+    prior = PriorOpportunitySnapshot(
+        opportunity_id="opportunity_priority",
+        version=1,
+        known_at=base.known_at - timedelta(hours=1),
+        title="Priority follow-up",
+        direction="positive",
+        status="forming",
+        summary="A bounded prior Opportunity awaiting one decisive test.",
+        snapshot_hash="b" * 64,
+        research_questions=(question,),
+    )
+    memory = TraderMindMemory(
+        scout_id=SCOUTS[0].scout_id,
+        version=1,
+        known_at=base.known_at - timedelta(minutes=1),
+        turn_count=1,
+        summary="z" * 1_200,
+    )
+    crowded = base.model_copy(
+        update={
+            "evidence": evidence,
+            "prior_opportunities": (prior,),
+            "trader_mind_memories": (memory,),
+            "opportunity_drive": OpportunityDrive(
+                posture="resolve_backlog",
+                assigned_mode="follow_up",
+                priority_opportunity_ids=(prior.opportunity_id,),
+                follow_up_scout_ids=(SCOUTS[0].scout_id,),
+            ),
+        }
+    )
+    budget = RunBudget(
+        max_tool_calls=6,
+        max_total_tokens=80_000,
+        max_output_bytes=12_000,
+        require_active_research=True,
+    )
+
+    fitted = fit_frozen_input_for_scout(crowded, SCOUTS[0], budget)
+    spec = make_run_spec(
+        run_id="run_priority_fit",
+        trace_id="trace_priority_fit",
+        scout=SCOUTS[0],
+        frozen_input=fitted,
+        budget=budget,
+        deadline_at=fitted.known_at + timedelta(minutes=5),
+        model_provider="fixture",
+        model_id="fixture-model",
+    )
+
+    assert fitted.prior_opportunities == (prior,)
+    assert fitted.opportunity_drive.priority_opportunity_ids == (prior.opportunity_id,)
+    assert persisted_scout_snapshot_bytes(SCOUTS[0], fitted) <= 7_000
+    assert len(build_prompt(spec).encode()) <= 12_000
+
+
 def test_expectation_scout_cannot_invent_gap_when_posture_is_unavailable() -> None:
     spec = spec_for(index=3, posture="unavailable")
     output = candidate("evidence_change")
@@ -345,7 +445,8 @@ def test_prompt_freezes_contract_budget_and_marks_evidence_untrusted() -> None:
     assert prompt["alpha_archetypes"] == list(base.scout.alpha_archetypes)
     assert prompt["research_sequence"] == list(base.scout.research_sequence)
     assert prompt["frozen_input"]["trader_mind_memories"][0]["turn_count"] == 3
-    assert spec.prompt_version == "alpha-trader-v11"
+    assert spec.prompt_version == "alpha-trader-v14"
+    assert any("Treat market_research_agenda" in rule for rule in prompt["rules"])
     assert prompt["contract"] == "alta.scout-output.v4"
     assert (
         prompt["frozen_input"]["prior_opportunities"][0]["research_questions"][0][
@@ -368,6 +469,30 @@ def test_prompt_freezes_contract_budget_and_marks_evidence_untrusted() -> None:
     ]
     assert locator["maxLength"] == 2_048
     assert "pattern" not in locator
+
+
+def test_prompt_treats_frozen_portfolio_mandate_as_non_evidence_context() -> None:
+    base = spec_for()
+    mandate = build_portfolio_research_mandate(
+        PortfolioState(), PortfolioRiskPolicy(), base.frozen_input.known_at
+    )
+    spec = base.model_copy(
+        update={
+            "frozen_input": base.frozen_input.model_copy(
+                update={"portfolio_research_mandate": mandate}
+            )
+        }
+    )
+
+    prompt = json.loads(build_prompt(spec))
+
+    assert prompt["frozen_input"]["portfolio_research_mandate"]["posture"] == (
+        "empty_book"
+    )
+    assert any(
+        "portfolio_research_mandate as frozen, non-Evidence" in rule
+        for rule in prompt["rules"]
+    )
 
 
 def test_active_research_requires_a_real_discovery_tool_not_control_discovery() -> None:

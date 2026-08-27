@@ -41,6 +41,13 @@ HedgePosture = Literal[
     "not_applicable",
 ]
 KNOWN_SYSTEMATIC_EXPOSURES = frozenset(get_args(SystematicExposure))
+KNOWN_ALPHA_SOURCES = frozenset(get_args(AlphaSource))
+
+
+def normalize_alpha_source(value: object) -> AlphaSource:
+    if isinstance(value, str) and value in KNOWN_ALPHA_SOURCES:
+        return cast(AlphaSource, value)
+    return "legacy_unclassified"
 
 
 def normalize_systematic_exposure(value: object) -> SystematicExposure:

@@ -8,7 +8,8 @@ import {
 const MODERN_PROTOCOL = "2026-07-28";
 const LEGACY_PROTOCOL = "2025-06-18";
 // Each result must leave room for the frozen input, stable instructions, and
-// later tool calls inside the same bounded Scout turn.
+// later tool calls inside the same bounded Scout turn. Research packs put
+// fetched primary-source text first so this compact preview stays useful.
 const MAX_TOOL_RESULT_BYTES = 3_000;
 const MAX_TOOL_ERROR_BYTES = 900;
 const TRUNCATION_NOTICE =

@@ -131,23 +131,35 @@ def _research_rejections(opportunity: OpportunityDraft) -> tuple[str, ...]:
     return ()
 
 
+def pre_assessment_rejections(opportunity: OpportunityDraft) -> tuple[str, ...]:
+    """Return deterministic blockers before spending tokens on private debate."""
+
+    reasons: list[str] = []
+    if not HORIZON_MIN_DAYS <= opportunity.horizon_days <= HORIZON_MAX_DAYS:
+        reasons.append("outside_1_90_day_horizon")
+    if not opportunity.evidence_ids:
+        reasons.append("evidence_missing")
+    if not opportunity.falsifier:
+        reasons.append("falsifier_missing")
+    if opportunity.expectation_posture == "unavailable":
+        reasons.append("expectation_posture_unavailable")
+    reasons.extend(_degraded_reasons(opportunity))
+    reasons.extend(_research_rejections(opportunity))
+    return tuple(sorted(set(reasons)))
+
+
 def _gate(
     opportunity: OpportunityDraft,
     assessments: tuple[PrivateAssessment, ...] | None,
 ) -> RankingGate:
-    rejected: list[str] = []
-    degraded: list[str] = []
-    if not HORIZON_MIN_DAYS <= opportunity.horizon_days <= HORIZON_MAX_DAYS:
-        rejected.append("outside_1_90_day_horizon")
-    if not opportunity.evidence_ids:
-        rejected.append("evidence_missing")
-    if not opportunity.falsifier:
-        rejected.append("falsifier_missing")
-    if opportunity.expectation_posture == "unavailable":
-        rejected.append("expectation_posture_unavailable")
-    degraded.extend(_degraded_reasons(opportunity))
+    pre_assessment = pre_assessment_rejections(opportunity)
+    rejected: list[str] = [
+        reason
+        for reason in pre_assessment
+        if reason not in _degraded_reasons(opportunity)
+    ]
+    degraded: list[str] = list(_degraded_reasons(opportunity))
     rejected.extend(_assessment_rejections(opportunity, assessments))
-    rejected.extend(_research_rejections(opportunity))
     if rejected:
         return RankingGate(
             opportunity_id=opportunity.opportunity_id,

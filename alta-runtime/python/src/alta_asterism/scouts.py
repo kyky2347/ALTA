@@ -15,9 +15,17 @@ from pydantic import (
 )
 
 from .alpha_feedback import TraderMindAlphaFeedback
+from .context_budget import (
+    MAX_FROZEN_SCOUT_INPUT_BYTES,
+    MAX_PERSISTED_SCOUT_SNAPSHOT_BYTES,
+    MAX_SCOUT_PROMPT_BYTES,
+    canonical_json_bytes,
+)
 from .contracts import Environment
 from .investment_thesis import ThesisPillarDraft
+from .market_research import MarketResearchAgenda
 from .opportunity_memory import PriorOpportunitySnapshot
+from .portfolio_intelligence import PortfolioResearchMandate
 from .research_agenda import OpportunityDrive, ResearchMode
 from .research_incentive import ResearchIncentive
 from .trader_mind import (
@@ -29,10 +37,8 @@ from .trader_mind import (
     validate_orthogonal_scouts as validate_orthogonal_scouts,
 )
 
-MAX_FROZEN_INPUT_BYTES = 16_000
-MAX_PERSISTED_SCOUT_SNAPSHOT_BYTES = 7_000
-MAX_SCOUT_PROMPT_BYTES = 12_000
-SCOUT_PROMPT_VERSION = "alpha-trader-v11"
+MAX_FROZEN_INPUT_BYTES = MAX_FROZEN_SCOUT_INPUT_BYTES
+SCOUT_PROMPT_VERSION = "alpha-trader-v14"
 SCOUT_TOOL_CATALOG_VERSION = "alta-active-research-v4"
 CANONICAL_SOURCE_LOCATOR_PATTERN = r"^(?:https|fixture|alta)://[^/?#\s]+(?:/[^?#\s]*)?$"
 
@@ -95,6 +101,8 @@ class FrozenScoutInput(BaseModel):
     )
     research_incentives: tuple[ResearchIncentive, ...] = Field(default=(), max_length=4)
     opportunity_drive: OpportunityDrive = Field(default_factory=OpportunityDrive)
+    market_research_agenda: MarketResearchAgenda | None = None
+    portfolio_research_mandate: PortfolioResearchMandate | None = None
     expectation_posture: Literal["available", "proxy_only", "unavailable"]
 
     @field_validator("known_at")
@@ -166,16 +174,23 @@ class FrozenScoutInput(BaseModel):
             raise ValueError("Opportunity drive cites an unknown Trader Mind")
         if not set(incentive_ids).issubset(scout_ids):
             raise ValueError("research incentive cites an unknown Trader Mind")
+        if (
+            self.market_research_agenda is not None
+            and self.market_research_agenda.known_at != self.known_at
+        ):
+            raise ValueError("market research agenda must share the frozen wake time")
+        if (
+            self.portfolio_research_mandate is not None
+            and self.portfolio_research_mandate.known_at != self.known_at
+        ):
+            raise ValueError(
+                "portfolio research mandate must share the frozen wake time"
+            )
         if len(set(drive.priority_opportunity_ids)) != len(
             drive.priority_opportunity_ids
         ) or len(set(drive.follow_up_scout_ids)) != len(drive.follow_up_scout_ids):
             raise ValueError("Opportunity drive assignments must be unique")
-        encoded = json.dumps(
-            self.model_dump(mode="json"),
-            ensure_ascii=False,
-            separators=(",", ":"),
-            sort_keys=True,
-        ).encode()
+        encoded = canonical_json_bytes(self.model_dump(mode="json"))
         if len(encoded) > MAX_FROZEN_INPUT_BYTES:
             raise ValueError("frozen input exceeds the hard byte budget")
         return self
@@ -210,6 +225,11 @@ class FrozenScoutInput(BaseModel):
                     if item.scout_id == scout_id
                 ),
                 "opportunity_drive": scoped.opportunity_drive.for_scout(scout_id),
+                "market_research_agenda": (
+                    scoped.market_research_agenda.for_scout(scout_id)
+                    if scoped.market_research_agenda is not None
+                    else None
+                ),
             }
         )
 
@@ -423,15 +443,12 @@ def persisted_scout_snapshot_bytes(
     scout: ScoutConfig, frozen_input: FrozenScoutInput
 ) -> int:
     return len(
-        json.dumps(
+        canonical_json_bytes(
             {
                 "scout": scout.model_dump(mode="json"),
                 "input": frozen_input.model_dump(mode="json"),
-            },
-            ensure_ascii=False,
-            separators=(",", ":"),
-            sort_keys=True,
-        ).encode()
+            }
+        )
     )
 
 
@@ -453,21 +470,77 @@ def fit_frozen_input_for_scout(
         )
         if not durable_too_large and not prompt_too_large:
             return fitted
-        if fitted.prior_opportunities:
+        priority_ids = set(fitted.opportunity_drive.priority_opportunity_ids)
+        removable_prior = next(
+            (
+                index
+                for index in range(len(fitted.prior_opportunities) - 1, -1, -1)
+                if fitted.prior_opportunities[index].opportunity_id not in priority_ids
+            ),
+            None,
+        )
+        if removable_prior is not None:
             fitted = fitted.model_copy(
-                update={"prior_opportunities": fitted.prior_opportunities[:-1]}
+                update={
+                    "prior_opportunities": (
+                        fitted.prior_opportunities[:removable_prior]
+                        + fitted.prior_opportunities[removable_prior + 1 :]
+                    )
+                }
             )
             continue
-        if prompt_too_large and fitted.trader_mind_memories:
+        # A prioritized parent and its open question are the minimum useful
+        # follow-up context. Shed lower-priority process context before losing it.
+        if (priority_ids or prompt_too_large) and fitted.trader_mind_memories:
             fitted = fitted.model_copy(update={"trader_mind_memories": ()})
             continue
-        if prompt_too_large and fitted.alpha_feedback:
+        if (priority_ids or prompt_too_large) and fitted.alpha_feedback:
             fitted = fitted.model_copy(
                 update={"alpha_feedback": (), "research_incentives": ()}
             )
             continue
+        if fitted.portfolio_research_mandate is not None:
+            fitted = fitted.model_copy(update={"portfolio_research_mandate": None})
+            continue
+        if fitted.market_research_agenda is not None:
+            fitted = fitted.model_copy(update={"market_research_agenda": None})
+            continue
         if fitted.evidence:
             fitted = fitted.model_copy(update={"evidence": fitted.evidence[:-1]})
+            continue
+        if fitted.prior_opportunities:
+            retained = fitted.prior_opportunities[:-1]
+            retained_ids = {item.opportunity_id for item in retained}
+            retained_priorities = tuple(
+                item
+                for item in fitted.opportunity_drive.priority_opportunity_ids
+                if item in retained_ids
+            )
+            drive_update = {"priority_opportunity_ids": retained_priorities}
+            if not retained_priorities:
+                drive_update.update(
+                    {
+                        "assigned_mode": "explore",
+                        "follow_up_scout_ids": (),
+                        "posture": (
+                            "expand_search"
+                            if fitted.opportunity_drive.route_change_required
+                            else "balanced"
+                        ),
+                        "directive": (
+                            "Continue independent discovery because the bounded "
+                            "Scout snapshot could not retain a parent Opportunity."
+                        ),
+                    }
+                )
+            fitted = fitted.model_copy(
+                update={
+                    "prior_opportunities": retained,
+                    "opportunity_drive": fitted.opportunity_drive.model_copy(
+                        update=drive_update
+                    ),
+                }
+            )
             continue
         raise ValueError("Trader Mind state cannot fit durable and prompt budgets")
 
@@ -760,6 +833,34 @@ def _validate_candidate(
         )
     if spec.budget.require_active_research and not value.thesis_pillars:
         raise ValueError("active Candidate requires a falsifiable thesis pillar")
+    if spec.budget.require_active_research:
+        decision_fields = (
+            "entity_key",
+            "event_key",
+            "catalyst_key",
+            "observed_change",
+            "mechanism",
+            "direction",
+            "first_rejection",
+            "prediction",
+            "beneficiary_path",
+            "disconfirming_evidence",
+            "next_test",
+            "investability",
+            "freshness_at",
+        )
+        missing = tuple(
+            field for field in decision_fields if getattr(value, field) in (None, "")
+        )
+        if missing:
+            raise ValueError(
+                "active Candidate is not decision-complete: " + ",".join(missing)
+            )
+        if (
+            value.freshness_at is not None
+            and value.freshness_at > spec.frozen_input.known_at
+        ):
+            raise ValueError("active Candidate freshness_at exceeds the frozen wake")
     if (
         spec.scout.scout_id == "expectation_gap_scout"
         and spec.frozen_input.expectation_posture == "unavailable"
@@ -813,9 +914,12 @@ def build_prompt(spec: ScoutRunSpec) -> str:
             "Treat alpha_feedback as point-in-time, non-Evidence process feedback. Before its mature flag is true, use only observation coverage and do not infer skill. After maturity, use it to challenge or diversify the research process, never as proof of a market claim, an automatic model weight, a rank override, or a capital instruction.",
             "Treat research_incentives as a revocable research-only contract, never as Evidence, confidence, rank, capital, or permission to trade. A future or earned bonus depends only on maturity-gated, cost-adjusted benchmark Alpha after positions close. Candidate count, verbosity, confidence, raw profit, and turnover earn nothing. Use an earned budget to test more independent evidence, not to lower standards or manufacture activity.",
             "Treat opportunity_drive as deterministic process allocation, never as Evidence, conviction, rank, or permission to trade. It changes research effort, not acceptance standards.",
+            "Treat market_research_agenda as a deterministic completed-bar screen and research locator, never as Evidence, a sourced fact, confidence, rank, direction, or permission to trade. If one seed is assigned, independently re-fetch the market observation, test its strongest mechanical explanation, and either establish a cited causal/expectation wedge or return no_op. Never cite the agenda itself.",
+            "Treat portfolio_research_mandate as frozen, non-Evidence book context. Use it to test independent causal payoffs and avoid reinforcing saturated Alpha or factor buckets, but never force a diversification idea, lower evidence standards, infer a market fact, rank an Opportunity, choose an instrument, or allocate capital from it.",
             "Cite only evidence_ids present in frozen_input, or exact tool evidence refs returned in this turn.",
             "For tool_evidence_refs, copy the exact HTTPS source URL visible in the tool result, including any public query or fragment; never reconstruct, clean, concatenate, or repeat it. The runtime validates and canonicalizes it. Copy tool_call_id only when it is visible in the tool result; otherwise set it to an empty string and the runtime will deterministically bind the canonical locator to a successful internal call ID. If no exact visible URL exists, omit the ref and return no_op unless frozen evidence alone supports the Candidate.",
             "For a Candidate, explicitly describe entity/event/catalyst identity, observed change, causal mechanism, direction, prediction, investability, and freshness when the evidence supports them.",
+            "Production Candidates must be decision-complete: entity_key, event_key, catalyst_key, observed_change, mechanism, direction, first_rejection, prediction, beneficiary_path, disconfirming_evidence, next_test, investability, and freshness_at may not be empty. Return no_op when the evidence cannot support any one of them.",
             "For a Candidate, beneficiary_path must trace the changed fact through a measurable operating, estimate, cash-flow, positioning, or forced-flow channel to the listed security; name the denominator and timing rather than merely naming a theme.",
             "For a Candidate, disconfirming_evidence must state the strongest sourced rival explanation or the strongest evidence found for why consensus may be right. next_test must name the next observable fact, source, or market condition that should upgrade, reject, or re-underwrite the idea.",
             "For a Candidate, return one to three thesis_pillars. Each pillar is one causal claim with a concrete observable, separate confirmation and invalidation conditions, and expected_by_days no later than horizon. These are frozen research hypotheses, not risk limits. Do not invent numeric thresholds that the sources do not support.",
@@ -824,6 +928,7 @@ def build_prompt(spec: ScoutRunSpec) -> str:
             "Think like an experienced public-equity portfolio manager looking for a non-consensus, time-bounded, executable edge rather than a news summary.",
             "Do not default to news. Search for changes in expectations, positioning, flows, volatility, market structure, filings, operations, pricing, supply chains, policy transmission, public software, and other auditable artifacts appropriate to this Mind.",
             "Use tools as an adaptive research workspace: form a question, search, inspect the strongest source, test a rival explanation, and stop when the bounded evidence can or cannot support an investable prediction.",
+            "Use the bounded research budget in stages: locate one differentiated anomaly, verify the strongest primary source, test whether price or expectations already absorbed it, then spend any remaining call on the strongest rival explanation. Do not open several shallow search branches.",
             "Follow this Mind's research_sequence adaptively. When budget.require_active_research is true, make at least one call to an allowed active research tool even when frozen evidence is present; passive input alone is insufficient.",
             "Search broadly enough to test both the proposed edge and why consensus may be correct. Public social content is a discovery and positioning signal, not self-authenticating evidence.",
             "Use expectation to state what appears priced in, variant_wedge to state why that expectation may be wrong, and why_now to name the catalyst or information transition.",

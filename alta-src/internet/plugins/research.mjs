@@ -116,9 +116,12 @@ async function research(service, args, options) {
   });
   return {
     queries,
-    searches,
-    sources: sourceList,
+    // Keep fetched primary-source text ahead of discovery metadata. The MCP
+    // boundary is byte-bounded, so placing pages last made a valid research
+    // pack look empty whenever verbose search metadata consumed the preview.
     pages,
+    sources: sourceList,
+    searches,
     failures,
     partial: failures.length > 0,
   };

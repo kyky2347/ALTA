@@ -19,7 +19,7 @@ from .expression import contract_hash
 from .foundry import CandidateDraft, OpportunityDraft, deduplicate
 from .mind_worker import MindClient
 from .opportunity_registry import OpportunityRegistry
-from .ranking import RankingBook, build_ranking_book
+from .ranking import RankingBook, build_ranking_book, pre_assessment_rejections
 from .ranking_store import RankingRepository
 from .research_diligence import ResearchDiligence
 from .scout_batch import MindWorker
@@ -104,6 +104,11 @@ class MvpResearchFlow:
         for preliminary_position, opportunity in enumerate(
             sorted(opportunities, key=lambda item: item.opportunity_id), start=1
         ):
+            if self.agentic_deliberator and pre_assessment_rejections(opportunity):
+                # Preserve the Opportunity for bounded follow-up research, but do not
+                # spend two private model calls on a thesis that deterministic gates
+                # already know cannot enter the ranking book.
+                continue
             try:
                 pair = (
                     self.agentic_deliberator.private_pair(

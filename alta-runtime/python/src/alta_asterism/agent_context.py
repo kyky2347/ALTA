@@ -1,4 +1,3 @@
-import json
 from collections.abc import Sequence
 from decimal import Decimal
 from typing import Any
@@ -6,18 +5,15 @@ from typing import Any
 from .deliberation import PrivateAssessment
 from .foundry import OpportunityDraft
 from .scouts import EvidenceSnapshot
-
-# Keep a serialization safety margin below the durable 8,192-byte DB bound.
-MAX_ROLE_FROZEN_INPUT_BYTES = 8_000
+from .context_budget import (
+    MAX_ROLE_FROZEN_INPUT_BYTES,
+    bounded_utf8,
+    json_size,
+)
 
 
 def bounded_text(value: str | None, maximum_bytes: int) -> str | None:
-    if value is None:
-        return None
-    encoded = value.encode()
-    if len(encoded) <= maximum_bytes:
-        return value
-    return encoded[:maximum_bytes].decode(errors="ignore").rstrip()
+    return bounded_utf8(value, maximum_bytes)
 
 
 def opportunity_context(
@@ -154,14 +150,7 @@ def assessment_context(assessment: PrivateAssessment) -> dict[str, Any]:
 
 
 def frozen_input_size(value: dict[str, Any]) -> int:
-    return len(
-        json.dumps(
-            value,
-            ensure_ascii=False,
-            sort_keys=True,
-            default=str,
-        ).encode()
-    )
+    return json_size(value)
 
 
 def require_bounded_frozen_input(value: dict[str, Any]) -> None:

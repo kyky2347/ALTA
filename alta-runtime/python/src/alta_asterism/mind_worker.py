@@ -322,8 +322,15 @@ class SdkAppServerMindClient:
                 },
                 cwd=str(self._agent_cwd),
                 developer_instructions=(
-                    "Operate read-only. Use only the supplied Scout territory and "
-                    "return the requested structured output."
+                    "Operate read-only. Use only the supplied Scout territory. "
+                    + (
+                        "Before answering, you MUST call at least one enabled ALTA "
+                        "active-research tool; do not return a placeholder or no-op "
+                        "without making that tool call. "
+                        if spec.budget.require_active_research
+                        else ""
+                    )
+                    + "Return only the requested structured output."
                 ),
                 ephemeral=True,
                 model=self._model_id,

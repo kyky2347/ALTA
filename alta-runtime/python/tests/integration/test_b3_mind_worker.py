@@ -219,6 +219,34 @@ class ParallelNoOpClient:
         self.closed = True
 
 
+class InvalidThenValidClient:
+    def __init__(self) -> None:
+        self.calls: dict[str, int] = {}
+
+    def run(self, spec, _prompt: str, _schema: dict) -> ModelTurn:
+        count = self.calls.get(spec.scout.scout_id, 0) + 1
+        self.calls[spec.scout.scout_id] = count
+        response = (
+            {"kind": "candidate", "title": "Incomplete"}
+            if spec.scout.scout_id == "market_dislocation_scout" and count == 1
+            else {
+                "kind": "no_op",
+                "reason": "The bounded fixture does not support a Candidate.",
+                "evidence_ids": [],
+            }
+        )
+        return ModelTurn(
+            final_response=json.dumps(response),
+            thread_id=f"thread_{spec.scout.scout_id}_{count}",
+            turn_id=f"turn_{spec.scout.scout_id}_{count}",
+            total_tokens=100,
+            tools=(),
+            usage={"total_tokens": 100},
+            latency_ms=1,
+            completed_at=spec.frozen_input.known_at,
+        )
+
+
 def test_sdk_requests_one_no_tool_finalization_after_empty_provider_response(
     empty_b3_database: str, tmp_path: Path
 ) -> None:
@@ -362,7 +390,7 @@ def test_fake_app_server_runs_four_scouts_with_sdk_and_persists_provenance(
     assert all(
         row[5:9]
         == (
-            "alpha-trader-v11",
+            "alpha-trader-v14",
             "alta-active-research-v4",
             "fixture",
             "fixture-model",
@@ -490,28 +518,25 @@ def test_invalid_structured_output_fails_one_scout_without_candidate_insert(
             """SELECT status, error_code, thread_id, turn_id
             FROM research.run WHERE role = 'market_dislocation_scout'"""
         ).fetchone()
-        failure_artifact = connection.execute(
+        failure_artifacts = connection.execute(
             """SELECT a.content FROM research.run_artifact a
             JOIN research.run r ON r.id = a.run_id
             WHERE r.role = 'market_dislocation_scout'
-              AND a.artifact_kind = 'failure'"""
-        ).fetchone()[0]
+              AND a.artifact_kind = 'failure' ORDER BY a.version"""
+        ).fetchall()
     assert failed_run == (
         "failed",
         "invalid_output",
-        "thread_2",
-        "turn_2",
+        "thread_3",
+        "turn_3",
     )
-    assert failure_artifact["error_type"] == "ValidationError"
-    assert len(failure_artifact["error_fingerprint"]) == 64
-    assert "Missing required fields" in failure_artifact["bounded_final_response"]
-
-    retry_command, retry_log = fake_command(tmp_path)
-    with client_for(tmp_path, retry_command) as client:
-        retried = worker(database, client).run_batch("batch_invalid", frozen_input)
-
-    assert all(item.status == "succeeded" for item in retried)
-    assert [item["method"] for item in read_log(retry_log)].count("turn/start") == 1
+    assert len(failure_artifacts) == 2
+    assert all(item[0]["error_type"] == "ValidationError" for item in failure_artifacts)
+    assert all(len(item[0]["error_fingerprint"]) == 64 for item in failure_artifacts)
+    assert all(
+        "Missing required fields" in item[0]["bounded_final_response"]
+        for item in failure_artifacts
+    )
     with database.connect() as connection:
         assert connection.execute(
             """SELECT attempt_count FROM research.run
@@ -522,7 +547,37 @@ def test_invalid_structured_output_fails_one_scout_without_candidate_insert(
             FROM research.run_artifact a JOIN research.run r ON r.id = a.run_id
             WHERE r.role = 'market_dislocation_scout'
               AND a.artifact_kind = 'failure'"""
-        ).fetchone() == ([1],)
+        ).fetchone() == ([1, 2],)
+
+
+def test_invalid_structured_output_gets_one_bounded_fresh_retry(
+    empty_b3_database: str,
+) -> None:
+    database = Database(empty_b3_database)
+    database.upgrade()
+    frozen_input = seed_frozen_input(database)
+    client = InvalidThenValidClient()
+
+    outcomes = worker(database, client).run_batch("batch_invalid_retry", frozen_input)
+
+    assert all(item.status == "succeeded" for item in outcomes)
+    assert client.calls["market_dislocation_scout"] == 2
+    assert all(
+        count == 1
+        for scout_id, count in client.calls.items()
+        if scout_id != "market_dislocation_scout"
+    )
+    with database.connect() as connection:
+        assert connection.execute(
+            """SELECT attempt_count FROM research.run
+            WHERE role = 'market_dislocation_scout'"""
+        ).fetchone() == (2,)
+        assert connection.execute(
+            """SELECT count(*) FROM research.run_artifact a
+            JOIN research.run r ON r.id = a.run_id
+            WHERE r.role = 'market_dislocation_scout'
+              AND a.artifact_kind = 'failure'"""
+        ).fetchone() == (1,)
 
 
 def test_tool_discovery_is_promoted_to_append_only_evidence_before_candidate(

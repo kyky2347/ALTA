@@ -508,6 +508,11 @@ test("research and archive plugins compose service capabilities", async () => {
   );
   assert.equal(research.sources.length, 1);
   assert.equal(research.pages.length, 1);
+  assert.deepEqual(Object.keys(research).slice(0, 3), [
+    "queries",
+    "pages",
+    "sources",
+  ]);
 
   const archive = await executeInternetTool(
     service,

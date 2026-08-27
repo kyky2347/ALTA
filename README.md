@@ -25,6 +25,17 @@ Shadow ledger.
 Replay / Shadow · **Broker boundary:** explicit Tiger Paper acceptance only ·
 **Real-world Alpha:** unproven
 
+**Local development state:** institutional book intelligence and a replayable
+market-research funnel are integrated. Completed daily bars can create at most
+one non-Evidence anomaly question per Trader Mind; each Mind must independently
+re-verify the observation and causal wedge. Aggregate stress, Alpha-source, and
+shared-catalyst concentration constrain construction, and full-book rotation must improve both
+expected Alpha dollars and Alpha per unit of stress capital. The current local
+tree also centralizes every Agent context budget, gives malformed Scout output
+one fresh bounded attempt, backs off degraded optional connectors, and refuses
+to spend private-assessment tokens on Opportunities that deterministic gates
+already reject.
+
 [Quick start](#quick-start) · [Architecture](docs/architecture/overview.md) ·
 [Operations](docs/operations/autonomous-shadow.md) ·
 [Research scope](docs/research-scope.md) · [Security](SECURITY.md) ·
@@ -76,10 +87,13 @@ trade structure cannot rescue weak evidence.
 flowchart TB
   subgraph discover["1 · Discover"]
     sources["Bounded public, market, filing,<br/>social, academic, and news sources"]
+    screen["Completed-bar research funnel<br/>price · volume · relative · breadth"]
+    mandate["Frozen portfolio research mandate<br/>stress · factor · Alpha-source · shared-catalyst crowding"]
     minds["4 active Trader Minds<br/>different Alpha archetypes and tool routes"]
     thesis["Frozen Thesis Ledger<br/>observable · confirm · invalidate · due"]
     registry["Opportunity Foundry and registry<br/>identity · dedup · refresh · open questions"]
-    sources --> minds --> thesis --> registry
+    sources --> screen -. "non-Evidence question" .-> minds --> thesis --> registry
+    mandate -. "non-Evidence context" .-> minds
   end
 
   subgraph decide["2 · Challenge and express"]
@@ -105,6 +119,7 @@ flowchart TB
   feedback -. "later frozen wake" .-> minds
   state[("PostgreSQL + Redis")] <--> registry
   state <--> ledger
+  state --> mandate
   harness["Pinned Codex App Server harness"] -. "isolated structured turns" .-> minds
   harness -.-> assess
   harness -.-> implement
@@ -119,17 +134,18 @@ no Agent receives an order tool.
 
 ### The specialized team
 
-| Role                    | Mandate                                                                                   | Authority boundary                                               |
-| ----------------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| Change / event Mind     | Find revisions, operating artifacts, and event propagation                                | Read-only research; cannot rank or trade                         |
-| Market-dislocation Mind | Find price, volatility, flow, breadth, and relative-value anomalies                       | Must identify a falsifiable non-technical mechanism              |
-| Causal-policy Mind      | Trace official policy, macro, input-cost, and supply-chain transmission                   | Must map issuer-level exposure and timing                        |
-| Expectation-gap Mind    | Find measurable gaps between priced expectations and emerging fundamentals                | Must seek counterevidence and an observable resolution path      |
-| Two private Assessors   | Underwrite independent scenario distributions, base rates, variants, and first rejections | Locked views; no instrument selection                            |
-| Moderator and ranker    | Reconcile disagreements, preserve uncertainty, and admit only decision-grade edge         | Moderator is an Agent; rank mechanics are deterministic          |
-| Implementation PM       | Compare direct stock, ETF/proxy, option, and `Wait`                                       | Proposes a bounded slate; cannot submit orders                   |
-| Independent Auditor     | Reclassify intended Alpha, systematic exposures, basis risk, and hedge posture            | Different model from the proposer; may select only one or `Wait` |
-| Position Monitor        | Review frozen thesis pillars against newer point-in-time evidence                         | Appends reviews; cannot rewrite original underwriting            |
+| Role                    | Mandate                                                                                                                           | Authority boundary                                                    |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Change / event Mind     | Find revisions, operating artifacts, and event propagation                                                                        | Read-only research; cannot rank or trade                              |
+| Market-dislocation Mind | Find price, volatility, flow, breadth, and relative-value anomalies                                                               | Must identify a falsifiable non-technical mechanism                   |
+| Causal-policy Mind      | Trace official policy, macro, input-cost, and supply-chain transmission                                                           | Must map issuer-level exposure and timing                             |
+| Expectation-gap Mind    | Find measurable gaps between priced expectations and emerging fundamentals                                                        | Must seek counterevidence and an observable resolution path           |
+| Two private Assessors   | Underwrite independent scenario distributions, base rates, variants, and first rejections                                         | Locked views; no instrument selection                                 |
+| Moderator and ranker    | Reconcile disagreements, preserve uncertainty, and admit only decision-grade edge                                                 | Moderator is an Agent; rank mechanics are deterministic               |
+| Implementation PM       | Compare direct stock, ETF/proxy, option, and `Wait`                                                                               | Proposes a bounded slate; cannot submit orders                        |
+| Independent Auditor     | Reclassify intended Alpha, systematic exposures, basis risk, and hedge posture                                                    | Different model from the proposer; may select only one or `Wait`      |
+| Position Monitor        | Review frozen thesis pillars against newer point-in-time evidence                                                                 | Appends reviews; cannot rewrite original underwriting                 |
+| Portfolio intelligence  | Translate current stress, factor, Alpha-source, and shared-catalyst concentration into a frozen research mandate and capacity map | Deterministic context and limits; cannot manufacture evidence or edge |
 
 The default model team is heterogeneous: DeepSeek V4 Flash handles active
 discovery, DeepSeek V4 Pro handles thesis underwriting and expression, Grok 4.6
@@ -139,18 +155,18 @@ remain external-provider dependencies, not repository guarantees.
 
 ## What is implemented
 
-| Area          | Current capability                                                                                                                                        |
-| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Discovery     | Four concurrent Trader Minds, autonomous tool calls, explore/follow-up allocation, route rotation, no-op support, and bounded process memory              |
-| Evidence      | Raw-first point-in-time records, stable identity, content deduplication, immutable thesis pillars, provenance, and replay                                 |
-| Deliberation  | Private heterogeneous assessment, scenario odds, reference-class base rates, priced-in/variant separation, bounded moderation, and conservative admission |
-| Expression    | Up to three Stock / ETF / Option / Wait hypotheses, real quote or option-chain gates, implementation comparison, and independent audit                    |
-| Portfolio     | Cost deduction, Alpha decay, stress and gross limits, liquidity, shared factor buckets, incumbent replacement hurdle, and pre-intent revalidation         |
-| Learning      | Cost-adjusted SPY-relative Shadow measurement, frozen cohorts, configuration drift, missingness, and maturity-gated performance attribution               |
-| Incentives    | Symmetric, revocable research-budget bonus based only on a conservative forward Alpha bound; no rank, risk, capital, or broker influence                  |
-| Reliability   | Single-owner scheduler, two watchdogs, bounded retries, same-frozen-wake recovery, idempotent transitions, and clean shutdown                             |
-| Observability | Loopback JSON/SSE for runtime, Agent runs, opportunities, debates, expressions, positions, cohorts, and Alpha summaries                                   |
-| Capital       | Disabled by default; isolated CLI-only Tiger Paper acceptance with exact-account binding, one-share limits, and final-flat verification                   |
+| Area          | Current capability                                                                                                                                                                                        |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Discovery     | Four concurrent Trader Minds, autonomous tool calls, a completed-bar anomaly funnel, explore/follow-up allocation, route rotation, a frozen book-aware mandate, no-op support, and bounded process memory |
+| Evidence      | Raw-first point-in-time records, stable identity, content deduplication, immutable thesis pillars, provenance, and replay                                                                                 |
+| Deliberation  | Private heterogeneous assessment, scenario odds, reference-class base rates, priced-in/variant separation, bounded moderation, and conservative admission                                                 |
+| Expression    | Up to three Stock / ETF / Option / Wait hypotheses, real quote or option-chain gates, implementation comparison, and independent audit                                                                    |
+| Portfolio     | Cost deduction, Alpha decay, single-trade and aggregate stress limits, liquidity, gross/factor/Alpha-source/shared-catalyst buckets, stress-efficient capital competition, and pre-intent revalidation    |
+| Learning      | Cost-adjusted SPY-relative Shadow measurement, frozen cohorts, configuration drift, missingness, and maturity-gated performance attribution                                                               |
+| Incentives    | Symmetric, revocable research-budget bonus based only on a conservative forward Alpha bound; no rank, risk, capital, or broker influence                                                                  |
+| Reliability   | Single-owner scheduler, two watchdogs, canonical context budgets, one auditable fresh Scout retry, connector backoff, same-frozen-wake recovery, idempotent transitions, and clean shutdown               |
+| Observability | Loopback JSON/SSE for runtime, Agent runs, opportunities, debates, expressions, positions, cohorts, and Alpha summaries                                                                                   |
+| Capital       | Disabled by default; isolated CLI-only Tiger Paper acceptance with exact-account binding, one-share limits, and final-flat verification                                                                   |
 
 ### Where the research edge is intended to come from
 
@@ -169,6 +185,14 @@ social positioning. The system is designed to look for:
 
 These are research hypotheses. ALTA does not claim that the architecture has
 produced persistent out-of-sample Alpha.
+
+When Massive discovery is explicitly enabled, ALTA reuses the bounded daily-bar
+ingestion to screen completed sessions for unusual relative return, price-volume
+behavior, range expansion, and cross-sectional breadth/dispersion. The screen
+does not emit a Candidate or direction. It assigns at most one question to each
+orthogonal Mind, excludes the current incomplete session and future-known rows,
+and requires fresh finance data plus causal and rival-explanation research
+before the Mind may return a cited Candidate.
 
 ## Quick start
 
@@ -277,18 +301,19 @@ does not expose an order API.
 
 ## Verification status
 
-The publication baseline passes:
+The current local working tree passes:
 
-| Gate                     |                                                                     Result |
-| ------------------------ | -------------------------------------------------------------------------: |
-| Node gateway / harness   |                                                                  141 tests |
-| Opportunity OS           |                                                                  224 tests |
-| Isolated capital package |                                                                   25 tests |
-| Deterministic lifecycle  | 3 Candidates → 3 Opportunities → 1 audited Shadow position → observed exit |
-| Replay                   |         `16be618841b4ced276fea1c3297bd0a934093b995bce50bfadad0b74e9f9816c` |
-| Accelerated soak         |                              14 cycles, zero failures, zero manual repairs |
-| Foreground service       |                           `live` and `ready`, capital disabled, clean stop |
-| Secret scan              |                      Tracked source and publication history required clean |
+| Gate                      |                                                                     Result |
+| ------------------------- | -------------------------------------------------------------------------: |
+| Node gateway / harness    |                                                                  141 tests |
+| Opportunity OS            |                                                                  240 tests |
+| Isolated capital package  |                                                                   25 tests |
+| Deterministic lifecycle   | 3 Candidates → 3 Opportunities → 1 audited Shadow position → observed exit |
+| Replay                    |         `16be618841b4ced276fea1c3297bd0a934093b995bce50bfadad0b74e9f9816c` |
+| Accelerated soak          |                              14 cycles, zero failures, zero manual repairs |
+| Foreground service        |                           `live` and `ready`, capital disabled, clean stop |
+| Supervised wall-clock run |   26 completed idle cycles; 3 Opportunities; 0 ranks, positions, or orders |
+| Sensitive-file check      | No credential files or credential-like values found in first-party changes |
 
 The soak advances simulated event time; it is not 24 hours of live wall-clock
 model operation. Engineering verification proves paths and refusal behavior,

@@ -12,6 +12,8 @@ The repository already contains the complete vertical research slice:
 - PostgreSQL and Redis runtime support;
 - point-in-time Raw and Evidence ingestion;
 - four isolated active Trader Minds with bounded per-Mind experience memory;
+- a point-in-time completed-bar anomaly funnel that assigns bounded verification
+  questions without manufacturing Evidence or trade direction;
 - a deterministic per-Scout research-diligence record derived from actual tool
   provenance, source diversity, cross-checking, counterevidence, and next test;
 - deterministic Foundry identity, deduplication, completion, and a durable
@@ -74,40 +76,43 @@ Every stage must preserve these rules:
 
 ## Stage map
 
-| Stage | Objective                                                  | Current state  | Gate                                                          |
-| ----- | ---------------------------------------------------------- | -------------- | ------------------------------------------------------------- |
-| B0    | Publication and secret boundary                            | Complete       | Tracked tree and history scan clean                           |
-| B1    | Typed persistence and read API                             | Complete       | Migration, API, SSE, and restart tests                        |
-| B2    | Raw-first source contracts                                 | Complete       | PIT and degraded-source tests                                 |
-| B3    | Isolated Scout runtime                                     | Complete       | Four bounded independent runs and no-op path                  |
-| B4    | Opportunity Foundry, challenge, and rank                   | Complete       | Reversible identity and deterministic replay                  |
-| B5    | Expression and internal Shadow ledger                      | Complete       | Quote, validation, fill, and accounting tests                 |
-| B6    | One-command deterministic lifecycle                        | Complete       | Demo and replay hashes match                                  |
-| B7    | Autonomous scheduling and recovery                         | Complete       | Single owner, heartbeat, recovery, and SSE                    |
-| B8    | Real adapters, independent audit, and Alpha measurement    | Complete       | Controlled real-data run ends safely                          |
-| B9    | Explicit one-share Tiger Paper lifecycle                   | Complete       | BUY, monitor, SELL, reconcile, and verify flat                |
-| B10   | Host-managed unattended lifecycle                          | Complete       | Boot install, two-level recovery, and clean stop              |
-| B11   | Cross-cycle Opportunity identity and memory                | Complete       | Repeats suppressed; new content refreshes once                |
-| B12   | Frozen forward cohorts and cycle attribution               | Complete       | Drift and missingness are measurable, not hidden              |
-| B13   | Odds-aware underwriting and calibration                    | Complete       | Payoff is explicit; calibration scope is comparable           |
-| B14   | Active Trader Minds and experience memory                  | Complete       | Every Mind searches; memory never becomes Evidence            |
-| B15   | Atomic external credential rotation                        | Complete       | Hidden input, rollback, revision, controlled reload           |
-| B16   | Point-in-time Alpha feedback and attribution               | Complete       | Entry credit frozen; small samples reveal no score            |
-| B17   | Portfolio construction and execution planning              | Complete       | Tightest constraint sizes; mutable book rechecked             |
-| B18   | Alpha lifecycle and active capital rotation                | Complete       | Decay and incumbent hurdle drive idempotent rotation          |
-| B19   | Research diligence and expression tournament               | Complete       | Actual research and payoff alternatives are auditable         |
-| B20   | Autonomous explore/follow-up research loop                 | Complete       | Exact questions close PIT research and learning loops         |
-| B21   | Immutable Thesis Ledger and payoff lineage                 | Complete       | Claims survive expression and append-only monitoring          |
-| B22   | PM decision intelligence and edge half-life                | Complete       | Thesis, security, action, and timing remain distinct          |
-| B23   | Alpha isolation and systematic-risk capacity               | Complete       | Independent purity and shared exposure capacity gate          |
-| B24   | Research-quality and forecast-disagreement discipline      | Complete       | Actual diligence and lower forecast drive decisions           |
-| B25   | Evidence-to-capital integrity and forward Alpha statistics | Complete       | Uncertainty, capital quality, and frozen forecasts bind       |
-| B26   | Rolling Alpha survival and capital governance              | Complete       | Negative evidence throttles; positive evidence never levers   |
-| B27   | Independent decision-edge admission                        | Complete       | Every view beats base rate; conservative Alpha stays positive |
-| B28   | Delayed symmetric research incentives                      | Complete       | Mature conservative Alpha can earn bounded research only      |
-| F1    | Sustained forward Shadow evidence                          | Next           | 6–12 week sample and documented data quality                  |
-| F2    | Agent and source ablation                                  | Future         | Incremental contribution is statistically credible            |
-| F3    | Unattended or broader Paper rollout                        | Not authorized | New review, operator approval, and kill controls              |
+| Stage | Objective                                                  | Current state  | Gate                                                           |
+| ----- | ---------------------------------------------------------- | -------------- | -------------------------------------------------------------- |
+| B0    | Publication and secret boundary                            | Complete       | Tracked tree and history scan clean                            |
+| B1    | Typed persistence and read API                             | Complete       | Migration, API, SSE, and restart tests                         |
+| B2    | Raw-first source contracts                                 | Complete       | PIT and degraded-source tests                                  |
+| B3    | Isolated Scout runtime                                     | Complete       | Four bounded independent runs and no-op path                   |
+| B4    | Opportunity Foundry, challenge, and rank                   | Complete       | Reversible identity and deterministic replay                   |
+| B5    | Expression and internal Shadow ledger                      | Complete       | Quote, validation, fill, and accounting tests                  |
+| B6    | One-command deterministic lifecycle                        | Complete       | Demo and replay hashes match                                   |
+| B7    | Autonomous scheduling and recovery                         | Complete       | Single owner, heartbeat, recovery, and SSE                     |
+| B8    | Real adapters, independent audit, and Alpha measurement    | Complete       | Controlled real-data run ends safely                           |
+| B9    | Explicit one-share Tiger Paper lifecycle                   | Complete       | BUY, monitor, SELL, reconcile, and verify flat                 |
+| B10   | Host-managed unattended lifecycle                          | Complete       | Boot install, two-level recovery, and clean stop               |
+| B11   | Cross-cycle Opportunity identity and memory                | Complete       | Repeats suppressed; new content refreshes once                 |
+| B12   | Frozen forward cohorts and cycle attribution               | Complete       | Drift and missingness are measurable, not hidden               |
+| B13   | Odds-aware underwriting and calibration                    | Complete       | Payoff is explicit; calibration scope is comparable            |
+| B14   | Active Trader Minds and experience memory                  | Complete       | Every Mind searches; memory never becomes Evidence             |
+| B15   | Atomic external credential rotation                        | Complete       | Hidden input, rollback, revision, controlled reload            |
+| B16   | Point-in-time Alpha feedback and attribution               | Complete       | Entry credit frozen; small samples reveal no score             |
+| B17   | Portfolio construction and execution planning              | Complete       | Tightest constraint sizes; mutable book rechecked              |
+| B18   | Alpha lifecycle and active capital rotation                | Complete       | Decay and incumbent hurdle drive idempotent rotation           |
+| B19   | Research diligence and expression tournament               | Complete       | Actual research and payoff alternatives are auditable          |
+| B20   | Autonomous explore/follow-up research loop                 | Complete       | Exact questions close PIT research and learning loops          |
+| B21   | Immutable Thesis Ledger and payoff lineage                 | Complete       | Claims survive expression and append-only monitoring           |
+| B22   | PM decision intelligence and edge half-life                | Complete       | Thesis, security, action, and timing remain distinct           |
+| B23   | Alpha isolation and systematic-risk capacity               | Complete       | Independent purity and shared exposure capacity gate           |
+| B24   | Research-quality and forecast-disagreement discipline      | Complete       | Actual diligence and lower forecast drive decisions            |
+| B25   | Evidence-to-capital integrity and forward Alpha statistics | Complete       | Uncertainty, capital quality, and frozen forecasts bind        |
+| B26   | Rolling Alpha survival and capital governance              | Complete       | Negative evidence throttles; positive evidence never levers    |
+| B27   | Independent decision-edge admission                        | Complete       | Every view beats base rate; conservative Alpha stays positive  |
+| B28   | Delayed symmetric research incentives                      | Complete       | Mature conservative Alpha can earn bounded research only       |
+| B29   | Book-aware research and stress-efficient capital           | Complete       | Frozen mandate, aggregate stress, source capacity, rotation QC |
+| B30   | Completed-bar research-priority funnel                     | Local complete | PIT screen questions are replayable and cannot bypass evidence |
+| B31   | Shared catalyst-risk ledger                                | Local complete | Cross-ticker event crowding binds research and entry capacity  |
+| F1    | Sustained forward Shadow evidence                          | Next           | 6–12 week sample and documented data quality                   |
+| F2    | Agent and source ablation                                  | Future         | Incremental contribution is statistically credible             |
+| F3    | Unattended or broader Paper rollout                        | Not authorized | New review, operator approval, and kill controls               |
 
 ## B0 — publication and safety boundary
 
@@ -863,6 +868,94 @@ channel
 ([Denison et al., arXiv 2406.10162](https://arxiv.org/abs/2406.10162)). The
 research bonus therefore remains small, symmetric, outcome-delayed, and outside
 all capital and execution controls.
+
+## B29 — book-aware research and stress-efficient capital
+
+Objective: make discovery and capital competition aware of the existing book
+without turning portfolio context into market Evidence or asking Agents to
+optimize deterministic risk limits.
+
+Implemented controls in the local development tree:
+
+- every live point-in-time wake freezes a compact portfolio research mandate
+  alongside Evidence, Mind memory, open questions, and incentives;
+- the mandate reports book posture, gross and stress bps, saturated Alpha
+  sources and systematic exposures, and up to three underrepresented search
+  directions;
+- the prompt contract explicitly treats that mandate as non-Evidence context:
+  it may encourage an independent causal payoff, but cannot lower standards,
+  force a diversification idea, rank an Opportunity, choose an instrument, or
+  allocate capital;
+- portfolio construction now applies both aggregate stress-loss capacity and
+  per-Alpha-source notional capacity in the same tightest-constraint calculation
+  used for single-trade loss, gross, liquidity, and systematic exposure;
+- the exact stress and source bridge is carried in every new implementation
+  plan and rechecked against the mutable book immediately before an intent;
+- current open-position notional and scaled stress loss feed capital competition;
+  a full-book rotation must clear the incumbent bps hurdle, preserve or improve
+  expected Alpha dollars, and improve expected Alpha per dollar of stress loss;
+- legacy or incomplete risk-capital records fail closed to `Wait` rather than
+  being granted a favorable assumption.
+
+The new limits remain deterministic survival and allocation controls. They do
+not prove an Agent forecast, manufacture return, raise leverage, authorize a
+new instrument, or change the research-only Shadow/Paper boundary.
+
+## B30 — completed-bar research-priority funnel
+
+Objective: turn already captured market observations into a small, auditable
+research queue before expensive Agent work, without converting a technical
+screen into a thesis or trading signal.
+
+Implemented controls in the local development tree:
+
+- only Massive daily Raw rows known by the frozen wake and belonging to a fully
+  completed prior session enter the screen;
+- up to eight sessions per approved symbol produce bounded one- and five-day
+  return, SPY-relative return, volume-ratio, range-ratio, breadth, and dispersion
+  observations;
+- at most one seed is assigned to each orthogonal Trader Mind, preserving both
+  route diversity and independent exploration when no seed clears the screen;
+- every seed states a research question, first smart rejection, and required
+  market, causal-source, and rival-explanation tests;
+- seeds are non-Evidence and cannot be cited, ranked, expressed, or capitalized;
+  a Trader Mind must re-fetch the observation and bind any Candidate to current
+  frozen or tool-collected Evidence;
+- the full agenda has a point-in-time snapshot hash, survives same-wake recovery,
+  and is reprojected from PostgreSQL to reject tampering;
+- incomplete current-session bars, future-known rows, stale revisions, invalid
+  prices, thin history, and weak anomalies create no seed.
+
+This stage improves research coverage and prioritization. It is not a technical
+strategy, a backtest, a recommendation, or evidence that the screen forecasts
+returns.
+
+## B31 — shared catalyst-risk ledger
+
+Objective: prevent several superficially different securities from consuming
+independent risk budgets when their payoff depends on the same underlying
+catalyst.
+
+Implemented controls in the local development tree:
+
+- every open Shadow position is joined back to its immutable Opportunity
+  binding and projected into a normalized catalyst bucket;
+- missing historical lineage is assigned to `legacy-unclassified`, never to an
+  apparently clean independent bucket;
+- the frozen portfolio research mandate names saturated catalyst clusters as
+  non-Evidence context, so Trader Minds can search for genuinely independent
+  payoffs without treating diversification pressure as proof;
+- the portfolio constructor adds catalyst remaining capacity to the same
+  tightest-constraint calculation used for loss, gross, stress, Alpha source,
+  systematic exposure, and exit liquidity;
+- every ready plan carries the exact catalyst key and before/limit/after bridge;
+- immediately before an entry intent, the live book is reconstructed and the
+  catalyst limit is checked again, preventing a concurrent or later position
+  from making a previously valid plan unsafe.
+
+This is a deterministic concentration control. It does not estimate statistical
+correlation, validate the catalyst, increase leverage, or establish that a
+diversified-looking book contains Alpha.
 
 ## F1 — sustained forward Shadow evidence
 

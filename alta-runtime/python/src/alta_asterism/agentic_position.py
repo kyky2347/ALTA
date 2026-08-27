@@ -407,22 +407,44 @@ class AgenticPositionBook:
     ) -> CapitalAllocationDecision:
         with self.database.connect() as connection:
             rows = connection.execute(
-                """SELECT id, position_thesis
-                FROM research.shadow_position
-                WHERE environment = 'shadow' AND status = 'open'
-                ORDER BY opened_at, id"""
+                """SELECT p.id, p.position_thesis,
+                GREATEST(
+                    p.entry_price,
+                    COALESCE(
+                        (SELECT (event.payload->'observation'->'quote'->>'ask')::numeric
+                         FROM ops.event event
+                         WHERE event.aggregate_id = p.id
+                           AND event.environment = 'shadow'
+                           AND event.event_type = 'position.monitored'
+                         ORDER BY event.sequence DESC LIMIT 1),
+                        p.entry_price
+                    )
+                ) * p.quantity
+                FROM research.shadow_position p
+                WHERE p.environment = 'shadow' AND p.status = 'open'
+                ORDER BY p.opened_at, p.id"""
             ).fetchall()
         incumbents = []
-        for position_id, raw_thesis in rows:
+        for position_id, raw_thesis, current_notional in rows:
             thesis = PositionThesis.model_validate(raw_thesis)
             implementation = thesis.implementation_plan
             expected_alpha = None
+            estimated_stress_loss = None
             if implementation is not None:
                 expected_alpha = (
                     implementation.alpha_clock.time_adjusted_expected_net_alpha_bps
                     if implementation.alpha_clock is not None
                     else implementation.expected_net_alpha_bps
                 )
+                if (
+                    implementation.target_notional > 0
+                    and implementation.estimated_stress_loss > 0
+                ):
+                    estimated_stress_loss = (
+                        implementation.estimated_stress_loss
+                        * Decimal(current_notional)
+                        / implementation.target_notional
+                    )
             incumbents.append(
                 IncumbentAlpha(
                     position_id=position_id,
@@ -430,6 +452,8 @@ class AgenticPositionBook:
                     time_exit_at=thesis.time_exit_at,
                     expected_net_alpha_bps_at_entry=expected_alpha,
                     replacement_hurdle_bps=thesis.better_opportunity_min_bps,
+                    current_notional=Decimal(current_notional),
+                    estimated_stress_loss=estimated_stress_loss,
                 )
             )
         return allocate_capital(
@@ -437,6 +461,11 @@ class AgenticPositionBook:
             incumbents=tuple(incumbents),
             max_open_positions=self.max_open_positions,
             known_at=known_at,
+            min_efficiency_improvement=(
+                self.portfolio_constructor.policy.min_rotation_efficiency_improvement
+                if self.portfolio_constructor is not None
+                else Decimal("0.10")
+            ),
         )
 
     def record_capital_decision(

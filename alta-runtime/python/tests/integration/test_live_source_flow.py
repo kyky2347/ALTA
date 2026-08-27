@@ -1,3 +1,4 @@
+import hashlib
 import os
 import json
 import threading
@@ -95,6 +96,8 @@ def test_database_source_flow_normalizes_raw_and_enforces_point_in_time(
     assert [item.raw_id for item in frozen.evidence] == ["raw_known"]
     assert frozen.evidence[0].source_locator == "https://fixture.invalid/filing"
     assert frozen.expectation_posture == "available"
+    assert frozen.portfolio_research_mandate is not None
+    assert frozen.portfolio_research_mandate.posture == "empty_book"
     assert postures == {"finlight": "healthy"}
     assert recovered.evidence == frozen.evidence
     assert repeated.evidence == frozen.evidence
@@ -125,6 +128,86 @@ def test_database_source_flow_allows_autonomous_search_without_seed_evidence(
     assert frozen.evidence == ()
     assert frozen.expectation_posture == "unavailable"
     assert postures == {"durable_database": "degraded"}
+
+
+def test_database_source_flow_freezes_and_validates_market_research_agenda(
+    live_database: str,
+) -> None:
+    database = Database(live_database)
+    database.upgrade()
+    wake_at = datetime(2026, 8, 24, 15, tzinfo=UTC)
+    closes = {
+        "SPY": (100, 100, 101, 101, 102, 103),
+        "AAPL": (100, 100, 100, 100, 101, 112),
+    }
+    with database.connect() as connection:
+        for symbol, values in closes.items():
+            for index, close in enumerate(values):
+                source_key = f"daily:{symbol}:{index}"
+                session = wake_at.date() - timedelta(days=6 - index)
+                connection.execute(
+                    """INSERT INTO research.raw
+                    (id, environment, version, known_at, source, source_key,
+                     content_hash, body)
+                    VALUES (%s,'shadow',1,%s,'massive',%s,%s,%s)""",
+                    (
+                        f"raw_market_agenda_{symbol}_{index}",
+                        wake_at - timedelta(hours=1),
+                        source_key,
+                        hashlib.sha256(source_key.encode()).hexdigest(),
+                        Jsonb(
+                            {
+                                "semanticTimes": {
+                                    "eventAt": datetime.combine(
+                                        session,
+                                        datetime.min.time(),
+                                        tzinfo=UTC,
+                                    ).isoformat()
+                                },
+                                "payload": {
+                                    "symbol": symbol,
+                                    "aggregate": {
+                                        "open": close,
+                                        "high": close * 1.01,
+                                        "low": close * 0.99,
+                                        "close": close,
+                                        "volume": (
+                                            3_000_000
+                                            if symbol == "AAPL" and index == 5
+                                            else 1_000_000
+                                        ),
+                                    },
+                                },
+                            }
+                        ),
+                    ),
+                )
+
+    frozen, _ = DatabaseSourceFlow(database, ("SPY", "AAPL")).schedule_and_wake(
+        "cycle_market_agenda_001", wake_at, {}
+    )
+
+    assert frozen.market_research_agenda is not None
+    assert frozen.market_research_agenda.posture == "screen_ready"
+    assert frozen.market_research_agenda.seeds
+    scoped = frozen.for_scout(
+        "market_dislocation_scout", ("massive_bar", "relative_market_move")
+    )
+    assert len(scoped.market_research_agenda.seeds) == 1
+    repository = ScoutRepository(database)
+    repository.validate_frozen_input(scoped)
+    original_seed = scoped.market_research_agenda.seeds[0]
+    tampered = scoped.model_copy(
+        update={
+            "market_research_agenda": scoped.market_research_agenda.model_copy(
+                update={
+                    "seeds": (original_seed.model_copy(update={"priority_score": 0}),)
+                }
+            )
+        }
+    )
+    with pytest.raises(ValueError, match="market research seed"):
+        repository.validate_frozen_input(tampered)
 
 
 def test_database_source_flow_changes_research_route_after_idle_streak(
@@ -330,6 +413,19 @@ def test_massive_transport_failure_degrades_source_without_aborting_cycle(
     assert payload["reason"] == "connector_error:RuntimeError"
     assert "credential-like" not in json.dumps(payload)
 
+    _, backed_off = flow.schedule_and_wake(
+        "cycle_degraded_002", wake_at + timedelta(seconds=30), {}
+    )
+    assert backed_off["massive_transport"] == "degraded"
+    assert adapter.calls == 1
+    with database.connect() as connection:
+        second_payload = connection.execute(
+            """SELECT payload FROM ops.event
+            WHERE aggregate_id = 'cycle_degraded_002:massive_transport'
+              AND event_type = 'source.posture'"""
+        ).fetchone()[0]
+    assert second_payload["reason"] == "connector_backoff:30s"
+
 
 class FakeRoleClient:
     def __init__(self) -> None:
@@ -410,7 +506,13 @@ class EmptyScoutClient:
     def run(self, spec, _prompt: str, _schema: dict) -> ModelTurn:
         self.calls += 1
         return ModelTurn(
-            final_response=json.dumps({"candidates": []}),
+            final_response=json.dumps(
+                {
+                    "kind": "no_op",
+                    "reason": "No bounded Opportunity is supported.",
+                    "evidence_ids": [],
+                }
+            ),
             thread_id=f"thread_{spec.scout.scout_id}",
             turn_id=f"turn_{spec.scout.scout_id}",
             total_tokens=100,

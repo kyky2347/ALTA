@@ -1,5 +1,6 @@
 import hashlib
-from datetime import datetime
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
@@ -7,13 +8,49 @@ from .alpha_feedback import AlphaFeedbackProjector
 from .b5_runtime import _append_event, _contract_event
 from .contracts import Environment
 from .database import Database
+from .implementation import PortfolioRiskPolicy
 from .investment_thesis import pillar_research_question
 from .massive import MassiveDataset
+from .market_research_projection import MarketResearchAgendaProjector
 from .opportunity_memory import PriorOpportunitySnapshot
-from .research_agenda import build_open_research_questions, build_opportunity_drive
+from .portfolio_construction import PortfolioConstructor
+from .portfolio_intelligence import build_portfolio_research_mandate
+from .research_agenda import (
+    MAX_DRIVE_PRIORITY_OPPORTUNITIES,
+    build_open_research_questions,
+    build_opportunity_drive,
+)
 from .research_incentive import build_research_incentives
 from .scouts import EvidenceSnapshot, FrozenScoutInput
 from .trader_mind import SCOUTS, TraderMindMemory, bounded_mind_summary
+
+
+@dataclass
+class _ConnectorRetryGate:
+    """In-process exponential backoff for optional upstream connectors."""
+
+    failures: int = 0
+    retry_at: datetime | None = None
+
+    def blocked(self, known_at: datetime) -> bool:
+        return self.retry_at is not None and known_at < self.retry_at
+
+    def record(self, known_at: datetime, posture: str) -> None:
+        if posture in {"healthy", "disabled"}:
+            self.failures = 0
+            self.retry_at = None
+            return
+        self.failures = min(self.failures + 1, 6)
+        delay = min(3_600, 60 * 2 ** (self.failures - 1))
+        self.retry_at = known_at + timedelta(seconds=delay)
+
+    def reason(self, known_at: datetime) -> str:
+        remaining = (
+            max(1, int((self.retry_at - known_at).total_seconds()))
+            if self.retry_at is not None
+            else 1
+        )
+        return f"connector_backoff:{remaining}s"
 
 
 def _text_prefix(value: str, maximum_bytes: int = 480) -> str:
@@ -162,6 +199,7 @@ class DatabaseSourceFlow:
         *,
         environment: Environment = Environment.SHADOW,
         max_evidence: int = 8,
+        portfolio_policy: PortfolioRiskPolicy | None = None,
     ) -> None:
         if not 1 <= max_evidence <= 12:
             raise ValueError("live source max_evidence must be between 1 and 12")
@@ -169,6 +207,11 @@ class DatabaseSourceFlow:
         self.universe = universe
         self.environment = environment
         self.max_evidence = max_evidence
+        self.portfolio_policy = portfolio_policy or PortfolioRiskPolicy()
+        self.portfolio_constructor = PortfolioConstructor(
+            database, self.portfolio_policy
+        )
+        self.market_research = MarketResearchAgendaProjector(database)
 
     def schedule_and_wake(
         self,
@@ -208,6 +251,14 @@ class DatabaseSourceFlow:
         alpha_feedback = AlphaFeedbackProjector(self.database).at(
             self.environment, wake_at
         )
+        portfolio_research_mandate = build_portfolio_research_mandate(
+            self.portfolio_constructor.load_state(wake_at),
+            self.portfolio_policy,
+            wake_at,
+        )
+        market_research_agenda = self.market_research.at(
+            self.environment, self.universe, wake_at
+        )
         snapshots = tuple(
             EvidenceSnapshot(
                 evidence_id=row[0],
@@ -238,12 +289,14 @@ class DatabaseSourceFlow:
                     ),
                     scout_ids=tuple(item.scout_id for item in SCOUTS),
                 ),
+                market_research_agenda=market_research_agenda,
                 trader_mind_memories=trader_mind_memories,
                 alpha_feedback=alpha_feedback,
                 research_incentives=build_research_incentives(
                     alpha_feedback,
                     scout_ids=tuple(item.scout_id for item in SCOUTS),
                 ),
+                portfolio_research_mandate=portfolio_research_mandate,
                 expectation_posture=posture,
             ),
             postures,
@@ -304,8 +357,12 @@ class DatabaseSourceFlow:
                 WHERE lower(r.source) LIKE '%%fixture%%'
                    OR coalesce(r.body->>'fixture','false') = 'true'
               )
-            ORDER BY o.known_at DESC, o.id LIMIT 4""",
-            (self.environment.value, wake_at),
+            ORDER BY o.known_at DESC, o.id LIMIT %s""",
+            (
+                self.environment.value,
+                wake_at,
+                MAX_DRIVE_PRIORITY_OPPORTUNITIES,
+            ),
         ).fetchall()
         snapshots = []
         for row in rows:
@@ -481,6 +538,8 @@ class IngestingSourceFlow:
         self.massive_adapter = massive_adapter
         self.massive_daily_cursor = massive_daily_cursor
         self.massive_discovery_enabled = massive_discovery_enabled
+        self._finlight_retry = _ConnectorRetryGate()
+        self._massive_retry = _ConnectorRetryGate()
 
     def schedule_and_wake(
         self, cycle_id: str, wake_at: datetime, overrides: dict[str, str]
@@ -497,18 +556,28 @@ class IngestingSourceFlow:
         ingestion_posture = "disabled"
         reason = "finlight_key_not_injected"
         if self.finlight_adapter is not None:
-            try:
-                result = self.finlight_adapter.run_once()
-                ingestion_posture = result.posture
-                reason = result.reason
-            except Exception as error:
+            if self._finlight_retry.blocked(wake_at):
                 ingestion_posture = "degraded"
-                reason = f"connector_error:{type(error).__name__}"
-        try:
-            massive_posture, massive_reason = self._ingest_massive(wake_at)
-        except Exception as error:
+                reason = self._finlight_retry.reason(wake_at)
+            else:
+                try:
+                    result = self.finlight_adapter.run_once()
+                    ingestion_posture = result.posture
+                    reason = result.reason
+                except Exception as error:
+                    ingestion_posture = "degraded"
+                    reason = f"connector_error:{type(error).__name__}"
+                self._finlight_retry.record(wake_at, ingestion_posture)
+        if self._massive_retry.blocked(wake_at):
             massive_posture = "degraded"
-            massive_reason = f"connector_error:{type(error).__name__}"
+            massive_reason = self._massive_retry.reason(wake_at)
+        else:
+            try:
+                massive_posture, massive_reason = self._ingest_massive(wake_at)
+            except Exception as error:
+                massive_posture = "degraded"
+                massive_reason = f"connector_error:{type(error).__name__}"
+            self._massive_retry.record(wake_at, massive_posture)
         frozen, postures = self.database_flow.schedule_and_wake(
             cycle_id, wake_at, overrides
         )

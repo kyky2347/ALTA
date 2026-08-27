@@ -9,7 +9,12 @@ from alta_asterism.implementation import TradeImplementationPlan
 NOW = datetime(2026, 8, 26, 14, tzinfo=UTC)
 
 
-def plan(expected_net_alpha_bps: Decimal) -> TradeImplementationPlan:
+def plan(
+    expected_net_alpha_bps: Decimal,
+    *,
+    target_notional: Decimal = Decimal("1000"),
+    estimated_stress_loss: Decimal = Decimal("250"),
+) -> TradeImplementationPlan:
     clock = build_alpha_clock(
         known_at=NOW,
         evidence_freshness_at=NOW,
@@ -30,10 +35,10 @@ def plan(expected_net_alpha_bps: Decimal) -> TradeImplementationPlan:
         position_notional_limit=Decimal("10000"),
         gross_notional_before=Decimal("10000"),
         gross_notional_limit=Decimal("80000"),
-        gross_notional_after=Decimal("11000"),
-        target_notional=Decimal("1000"),
+        gross_notional_after=Decimal("10000") + target_notional,
+        target_notional=target_notional,
         target_quantity=Decimal("10"),
-        estimated_stress_loss=Decimal("250"),
+        estimated_stress_loss=estimated_stress_loss,
         binding_constraint="stress_loss_budget",
     )
 
@@ -43,6 +48,8 @@ def incumbent(
     expected_net_alpha_bps: Decimal | None,
     *,
     elapsed_days: int = 15,
+    current_notional: Decimal = Decimal("1000"),
+    estimated_stress_loss: Decimal = Decimal("250"),
 ) -> IncumbentAlpha:
     return IncumbentAlpha(
         position_id=position_id,
@@ -50,6 +57,8 @@ def incumbent(
         time_exit_at=NOW + timedelta(days=30 - elapsed_days),
         expected_net_alpha_bps_at_entry=expected_net_alpha_bps,
         replacement_hurdle_bps=Decimal("75"),
+        current_notional=current_notional,
+        estimated_stress_loss=estimated_stress_loss,
     )
 
 
@@ -77,6 +86,9 @@ def test_full_book_rotates_only_when_residual_alpha_hurdle_is_cleared() -> None:
     assert decision.status == "rotate"
     assert decision.incumbent_remaining_alpha_bps == Decimal("100.0000")
     assert decision.advantage_bps == Decimal("80.0000")
+    assert decision.candidate_expected_alpha_dollars == Decimal("18.0000")
+    assert decision.incumbent_remaining_alpha_dollars == Decimal("10.0000")
+    assert decision.efficiency_improvement == Decimal("0.8000")
     assert decision.reason_code == "superior_audited_opportunity"
 
 
@@ -102,6 +114,33 @@ def test_full_book_waits_when_edge_or_incumbent_underwriting_is_insufficient() -
         "wait",
         "incumbent_alpha_unavailable",
     )
+
+
+def test_rotation_must_improve_expected_alpha_dollars_and_stress_efficiency() -> None:
+    lower_dollar_alpha = allocate_capital(
+        plan=plan(Decimal("180")),
+        incumbents=(
+            incumbent(
+                "position_large",
+                Decimal("200"),
+                current_notional=Decimal("3000"),
+                estimated_stress_loss=Decimal("750"),
+            ),
+        ),
+        max_open_positions=1,
+        known_at=NOW,
+    )
+    weaker_efficiency = allocate_capital(
+        plan=plan(Decimal("180"), estimated_stress_loss=Decimal("1000")),
+        incumbents=(incumbent("position_efficient", Decimal("200")),),
+        max_open_positions=1,
+        known_at=NOW,
+    )
+
+    assert lower_dollar_alpha.reason_code == (
+        "portfolio_expected_alpha_dollars_not_improved"
+    )
+    assert weaker_efficiency.reason_code == ("portfolio_stress_efficiency_not_improved")
 
 
 def test_alpha_clock_never_uses_future_evidence_and_expires_to_zero() -> None:

@@ -13,7 +13,7 @@ from .expression_base import FrozenContract
 class PortfolioRiskPolicy(FrozenContract):
     """Research capital policy used to turn an idea into a bounded Shadow plan."""
 
-    version: Literal["alta-portfolio-risk-v5"] = "alta-portfolio-risk-v5"
+    version: Literal["alta-portfolio-risk-v7"] = "alta-portfolio-risk-v7"
     reference_nav: Decimal = Field(default=Decimal("1000000"), gt=0)
     per_trade_loss_budget_bps: Decimal = Field(default=Decimal("25"), gt=0)
     max_position_nav_bps: Decimal = Field(default=Decimal("100"), gt=0)
@@ -34,6 +34,12 @@ class PortfolioRiskPolicy(FrozenContract):
         default=Decimal("0.50"), gt=0, le=1
     )
     max_systematic_exposure_nav_bps: Decimal = Field(default=Decimal("200"), gt=0)
+    max_portfolio_stress_nav_bps: Decimal = Field(default=Decimal("100"), gt=0)
+    max_alpha_source_nav_bps: Decimal = Field(default=Decimal("300"), gt=0)
+    max_catalyst_nav_bps: Decimal = Field(default=Decimal("200"), gt=0)
+    min_rotation_efficiency_improvement: Decimal = Field(
+        default=Decimal("0.10"), ge=0, le=5
+    )
 
     @model_validator(mode="after")
     def validate_limits(self) -> "PortfolioRiskPolicy":
@@ -47,6 +53,12 @@ class PortfolioRiskPolicy(FrozenContract):
             raise ValueError("research quality hurdle cannot exceed the core threshold")
         if self.max_systematic_exposure_nav_bps > self.max_gross_nav_bps:
             raise ValueError("systematic exposure limit cannot exceed gross NAV limit")
+        if self.max_portfolio_stress_nav_bps > self.max_gross_nav_bps:
+            raise ValueError("portfolio stress limit cannot exceed gross NAV limit")
+        if self.max_alpha_source_nav_bps > self.max_gross_nav_bps:
+            raise ValueError("Alpha source limit cannot exceed gross NAV limit")
+        if self.max_catalyst_nav_bps > self.max_gross_nav_bps:
+            raise ValueError("catalyst limit cannot exceed gross NAV limit")
         return self
 
     def dollars(self, basis_points: Decimal) -> Decimal:
@@ -58,17 +70,47 @@ class ExposureBucket(FrozenContract):
     gross_notional: Decimal = Field(ge=0)
 
 
+class AlphaSourceBucket(FrozenContract):
+    source: AlphaSource
+    open_positions: int = Field(ge=0, le=8)
+    gross_notional: Decimal = Field(ge=0)
+    estimated_stress_loss: Decimal = Field(ge=0)
+
+
+class CatalystBucket(FrozenContract):
+    catalyst_key: str = Field(min_length=1, max_length=128)
+    open_positions: int = Field(ge=0, le=8)
+    gross_notional: Decimal = Field(ge=0)
+    estimated_stress_loss: Decimal = Field(ge=0)
+
+
 class PortfolioState(FrozenContract):
     known_open_positions: int = Field(default=0, ge=0)
     gross_notional: Decimal = Field(default=Decimal(0), ge=0)
     prospective_replacement_credit: Decimal = Field(default=Decimal(0), ge=0)
+    aggregate_stress_loss: Decimal = Field(default=Decimal(0), ge=0)
+    prospective_replacement_stress_credit: Decimal = Field(default=Decimal(0), ge=0)
     exposure_buckets: tuple[ExposureBucket, ...] = Field(default=(), max_length=32)
+    alpha_source_buckets: tuple[AlphaSourceBucket, ...] = Field(
+        default=(), max_length=8
+    )
+    catalyst_buckets: tuple[CatalystBucket, ...] = Field(default=(), max_length=8)
 
     @model_validator(mode="after")
     def validate_exposure_buckets(self) -> "PortfolioState":
         tags = [item.tag for item in self.exposure_buckets]
         if len(tags) != len(set(tags)):
             raise ValueError("portfolio exposure buckets must be unique")
+        sources = [item.source for item in self.alpha_source_buckets]
+        if len(sources) != len(set(sources)):
+            raise ValueError("portfolio Alpha source buckets must be unique")
+        catalysts = [item.catalyst_key for item in self.catalyst_buckets]
+        if len(catalysts) != len(set(catalysts)):
+            raise ValueError("portfolio catalyst buckets must be unique")
+        if self.prospective_replacement_credit > self.gross_notional:
+            raise ValueError("portfolio replacement credit cannot exceed gross")
+        if self.prospective_replacement_stress_credit > self.aggregate_stress_loss:
+            raise ValueError("stress replacement credit cannot exceed aggregate stress")
         return self
 
 
@@ -104,6 +146,21 @@ class TradeImplementationPlan(FrozenContract):
     gross_replacement_credit: Decimal = Field(default=Decimal(0), ge=0)
     gross_notional_limit: Decimal = Field(ge=0)
     gross_notional_after: Decimal = Field(ge=0)
+    portfolio_stress_loss_before: Decimal | None = Field(default=None, ge=0)
+    portfolio_stress_replacement_credit: Decimal | None = Field(default=None, ge=0)
+    portfolio_stress_loss_limit: Decimal | None = Field(default=None, ge=0)
+    portfolio_stress_loss_after: Decimal | None = Field(default=None, ge=0)
+    alpha_source_notional_before: Decimal | None = Field(default=None, ge=0)
+    alpha_source_notional_limit: Decimal | None = Field(default=None, ge=0)
+    alpha_source_notional_after: Decimal | None = Field(default=None, ge=0)
+    catalyst_key: str = Field(
+        default="legacy-unclassified",
+        min_length=1,
+        max_length=128,
+    )
+    catalyst_notional_before: Decimal | None = Field(default=None, ge=0)
+    catalyst_notional_limit: Decimal | None = Field(default=None, ge=0)
+    catalyst_notional_after: Decimal | None = Field(default=None, ge=0)
     target_notional: Decimal = Field(ge=0)
     target_quantity: Decimal = Field(ge=0)
     estimated_stress_loss: Decimal = Field(ge=0)
@@ -135,6 +192,63 @@ class TradeImplementationPlan(FrozenContract):
                 raise ValueError("ready implementation exceeds its loss budget")
             if self.gross_notional_after > self.gross_notional_limit:
                 raise ValueError("ready implementation exceeds its gross limit")
+            stress_bridge = (
+                self.portfolio_stress_loss_before,
+                self.portfolio_stress_replacement_credit,
+                self.portfolio_stress_loss_limit,
+                self.portfolio_stress_loss_after,
+            )
+            if any(value is not None for value in stress_bridge):
+                if any(value is None for value in stress_bridge):
+                    raise ValueError("portfolio stress bridge must be complete")
+                stress_before, stress_credit, stress_limit, stress_after = stress_bridge
+                assert stress_before is not None
+                assert stress_credit is not None
+                assert stress_limit is not None
+                assert stress_after is not None
+                if stress_credit > stress_before:
+                    raise ValueError("stress replacement credit exceeds current stress")
+                if (
+                    stress_after
+                    != stress_before - stress_credit + self.estimated_stress_loss
+                ):
+                    raise ValueError("portfolio stress bridge is inconsistent")
+                if stress_after > stress_limit:
+                    raise ValueError("ready implementation exceeds portfolio stress")
+            source_bridge = (
+                self.alpha_source_notional_before,
+                self.alpha_source_notional_limit,
+                self.alpha_source_notional_after,
+            )
+            if any(value is not None for value in source_bridge):
+                if any(value is None for value in source_bridge):
+                    raise ValueError("Alpha source bridge must be complete")
+                source_before, source_limit, source_after = source_bridge
+                assert source_before is not None
+                assert source_limit is not None
+                assert source_after is not None
+                if source_after != source_before + self.target_notional:
+                    raise ValueError("Alpha source bridge is inconsistent")
+                if source_after > source_limit:
+                    raise ValueError(
+                        "ready implementation exceeds Alpha source capacity"
+                    )
+            catalyst_bridge = (
+                self.catalyst_notional_before,
+                self.catalyst_notional_limit,
+                self.catalyst_notional_after,
+            )
+            if any(value is not None for value in catalyst_bridge):
+                if any(value is None for value in catalyst_bridge):
+                    raise ValueError("catalyst bridge must be complete")
+                catalyst_before, catalyst_limit, catalyst_after = catalyst_bridge
+                assert catalyst_before is not None
+                assert catalyst_limit is not None
+                assert catalyst_after is not None
+                if catalyst_after != catalyst_before + self.target_notional:
+                    raise ValueError("catalyst bridge is inconsistent")
+                if catalyst_after > catalyst_limit:
+                    raise ValueError("ready implementation exceeds catalyst capacity")
             if (
                 self.target_notional
                 > self.position_notional_limit * self.alpha_isolation_multiplier

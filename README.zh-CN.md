@@ -21,6 +21,14 @@ ALTA 是一个仅用于研究、以证据为先的公开市场多模型 Agent �
 **状态：** `0.25.0`（`INCENTIVE_LOOP_VERIFIED`）· **常规模式：**
 Replay / Shadow · **经纪账户路径：** 仅显式 Tiger 模拟盘验收 · **Alpha：** 尚未证明
 
+**本地开发状态：** 已接入机构化组合智能和可重放的市场研究漏斗。完整日线最多给每个 Trader
+Mind 分配一个非 Evidence 异常问题，Mind 必须重新核验行情、因果路径和反方解释；组合构建同时
+限制总压力损失、Alpha 来源与共享催化剂集中度；满仓轮换还必须提升预期 Alpha 美元和单位压力
+资本效率。
+当前本地树还统一了所有 Agent 交接的字节预算；结构化输出错误的 Scout 只有一次全新且受限的
+重试；可选数据源故障会指数退避；确定性门槛已经判定不能进入排序的 Opportunity 不再浪费两次
+私有评估模型调用。
+
 [架构](docs/architecture/overview.md) · [快速开始](#快速开始确定性研究-fixture) ·
 [运行指南](docs/operations/autonomous-shadow.md) ·
 [研究范围](docs/research-scope.md) · [English](README.md)
@@ -46,7 +54,8 @@ flowchart TB
   subgraph discover["发现"]
     direction LR
     sources["有边界的数据源"] --> evidence["时点一致的证据"]
-    evidence --> scouts["主动 Trader Minds<br/>互联网 · 新闻 · 社交 · 金融数据"]
+    evidence --> screen["完整日线研究漏斗<br/>价格 · 成交量 · 相对表现 · 市场宽度"]
+    screen -. 非 Evidence 研究问题 .-> scouts["主动 Trader Minds<br/>互联网 · 新闻 · 社交 · 金融数据"]
     scouts --> thesisledger["冻结的 Thesis Ledger<br/>可观测量 · 证实 · 推翻 · 到期"]
     thesisledger --> diligence["研究尽调记录<br/>交叉核验 · 来源 · 下一项测试"]
     diligence --> registry["机会注册表<br/>身份 · 去重 · 补全"]
@@ -54,6 +63,7 @@ flowchart TB
     drive --> agenda["开放研究问题<br/>下一项测试 · 首要反对理由 · 审计缺口"]
     agenda -. 后续冻结 wake .-> scouts
     memory["持续进化但有边界的 Mind 经验<br/>结果 · 工具路径 · 不是 Evidence"] -. 下一次 wake .-> scouts
+    mandate["冻结的组合研究任务书<br/>拥挤 · 压力 · 缺失的 Alpha 来源"] -. 非 Evidence 上下文 .-> scouts
   end
 
   subgraph decide["挑战与决策"]
@@ -88,6 +98,7 @@ flowchart TB
   harness -. 监督 .-> audit
   state[("PostgreSQL + Redis")] <--> registry
   state <--> shadow
+  state --> mandate
   incentive -. 后续冻结 wake · 非 Evidence .-> scouts
   governance -. 下一笔意图前的风险预算 .-> construction
 ```
@@ -96,25 +107,26 @@ flowchart TB
 
 ### 当前真正实现了什么
 
-| 范围           | 当前状态                                                                                                                                       |
-| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| 研究生命周期   | 主动多来源探索、确定性的探索/跟进分工、空跑后轮换路线、可证伪 Thesis Ledger、研究尽调、独立挑战、情景与决策承销、表达锦标赛、Shadow 监控和测量 |
-| 证据与状态     | 时点 Evidence、不可改写的论点支柱、受限问题与过程记忆、建仓时冻结的研究归因、成熟度门控的 Mind Alpha 反馈、可撤销的只读研究激励、Replay        |
-| 资金生存       | 仅用当前政策、每仓最新一条前向结果缩小后续 Shadow 仓位；小样本正收益永远不会自动放大杠杆                                                       |
-| 无人值守服务   | 内部调度器、单主租约、按机会积压调整节奏、开放持仓更快观察、runtime 重建、提示词与快照拟合、瞬态故障有界重试、健康看门狗和安全退出             |
-| 只读可观测性   | Runtime、Run、Opportunity、冻结 cohort、缺失率和 Shadow 测量的 loopback JSON 与 SSE 接口                                                       |
-| 经纪账户边界   | 默认禁用；隔离的 CLI 只允许一个精确 Tiger 模拟盘账户与 1 股限价验收                                                                            |
-| 真实世界 Alpha | **尚未建立**；承销校准仍属探索性，仍需积累更大规模、计入成本的独立前向 Shadow 样本                                                             |
+| 范围           | 当前状态                                                                                                                                                         |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 研究生命周期   | 完整日线异常漏斗、主动多来源探索、确定性的探索/跟进分工、空跑后轮换路线、可证伪 Thesis Ledger、研究尽调、独立挑战、情景与决策承销、表达锦标赛、Shadow 监控和测量 |
+| 证据与状态     | 时点 Evidence、不可改写的论点支柱、受限问题与过程记忆、建仓时冻结的研究归因、成熟度门控的 Mind Alpha 反馈、可撤销的只读研究激励、Replay                          |
+| 资金生存       | 仅用当前政策、每仓最新一条前向结果缩小后续 Shadow 仓位；小样本正收益永远不会自动放大杠杆                                                                         |
+| 组合构建       | 单笔与组合总压力预算、总敞口、共享因子桶、Alpha 来源与共享催化剂集中度、流动性，以及按 Alpha 美元和压力资本效率进行的持仓竞争                                    |
+| 无人值守服务   | 内部调度器、单主租约、按机会积压调整节奏、统一上下文预算、数据源退避、开放持仓更快观察、runtime 重建、一次可审计 Scout 重试、健康看门狗和安全退出                |
+| 只读可观测性   | Runtime、Run、Opportunity、冻结 cohort、缺失率和 Shadow 测量的 loopback JSON 与 SSE 接口                                                                         |
+| 经纪账户边界   | 默认禁用；隔离的 CLI 只允许一个精确 Tiger 模拟盘账户与 1 股限价验收                                                                                              |
+| 真实世界 Alpha | **尚未建立**；承销校准仍属探索性，仍需积累更大规模、计入成本的独立前向 Shadow 样本                                                                               |
 
 ### 最新本地验收
 
-当前目录通过了 141 项 Node/harness 测试、224 项 Opportunity OS Python 测试和
-25 项隔离 capital 包测试。`0.25.0` 的确定性完整生命周期产生三个 Candidate、三个
-Opportunity、一个通过审计的表达，以及一个经过两次观察后正常退出的 Shadow 持仓；Replay
-得到相同的 SHA-256 快照
-`16be618841b4ced276fea1c3297bd0a934093b995bce50bfadad0b74e9f9816c`。14 个周期、6.5 个事件小时
-的 soak 以零失败、零人工修复结束。前台 `0.25.0` 服务达到 `live`/`ready`，暴露四份未来激励
-契约及其零资金影响边界后正常停止；没有创建任何 Tiger 或经纪订单。
+当前本地工作树通过了 141 项 Node/harness 测试、240 项 Opportunity OS Python 测试和
+25 项隔离 capital 包测试。2026-08-27 08:19–17:00 EDT 的受监督真实墙钟试运行观察到 28 个
+自主周期身份：26 个完成为 `MVP_IDLE`，2 个在修复前因上下文预算边界失败；系统形成 3 个
+Opportunity 和 4 份独立评估，但产生 0 个 Rank、0 个 Expression、0 个持仓和 0 个订单。两处
+上下文边界缺陷均已增加回归覆盖。Tiger 模拟盘因 RSA 签名预检失败而始终未连接、未下单；服务、
+Agent 子进程、监听端口、PostgreSQL 和 Redis 最终全部安全停止。这证明的是自主运行和失败恢复
+路径，不证明 Alpha 或跑赢市场。
 
 最新一次本地机会驱动力验收会把确定性的探索/跟进分工冻结进每个生产 wake，始终保留两名 Mind
 继续独立发现新机会，轮换负责跟进的 Mind，并在连续空跑后要求更换研究路线。调度测试覆盖普通、
@@ -165,6 +177,7 @@ flowchart TB
   feedback["成熟后的结果反馈<br/>仅回到同一 Mind · 非 Evidence"]
   agenda["开放研究问题<br/>下一项测试 · 首要反对理由 · Assessor 缺口"]
   drive["机会驱动力<br/>有界分工 · 空跑后换路线<br/>只影响过程 · 非 Evidence"]
+  mandate["组合研究任务书<br/>拥挤来源 · 因子 · 共享催化剂 · 压力容量<br/>冻结且非 Evidence"]
 
   subgraph sensing["并行感知 — 四个相互隔离的 Agent turn"]
     direction LR
@@ -178,6 +191,10 @@ flowchart TB
   wake --> market
   wake --> policy
   wake --> expectation
+  mandate -. 当前组合上下文 .-> change
+  mandate -. 当前组合上下文 .-> market
+  mandate -. 当前组合上下文 .-> policy
+  mandate -. 当前组合上下文 .-> expectation
   memory -. 下一次冻结 wake .-> change
   memory -. 下一次冻结 wake .-> market
   memory -. 下一次冻结 wake .-> policy
@@ -215,8 +232,8 @@ flowchart TB
   ranking --> fallback["最多尝试排名前三的 Opportunity<br/>遇到第一个通过审计的可执行表达即停止"]
   fallback --> expression["Expression Agent · DeepSeek V4 Pro<br/>提出至多三个绑定论点支柱的收益结构"]
   expression --> slate["确定性市场锦标赛<br/>逐一取得真实报价或期权链"]
-  slate --> construction["逐一按最紧约束构建<br/>成本 · 压力 · 总敞口 · 退出能力"]
-  construction --> competition["逐一计算 Alpha 时钟 + 资本门控<br/>准入 · 等待 · 替换最弱持仓"]
+  slate --> construction["逐一按最紧约束构建<br/>成本 · 单笔/组合压力 · 总敞口<br/>Alpha 来源 · 共享催化剂 · 因子 · 退出能力"]
+  construction --> competition["逐一计算 Alpha 时钟 + 资本门控<br/>bps · Alpha 美元 · 压力资本效率<br/>准入 · 等待 · 替换最弱持仓"]
   competition --> auditor["独立 Auditor · Grok 4.6<br/>比较可接受候选 + 当前组合<br/>选择一个或等待"]
   auditor --> verdict{"Auditor 决策"}
   verdict -- "等待" --> wait["持久化 Wait<br/>记录原因"]
@@ -235,7 +252,8 @@ flowchart TB
 单个 Scout 的失败会被隔离；每个 Scout 都可以返回没有候选机会。Auditor 看不到排序分数。
 Agent 节点负责研究判断，确定性节点负责来源追踪、可重放性和 fail-closed 安全。Position
 Monitor 可以标记证伪条件，但不能临时发明替代交易。只有一个已经独立审计的新 Opportunity
-在扣除时间衰减后的预期净 Alpha 超过原持仓冻结的替换门槛时，确定性资本层才允许轮换。
+在扣除时间衰减后的预期净 Alpha 超过原持仓冻结的替换门槛、预期 Alpha 美元不减少、且单位压力
+资本效率也有足够改善时，确定性资本层才允许轮换。
 任何 Agent 都拿不到下单工具。
 
 Trader Mind 和持仓监控使用 DeepSeek V4 Flash 处理有边界的重复工作。真实 24×7 路径要求
@@ -471,7 +489,7 @@ scheduler 子进程。Linux systemd-user 定义通过确定性生成测试；真
 
 | 验证项目                         |                                                    结果 |
 | -------------------------------- | ------------------------------------------------------: |
-| Node / Opportunity OS / 资金边界 |                             141 / 224 / 25 tests passed |
+| Node / Opportunity OS / 资金边界 |                             141 / 240 / 25 tests passed |
 | 当前受控完整生命周期             |            4 Minds、3 Opportunities、1 Shadow、精确回放 |
 | 研究与表达门控                   | 真实工具尽调；三个收益结构的市场锦标赛；独立选择或 Wait |
 | 主动资本轮换                     |     剩余 Alpha 门槛、旧仓幂等退出与冻结绝对限价执行通过 |

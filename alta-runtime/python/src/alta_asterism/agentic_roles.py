@@ -8,6 +8,7 @@ from psycopg.types.json import Jsonb
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from .agent_context import require_bounded_frozen_input
+from .context_budget import MAX_ROLE_PROMPT_BYTES, canonical_json_bytes
 from .database import Database
 from .mind_worker import (
     MindClient,
@@ -19,7 +20,6 @@ from .mind_worker import (
 from .scouts import RunBudget
 
 OutputT = TypeVar("OutputT", bound=BaseModel)
-MAX_ROLE_PROMPT_BYTES = 16_000
 MAX_ROLE_ATTEMPTS = 2
 
 
@@ -28,15 +28,7 @@ class StructuredRoleUnavailable(Exception):
 
 
 def canonical_hash(value: Any) -> str:
-    return hashlib.sha256(
-        json.dumps(
-            value,
-            ensure_ascii=False,
-            separators=(",", ":"),
-            sort_keys=True,
-            default=str,
-        ).encode()
-    ).hexdigest()
+    return hashlib.sha256(canonical_json_bytes(value)).hexdigest()
 
 
 @dataclass(frozen=True)

@@ -87,8 +87,8 @@ class LiveRuntime:
                 client,
                 model_provider=provider,
                 model_id=model_id,
-                max_total_tokens=60_000,
-                max_output_bytes=12_000,
+                max_total_tokens=30_000,
+                max_output_bytes=8_000,
                 deadline_seconds=settings.reasoning_agent_deadline_seconds,
             )
             role_runners[route] = runner
@@ -157,8 +157,22 @@ class LiveRuntime:
                 massive_adapter,
                 max_notional=settings.shadow_max_position_notional,
             )
+        portfolio_policy = PortfolioRiskPolicy(
+            reference_nav=settings.shadow_reference_nav,
+            per_trade_loss_budget_bps=settings.shadow_trade_loss_budget_bps,
+            max_position_nav_bps=settings.shadow_max_position_nav_bps,
+            max_gross_nav_bps=settings.shadow_max_gross_nav_bps,
+            equity_stress_floor_bps=settings.shadow_equity_stress_floor_bps,
+            max_exit_days=settings.shadow_max_exit_days,
+            adv_participation_bps=settings.shadow_adv_participation_bps,
+            min_net_alpha_bps=settings.shadow_min_net_alpha_bps,
+        )
         source_flow = IngestingSourceFlow(
-            DatabaseSourceFlow(database, settings.universe),
+            DatabaseSourceFlow(
+                database,
+                settings.universe,
+                portfolio_policy=portfolio_policy,
+            ),
             finlight_adapter,
             massive_adapter,
             PostgresSourceCursorStore(
@@ -206,23 +220,14 @@ class LiveRuntime:
                 max_open_positions=1 if paper_executor else 8,
                 paper_executor=paper_executor,
                 acceptance_hold_seconds=settings.acceptance_hold_seconds,
-                portfolio_policy=PortfolioRiskPolicy(
-                    reference_nav=settings.shadow_reference_nav,
-                    per_trade_loss_budget_bps=(settings.shadow_trade_loss_budget_bps),
-                    max_position_nav_bps=settings.shadow_max_position_nav_bps,
-                    max_gross_nav_bps=settings.shadow_max_gross_nav_bps,
-                    equity_stress_floor_bps=(settings.shadow_equity_stress_floor_bps),
-                    max_exit_days=settings.shadow_max_exit_days,
-                    adv_participation_bps=(settings.shadow_adv_participation_bps),
-                    min_net_alpha_bps=settings.shadow_min_net_alpha_bps,
-                ),
+                portfolio_policy=portfolio_policy,
             ),
             research_config=ResearchRuntimeConfig(
                 model_provider=settings.agent_provider,
                 model_id=settings.agent_model,
-                max_tool_calls=6,
-                max_total_tokens=60_000,
-                max_output_bytes=12_000,
+                max_tool_calls=4,
+                max_total_tokens=40_000,
+                max_output_bytes=8_000,
                 deadline_seconds=settings.agent_deadline_seconds,
                 max_concurrency=settings.scout_concurrency,
                 use_wall_clock=True,

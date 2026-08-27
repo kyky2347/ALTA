@@ -12,6 +12,8 @@ flowchart TB
   scheduler["[Code] Single-owner scheduler<br/>heartbeat · clean runtime rebuild"]
   sources["[Code] Finlight, Massive,<br/>and bounded public sources"]
   evidence["[Code] Append-only Raw + Evidence<br/>point-in-time frozen wake"]
+  marketfunnel["[Code] Completed-bar research funnel<br/>relative · volume · range · breadth"]
+  mandate["[Code] Frozen portfolio research mandate<br/>stress · factor · Alpha-source · catalyst concentration"]
   scouts["[Agents] Four active Trader Minds<br/>Web · news · social · finance research"]
   thesis["[Code] Frozen Thesis Ledger<br/>claim · observable · confirm · invalidate · due"]
   diligence["[Code] Research diligence<br/>actual tools · source diversity · next test"]
@@ -25,8 +27,8 @@ flowchart TB
   ranking["[Code] 1–90 day decision-edge gate<br/>independent lift · quality · conservative Alpha"]
   expression["[Agent] DeepSeek Pro implementation PM<br/>up to three payoff hypotheses"]
   instrument["[Code] Market-validated tournament<br/>exact quote or option chain for each"]
-  portfolio["[Code] Per-hypothesis construction<br/>net edge · stress · gross · factor buckets · Alpha purity"]
-  allocation["[Code] Per-hypothesis capital test<br/>Alpha clock · incumbent hurdle · rotation"]
+  portfolio["[Code] Per-hypothesis construction<br/>net edge · single/book stress · gross · Alpha/factor/catalyst buckets"]
+  allocation["[Code] Per-hypothesis capital test<br/>Alpha clock · dollars · stress efficiency · rotation"]
   auditor["[Agent] Independent Grok 4.6 audit<br/>Alpha source · factors · basis risk · hedge posture"]
   validation["[Code] Refresh selected instrument and revalidate<br/>absolute limit · shortfall · no chase"]
   shadow["[Code] Shadow open<br/>forward quote and fill"]
@@ -38,7 +40,12 @@ flowchart TB
   paper["[Code] Optional isolated Tiger Paper mirror<br/>BUY 1 · SELL 1 · verify flat"]
 
   host --> supervisor --> scheduler --> sources
-  sources --> evidence --> scouts --> thesis --> diligence --> foundry --> assessors --> underwriting --> decision --> moderator
+  sources --> evidence --> marketfunnel
+  evidence --> scouts
+  marketfunnel -. bounded non-Evidence question .-> scouts
+  scouts --> thesis --> diligence --> foundry --> assessors --> underwriting --> decision --> moderator
+  shadow -. current PIT book · non-Evidence .-> mandate
+  mandate -. later point-in-time wake .-> scouts
   mindmemory -. next frozen wake .-> scouts
   foundry --> agenda
   agenda -. exact parent + question · later wake .-> scouts
@@ -75,7 +82,7 @@ sequenceDiagram
   participant P as Position Monitor Agent
   participant C as Isolated Paper executor (code)
 
-  O->>S: Frozen wake, open questions, prior Mind experience, mature outcome feedback, revocable research incentive, and per-role tools
+  O->>S: Frozen wake, completed-bar research seed, portfolio mandate, open questions, prior experience, mature feedback, revocable incentive, and per-role tools
   S->>S: Autonomously explore or follow one exact question using allowed public tools
   S-->>F: Candidate or no-op plus research record and falsifiable pillars
   F->>F: Compare durable identity and Raw content history
@@ -91,9 +98,9 @@ sequenceDiagram
     G->>G: Obtain exact quote or filtered option chain
   G->>K: Instrument, locked tickets, and current Shadow book
     V-->>K: Current-policy rolling capital multiplier
-    K-->>G: Tightest loss, gross, liquidity, purity, and shared-factor capacity, or Wait
+    K-->>G: Tightest single/book stress, gross, liquidity, purity, Alpha-source, shared-factor, and shared-catalyst capacity, or Wait
     G->>L: Time-adjusted edge and incumbent frozen tickets
-    L-->>G: Admit, Wait, or replace weakest after excess-Alpha hurdle
+    L-->>G: Admit, Wait, or replace after bps, Alpha-dollar, and stress-efficiency hurdles
   end
   G->>U: Admissible slate, implementation tickets, and bounded open book
   U-->>G: Independently reclassify exposures and select exactly one hypothesis or Wait
@@ -111,31 +118,34 @@ sequenceDiagram
   O-->>S: Same-Mind feedback on a later PIT wake after maturity gates
 ```
 
-Only structured artifacts cross a hand-off. A transient deadline gets at most
-one retry with the same frozen input and durable Run identity. A failed or
+Only structured artifacts cross a hand-off. One shared canonical JSON budget
+registry constrains every durable Agent input and complete prompt. A transient
+deadline, App Server failure, missed active-research requirement, or malformed
+Scout result gets at most one fresh attempt with the same frozen input and
+durable Run identity; the first failure stays append-only. A failed or
 unavailable dependency does not grant the next role more discretion; it narrows
 the outcome to a durable `Wait` or an idle cycle.
 
 ## Trust boundaries
 
-| Boundary     | Guarantee                                                                                                                                                                                      |
-| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Evidence     | Raw-first, versioned, timestamped, source-bound, bounded                                                                                                                                       |
-| Trader Minds | Active read-only research is required; explore/follow-up lineage and actual diligence are recorded; prior state is bounded and never Evidence; repository-host APIs are absent                 |
-| Thesis       | Original pillars are immutable, observable, time-bounded, source-linked, and reviewed only through append-only events                                                                          |
-| Decision     | Company thesis, security readiness, reference class, base rate, must-be-true conditions, and edge half-life remain separate and independently locked                                           |
-| Ranking      | Both independent inside views must beat their own base rates, diligence must be decision-grade, and the lower expected-Alpha forecast must remain positive after a fixed dispersion reserve    |
-| Agents       | Separate App Server turns, structured contracts, full-prompt byte fitting, no broker tools                                                                                                     |
-| Recovery     | Host restart, process-group cleanup, same-frozen-wake rebuild, and one same-identity transient deadline retry                                                                                  |
-| Market data  | Exact quote plus explicitly labeled liquidity proxy; absence resolves to Wait                                                                                                                  |
-| Expression   | Up to three pillar-bound payoffs receive actual market and portfolio tickets; independent Auditor sees no rank and selects one or Wait                                                         |
-| Portfolio    | Synthetic Shadow NAV; research-quality gate, loss, gross, liquidity, Alpha purity, shared factor buckets, decay, incumbent competition, rolling Alpha survival posture, and pre-intent recheck |
-| Execution    | Frozen arrival benchmark, absolute limit, shortfall budget, participation cap, timeout cancellation, one attempt, and no automatic repricing                                                   |
-| Underwriting | Evidence-bound ex-ante estimates, disagreement reserve, and the entry-frozen cost-adjusted forecast stay distinct from realized Alpha                                                          |
-| Feedback     | Entry-frozen Mind/archetype/route/mode credit; strict PIT cutoff; 30-Mind/10-slice maturity; no auto-policy                                                                                    |
-| Capital      | Shadow by default; optional exact-account, one-share Paper acceptance; no live mode                                                                                                            |
-| Operations   | Boot-managed host, loopback API, one owner, split Scout/judgment deadlines, two watchdogs, capped backoff, clean stop                                                                          |
-| Evaluation   | Immutable configuration, Run attribution, cohort projection, latest-measurement deduplication, explicitly small-sample Alpha statistics, and negative-evidence-only capital throttling         |
+| Boundary     | Guarantee                                                                                                                                                                                               |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Evidence     | Raw-first, versioned, timestamped, source-bound, bounded                                                                                                                                                |
+| Trader Minds | Active read-only research is required; completed-bar seeds, prior state, and portfolio context are non-Evidence; lineage and actual diligence are recorded; repository-host APIs are absent             |
+| Thesis       | Original pillars are immutable, observable, time-bounded, source-linked, and reviewed only through append-only events                                                                                   |
+| Decision     | Company thesis, security readiness, reference class, base rate, must-be-true conditions, and edge half-life remain separate and independently locked                                                    |
+| Ranking      | Both independent inside views must beat their own base rates, diligence must be decision-grade, and the lower expected-Alpha forecast must remain positive after a fixed dispersion reserve             |
+| Agents       | Separate App Server turns, structured contracts, full-prompt byte fitting, no broker tools                                                                                                              |
+| Recovery     | Host restart, process-group cleanup, same-frozen-wake rebuild, one auditable fresh Scout retry, and bounded optional-connector backoff                                                                  |
+| Market data  | Exact quote plus explicitly labeled liquidity proxy; absence resolves to Wait                                                                                                                           |
+| Expression   | Up to three pillar-bound payoffs receive actual market and portfolio tickets; independent Auditor sees no rank and selects one or Wait                                                                  |
+| Portfolio    | Synthetic Shadow NAV; research-quality gate, loss, gross, liquidity, Alpha purity, shared factor/catalyst buckets, decay, incumbent competition, rolling Alpha survival posture, and pre-intent recheck |
+| Execution    | Frozen arrival benchmark, absolute limit, shortfall budget, participation cap, timeout cancellation, one attempt, and no automatic repricing                                                            |
+| Underwriting | Evidence-bound ex-ante estimates, disagreement reserve, and the entry-frozen cost-adjusted forecast stay distinct from realized Alpha                                                                   |
+| Feedback     | Entry-frozen Mind/archetype/route/mode credit; strict PIT cutoff; 30-Mind/10-slice maturity; no auto-policy                                                                                             |
+| Capital      | Shadow by default; optional exact-account, one-share Paper acceptance; no live mode                                                                                                                     |
+| Operations   | Boot-managed host, loopback API, one owner, split Scout/judgment deadlines, two watchdogs, capped backoff, clean stop                                                                                   |
+| Evaluation   | Immutable configuration, Run attribution, cohort projection, latest-measurement deduplication, explicitly small-sample Alpha statistics, and negative-evidence-only capital throttling                  |
 
 ## Runtime components
 

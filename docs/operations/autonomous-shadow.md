@@ -355,12 +355,15 @@ mode-0600 supervisor state.
 `ALTA_AUTONOMOUS_CYCLE_TIMEOUT_SECONDS` is the maximum running-heartbeat age. It
 must cover at least four times the longer of the Scout and judgment-role
 deadlines. Scouts default to 180 seconds; slower heterogeneous PM, debate,
-expression, and audit roles default to 300 seconds. One transient deadline may
-be retried once against the same frozen input and durable Run identity. Budget,
-schema, evidence, and policy failures are not retried. A cycle that stops making
-progress eventually makes `/health/ready` fail, which activates the supervisor
-watchdog. The built-in scheduler remains responsible for research cadence; no
-external cron job or Agent should invoke individual cycles.
+expression, and audit roles default to 300 seconds. A Scout deadline, transient
+App Server failure, malformed structured result, or missed active-research
+requirement may receive one fresh attempt against the same frozen input and
+durable Run identity. The first failure remains append-only. Token/tool budget,
+evidence-provenance, territory, and investment-policy failures are not retried.
+A cycle that stops making progress eventually makes `/health/ready` fail, which
+activates the supervisor watchdog. The built-in scheduler remains responsible
+for research cadence; no external cron job or Agent should invoke individual
+cycles.
 
 Operational commands are:
 
@@ -407,6 +410,7 @@ the tightest available constraint:
 
 - per-trade scenario stress-loss budget;
 - single-position and aggregate-gross fractions of a synthetic Shadow NAV;
+- per-Alpha-source, shared-systematic-factor, and shared-catalyst capacity;
 - configured market-data notional ceiling;
 - Massive snapshot day-volume participation over the configured exit window
   for Stock/ETF, explicitly labeled as a proxy rather than institutional ADV;
@@ -434,8 +438,9 @@ The final deterministic gates check:
   the bounded midpoint-drift threshold;
 - target size is the tightest credible constraint and its estimated stress
   loss remains within budget;
-- current aggregate gross, portfolio limit, and duplicate-underlying rules
-  still pass immediately before intent;
+- current aggregate gross, portfolio stress, Alpha-source, systematic-factor,
+  shared-catalyst, and duplicate-underlying rules still pass immediately before
+  intent;
 - a forward quote was observed after intent and frozen latency.
 
 The fill engine polls a bounded number of times for a new exact quote. It does
@@ -568,8 +573,8 @@ The verified release has demonstrated:
   positions, and orders); a second cycle recorded three honest no-ops and one
   bounded transient Scout deadline;
 - separate Scout and higher-judgment deadline windows plus one same-input,
-  same-identity transient retry, covered through real App Server interrupt,
-  stuck-process reset, and PostgreSQL attempt-ledger tests;
+  same-identity fresh Scout retry, covered through invalid-output, real App
+  Server interrupt, stuck-process reset, and PostgreSQL attempt-ledger tests;
 - an installed 24×7 service recovery test that exposed and corrected an
   application/database frozen-input bound mismatch, then completed with one
   healthy owner, bounded role unavailability, capital disabled, zero orders,
@@ -581,7 +586,7 @@ The verified release has demonstrated:
 - `0.23.0` rolling-governance tests covering collecting, probation,
   preservation, unique-position enforcement, drawdown response, rolling
   recovery, no bonus leverage, and pre-intent tightening;
-- complete Node (141), Opportunity OS Python (224), and isolated capital (25)
+- complete Node (141), Opportunity OS Python (240), and isolated capital (25)
   test suites for the current tree;
 - a fresh `0.23.0` host-managed deployment in which four DeepSeek V4 Flash
   Scouts completed without an external Agent, the Foundry admitted no

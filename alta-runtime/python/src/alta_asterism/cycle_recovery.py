@@ -48,6 +48,12 @@ def recover_frozen_wake(
     seen_minds = {}
     feedback = []
     seen_feedback = {}
+    incentives = []
+    seen_incentives = {}
+    market_agenda = None
+    market_agenda_base = None
+    market_seeds = []
+    seen_market_seeds = {}
     for role in roles:
         for item in by_role[role].evidence:
             existing = seen_evidence.get(item.evidence_id)
@@ -77,12 +83,43 @@ def recover_frozen_wake(
             if existing is None:
                 seen_feedback[item.scout_id] = item
                 feedback.append(item)
+        for item in by_role[role].research_incentives:
+            existing = seen_incentives.get(item.scout_id)
+            if existing is not None and existing != item:
+                raise ValueError("Scout snapshots disagree on research incentive")
+            if existing is None:
+                seen_incentives[item.scout_id] = item
+                incentives.append(item)
+        agenda = by_role[role].market_research_agenda
+        if agenda is not None:
+            agenda_base = agenda.model_copy(update={"seeds": ()})
+            if market_agenda_base is not None and market_agenda_base != agenda_base:
+                raise ValueError("Scout snapshots disagree on market research agenda")
+            market_agenda = agenda
+            market_agenda_base = agenda_base
+            for item in agenda.seeds:
+                existing = seen_market_seeds.get(item.seed_id)
+                if existing is not None and existing != item:
+                    raise ValueError("Scout snapshots disagree on market research seed")
+                if existing is None:
+                    seen_market_seeds[item.seed_id] = item
+                    market_seeds.append(item)
+    if market_agenda is not None:
+        market_agenda = market_agenda.model_copy(
+            update={
+                "seeds": tuple(
+                    sorted(market_seeds, key=lambda item: item.assigned_scout_id)
+                )
+            }
+        )
     frozen = by_role[roles[0]].model_copy(
         update={
             "evidence": tuple(evidence),
             "prior_opportunities": tuple(prior_opportunities),
             "trader_mind_memories": tuple(memories),
             "alpha_feedback": tuple(feedback),
+            "research_incentives": tuple(incentives),
+            "market_research_agenda": market_agenda,
         }
     )
     postures = {source_id: posture for source_id, posture in posture_rows}

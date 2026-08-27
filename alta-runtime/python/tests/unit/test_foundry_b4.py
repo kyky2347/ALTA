@@ -10,10 +10,19 @@ from alta_asterism.foundry import (
     deduplicate,
     normalize_key,
 )
-from alta_asterism.opportunity_identity import horizon_bucket
 from alta_asterism.investment_thesis import ThesisPillarDraft
+from alta_asterism.opportunity_identity import (
+    horizon_bucket,
+    normalize_catalyst_bucket,
+)
 
 FIXTURE = Path(__file__).parents[1] / "fixtures" / "b4" / "foundry_cases.json"
+
+
+def test_catalyst_bucket_normalization_is_stable_and_legacy_safe() -> None:
+    assert normalize_catalyst_bucket(" Shared_POLICY Reset ") == "shared-policy-reset"
+    assert normalize_catalyst_bucket("政策冲击") == "政策冲击"
+    assert normalize_catalyst_bucket(None) == "legacy-unclassified"
 
 
 def fixture_candidates() -> tuple[dict, tuple[CandidateDraft, ...]]:
