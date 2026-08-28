@@ -3,6 +3,7 @@ import os
 import json
 import threading
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from types import SimpleNamespace
 from urllib.parse import urlsplit, urlunsplit
 from uuid import uuid4
@@ -201,7 +202,11 @@ def test_database_source_flow_freezes_and_validates_market_research_agenda(
         update={
             "market_research_agenda": scoped.market_research_agenda.model_copy(
                 update={
-                    "seeds": (original_seed.model_copy(update={"priority_score": 0}),)
+                    "seeds": (
+                        original_seed.model_copy(
+                            update={"priority_score": Decimal("0")}
+                        ),
+                    )
                 }
             )
         }

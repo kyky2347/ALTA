@@ -1,6 +1,6 @@
 # ALTA publication security audit
 
-Audit date: 2026-08-27
+Audit date: 2026-08-28
 
 Target: the exact source tree and new Git history prepared for
 `https://github.com/kyky2347/ALTA`
@@ -23,27 +23,28 @@ remediation, and a complete rescan.
 
 ## Publication checks
 
-| Check                                                 |                             Result |
-| ----------------------------------------------------- | ---------------------------------: |
-| Gitleaks 8.30.1 over the exact staged tree            |                         0 findings |
-| Gitleaks 8.30.1 over the complete publication history |                         0 findings |
-| detect-secrets 1.5.0 over first-party non-test source |                         0 findings |
-| Synthetic fixture and credential-keyword review       |                               PASS |
-| Unrelated prior project/account identity scan         |                         0 findings |
-| First-party owner-local absolute-path scan            |                         0 findings |
-| `.env.example` non-empty credential placeholders      |                                  0 |
-| External ALTA credential files present during audit   |                               none |
-| Largest tracked file                                  |                    less than 1 MiB |
-| Clean tracked checkout and locked install             |                               PASS |
-| Node gateway / harness tests                          |                         141 passed |
-| Opportunity OS tests                                  |                         224 passed |
-| Isolated capital-package tests                        |                          25 passed |
-| Ruff lint and format checks                           |                               PASS |
-| Prettier and Markdown checks                          |                               PASS |
-| Deterministic demo / replay                           |                   exact hash match |
-| Accelerated 14-cycle soak                             | PASS; 0 failures; 0 manual repairs |
-| ALTA-managed containers after verification            |                                  0 |
-| Loopback service listeners after verification         |                                  0 |
+| Check                                                 |                                             Result |
+| ----------------------------------------------------- | -------------------------------------------------: |
+| Gitleaks 8.30.1 over the exact staged tree            |                                         0 findings |
+| Gitleaks 8.30.1 over the complete publication history |                                         0 findings |
+| detect-secrets 1.5.0 over first-party non-test source |                                         0 findings |
+| Synthetic fixture and credential-keyword review       |                                               PASS |
+| Unrelated prior project/account identity scan         |                                         0 findings |
+| First-party owner-local absolute-path scan            |                                         0 findings |
+| `.env.example` non-empty credential placeholders      |                                                  0 |
+| Local generated credential state                      |           present under ignored `.alta/`; 0 staged |
+| Largest tracked file                                  |                                    less than 1 MiB |
+| Clean tracked checkout and locked install             |                                               PASS |
+| Node gateway / harness tests                          |                                         141 passed |
+| Opportunity OS tests                                  |                                         243 passed |
+| Isolated capital-package tests                        |                                          25 passed |
+| Ruff lint and format checks                           |                                               PASS |
+| Prettier and Markdown checks                          |                                               PASS |
+| Deterministic demo / replay                           |                                   exact hash match |
+| Accelerated 14-cycle soak                             |                 PASS; 0 failures; 0 manual repairs |
+| ALTA-managed containers after verification            |                                                  0 |
+| Loopback service listeners after verification         |                                                  0 |
+| Research Director deployment                          | 2 unique follow-ups; 2 explore; 4/4 Runs succeeded |
 
 The clean tracked checkout produced three Candidates, three Opportunities, one
 audited expression, and one fully observed Shadow position. Replay reproduced
@@ -51,6 +52,13 @@ the exact SHA-256 snapshot
 `16be618841b4ced276fea1c3297bd0a934093b995bce50bfadad0b74e9f9816c`.
 No LLM, market-data provider, news service, Tiger endpoint, or broker order path
 was called by this deterministic acceptance.
+
+A separate 2026-08-28 service cold start did invoke the configured research
+models. It exposed and fixed two context-budget failures, then completed with
+two unique follow-up assignments, two independent exploration Runs, and four
+successful Trader Minds. The cycle ended `MVP_IDLE`; capital remained disabled,
+no broker path or order was used, and the service, listener, PostgreSQL, and
+Redis were stopped. This is an orchestration acceptance, not an Alpha claim.
 
 ## Scan interpretation
 

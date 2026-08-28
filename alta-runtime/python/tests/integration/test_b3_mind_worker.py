@@ -390,7 +390,7 @@ def test_fake_app_server_runs_four_scouts_with_sdk_and_persists_provenance(
     assert all(
         row[5:9]
         == (
-            "alpha-trader-v14",
+            "alpha-trader-v15",
             "alta-active-research-v4",
             "fixture",
             "fixture-model",

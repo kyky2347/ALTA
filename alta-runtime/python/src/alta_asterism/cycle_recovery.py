@@ -1,4 +1,5 @@
 from .database import Database
+from .research_agenda import OpportunityDrive
 from .scouts import SCOUTS, FrozenScoutInput
 
 
@@ -54,7 +55,33 @@ def recover_frozen_wake(
     market_agenda_base = None
     market_seeds = []
     seen_market_seeds = {}
+    opportunity_drive_core = None
+    research_queue = {}
+    research_assignments = {}
     for role in roles:
+        scoped_drive = by_role[role].opportunity_drive
+        drive_core = scoped_drive.model_copy(
+            update={
+                "assigned_mode": "explore",
+                "assigned_research": None,
+                "research_queue": (),
+                "research_assignments": (),
+            }
+        )
+        if opportunity_drive_core is not None and opportunity_drive_core != drive_core:
+            raise ValueError("Scout snapshots disagree on the research director state")
+        opportunity_drive_core = drive_core
+        for item in scoped_drive.research_queue:
+            key = (item.opportunity_id, item.question_id)
+            existing = research_queue.get(key)
+            if existing is not None and existing != item:
+                raise ValueError("Scout snapshots disagree on a research queue item")
+            research_queue[key] = item
+        for item in scoped_drive.research_assignments:
+            existing = research_assignments.get(item.scout_id)
+            if existing is not None and existing != item:
+                raise ValueError("Scout snapshots disagree on a research assignment")
+            research_assignments[item.scout_id] = item
         for item in by_role[role].evidence:
             existing = seen_evidence.get(item.evidence_id)
             if existing is not None and existing != item:
@@ -112,6 +139,36 @@ def recover_frozen_wake(
                 )
             }
         )
+    ordered_queue = tuple(
+        sorted(
+            research_queue.values(),
+            key=lambda item: (
+                -item.priority_score,
+                item.remaining_days,
+                item.opportunity_id,
+                item.question_id,
+            ),
+        )
+    )
+    queue_positions = {
+        (item.opportunity_id, item.question_id): index
+        for index, item in enumerate(ordered_queue)
+    }
+    ordered_assignments = tuple(
+        sorted(
+            research_assignments.values(),
+            key=lambda item: queue_positions[(item.opportunity_id, item.question_id)],
+        )
+    )
+    if opportunity_drive_core is None:
+        raise ValueError("incomplete cycle is missing its research director state")
+    opportunity_drive = OpportunityDrive.model_validate(
+        {
+            **opportunity_drive_core.model_dump(mode="python"),
+            "research_queue": ordered_queue,
+            "research_assignments": ordered_assignments,
+        }
+    )
     frozen = by_role[roles[0]].model_copy(
         update={
             "evidence": tuple(evidence),
@@ -119,6 +176,7 @@ def recover_frozen_wake(
             "trader_mind_memories": tuple(memories),
             "alpha_feedback": tuple(feedback),
             "research_incentives": tuple(incentives),
+            "opportunity_drive": opportunity_drive,
             "market_research_agenda": market_agenda,
         }
     )

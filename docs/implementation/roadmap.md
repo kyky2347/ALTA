@@ -54,6 +54,9 @@ The repository already contains the complete vertical research slice:
   tool call and 8,000 tokens only after conservative benchmark Alpha is positive.
 - a bounded autonomous explore/follow-up loop that turns prior next tests,
   rejections, and Assessor evidence gaps into exact point-in-time questions.
+- a deterministic Research Director that removes expired or monitor-owned work,
+  orders exact questions by decision value and horizon, prevents duplicate
+  follow-up assignments, and preserves independent exploration capacity.
 - an immutable Thesis Ledger whose observable causal pillars bind research,
   expression selection, position monitoring, and later follow-up work.
 - rolling, current-policy Alpha capital governance that can only reduce later
@@ -110,6 +113,7 @@ Every stage must preserve these rules:
 | B29   | Book-aware research and stress-efficient capital           | Complete       | Frozen mandate, aggregate stress, source capacity, rotation QC |
 | B30   | Completed-bar research-priority funnel                     | Local complete | PIT screen questions are replayable and cannot bypass evidence |
 | B31   | Shared catalyst-risk ledger                                | Local complete | Cross-ticker event crowding binds research and entry capacity  |
+| B32   | Decision-impact research director                          | Local complete | Unique PIT questions; two exploration seats remain protected   |
 | F1    | Sustained forward Shadow evidence                          | Next           | 6–12 week sample and documented data quality                   |
 | F2    | Agent and source ablation                                  | Future         | Incremental contribution is statistically credible             |
 | F3    | Unattended or broader Paper rollout                        | Not authorized | New review, operator approval, and kill controls               |
@@ -956,6 +960,37 @@ Implemented controls in the local development tree:
 This is a deterministic concentration control. It does not estimate statistical
 correlation, validate the catalyst, increase leverage, or establish that a
 diversified-looking book contains Alpha.
+
+## B32 — decision-impact research director
+
+Objective: spend scarce active-research calls on distinct unresolved decisions
+without allowing a queue score to become conviction, expected return, or a
+capital instruction.
+
+Implemented controls in the local development tree:
+
+- only `forming` and `ranked` point-in-time Opportunities enter the queue;
+  expired horizons, closed or rejected work, and active Shadow positions are
+  excluded because monitoring owns the latter;
+- each queue item binds an immutable parent Opportunity and exact question ID;
+  question identity covers origin and normalized prompt content;
+- deterministic integer priority uses only Opportunity state, question origin,
+  and remaining horizon, with explicit reason codes persisted beside the score;
+- the queue first preserves Opportunity diversity, then admits at most two
+  questions across at most two parents;
+- no more than two different questions are assigned to different Trader Minds,
+  and at least two of the four Minds remain in independent discovery;
+- a follow-up output must copy its exact assigned parent and prompt; choosing a
+  different open question fails before persistence;
+- every per-Mind Run freezes the global queue and its exact assignment, the
+  loopback Run API exposes that state, and same-wake recovery reconstructs the
+  global view instead of inheriting one Mind's scoped mode;
+- canonical revalidation rejects unchecked model-copy or priority tampering
+  before the Scout batch enters durable state.
+
+This director allocates research attention only. It cannot supply Evidence,
+change a rank, choose an expression, modify a risk limit, create an intent, or
+claim that a high-priority question contains Alpha.
 
 ## F1 — sustained forward Shadow evidence
 

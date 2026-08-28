@@ -8,6 +8,10 @@ semantic versioning while the project remains experimental.
 
 ### Added
 
+- A deterministic Research Director that removes expired and monitor-owned
+  work, prioritizes exact Opportunity questions by decision gap and remaining
+  horizon, assigns different follow-ups to different Trader Minds, and reserves
+  at least two independent-discovery seats.
 - A portfolio-wide catalyst-risk ledger that groups different instruments by
   their normalized causal catalyst, exposes saturated catalyst clusters to the
   frozen research mandate, and applies a shared notional limit during
@@ -27,6 +31,9 @@ semantic versioning while the project remains experimental.
 
 ### Changed
 
+- Open-question construction now preserves a disconfirming Assessor gap before
+  lower-value thesis prompts can consume the bounded agenda, and the Scout
+  contract is `alpha-trader-v15`.
 - The portfolio policy is now `alta-portfolio-risk-v7`. A ready implementation
   carries a complete catalyst-notional bridge, while legacy positions are
   conservatively assigned to `legacy-unclassified` rather than assumed
@@ -46,12 +53,18 @@ semantic versioning while the project remains experimental.
   Mature, outcome-backed incentives remain the only bounded expansion path.
 - Same-wake recovery now reunifies per-Mind research incentives and scoped
   market-screen seeds instead of inheriting only the first Scout's subset.
+- Per-Mind snapshots now carry only their assigned follow-up parent and question;
+  recovery reunifies those scoped views, and prospective incentives are shed
+  before an assigned parent when prompt pressure requires compaction.
 - Full-book replacement now compares remaining Alpha bps, expected Alpha
   dollars, and expected Alpha per dollar of stress loss instead of rotating on
   a bps hurdle alone.
 
 ### Safety
 
+- Research queue scores and assignments are frozen non-Evidence process state;
+  they cannot enter ranking, expression, capital, or execution, and tampered or
+  substituted follow-ups fail before persistence.
 - These changes affect research reliability and cost control only. They do not
   loosen `Wait`, capital, market-data, Paper-account, or broker boundaries.
 - Market-screen seeds exclude incomplete current-session and future-known rows,

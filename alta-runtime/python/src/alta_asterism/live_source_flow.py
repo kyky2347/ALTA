@@ -17,8 +17,10 @@ from .portfolio_construction import PortfolioConstructor
 from .portfolio_intelligence import build_portfolio_research_mandate
 from .research_agenda import (
     MAX_DRIVE_PRIORITY_OPPORTUNITIES,
+    ResearchQueueInput,
     build_open_research_questions,
     build_opportunity_drive,
+    build_research_queue,
 )
 from .research_incentive import build_research_incentives
 from .scouts import EvidenceSnapshot, FrozenScoutInput
@@ -284,8 +286,18 @@ class DatabaseSourceFlow:
                 opportunity_drive=build_opportunity_drive(
                     cycle_id=cycle_id,
                     idle_streak=idle_streak,
-                    priority_opportunity_ids=tuple(
-                        item.opportunity_id for item in prior_opportunities
+                    research_queue=build_research_queue(
+                        wake_at=wake_at,
+                        opportunities=tuple(
+                            ResearchQueueInput(
+                                opportunity_id=item.opportunity_id,
+                                status=item.status,
+                                known_at=item.known_at,
+                                horizon_days=item.horizon_days,
+                                research_questions=item.research_questions,
+                            )
+                            for item in prior_opportunities
+                        ),
                     ),
                     scout_ids=tuple(item.scout_id for item in SCOUTS),
                 ),
@@ -342,7 +354,7 @@ class DatabaseSourceFlow:
     def _prior_opportunities(self, connection, wake_at: datetime):
         rows = connection.execute(
             """SELECT o.id, o.version, o.known_at, o.title, o.entity_key,
-            o.direction, o.status, o.thesis, o.snapshot_hash,
+            o.direction, o.status, o.thesis, o.horizon_days, o.snapshot_hash,
             (SELECT jsonb_agg(c.foundry_snapshot ORDER BY c.id)
              FROM research.candidate c
              WHERE c.id = ANY(o.member_candidate_ids)
@@ -372,7 +384,7 @@ class DatabaseSourceFlow:
                 WHERE opportunity_id = %s AND snapshot_hash = %s
                   AND assessment_kind = 'private' AND locked_at < %s
                 ORDER BY assessor""",
-                (row[0], row[8], wake_at),
+                (row[0], row[9], wake_at),
             ).fetchall()
             assessor_questions = tuple(
                 (assessor, question)
@@ -380,8 +392,8 @@ class DatabaseSourceFlow:
                 for question in questions
             )
             candidate_snapshots = (
-                tuple(item for item in row[9] if isinstance(item, dict))
-                if isinstance(row[9], list)
+                tuple(item for item in row[10] if isinstance(item, dict))
+                if isinstance(row[10], list)
                 else ()
             )
             next_test = next(
@@ -415,8 +427,9 @@ class DatabaseSourceFlow:
                     entity_key=row[4],
                     direction=row[5],
                     status=row[6],
+                    horizon_days=row[8],
                     summary=_text_prefix(row[7], maximum_bytes=240),
-                    snapshot_hash=row[8],
+                    snapshot_hash=row[9],
                     research_questions=build_open_research_questions(
                         opportunity_id=row[0],
                         next_test=next_test,

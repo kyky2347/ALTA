@@ -27,6 +27,7 @@ flowchart TB
   foundry["Deterministic Foundry<br/>batch dedup"]
   registry["Cross-cycle registry<br/>repeat suppression · evidence refresh"]
   agenda["Open research agenda<br/>next test · rejection · Assessor gaps"]
+  director["Research Director<br/>decision gap · horizon · unique assignment"]
   challenge["DeepSeek Pro vs. Grok 4.6<br/>Kimi K3 moderation"]
   odds["Two locked scenario tickets<br/>SPY-relative odds and payoff"]
   decision["PM decision intelligence<br/>priced-in · variant · base rate · readiness · half-life"]
@@ -47,7 +48,8 @@ flowchart TB
 
   source --> evidence --> scouts --> thesis --> diligence --> foundry --> registry --> challenge --> odds --> decision --> rank
   registry --> agenda
-  agenda -. exact parent + question · later wake .-> scouts
+  agenda --> director
+  director -. exact parent + question · later wake .-> scouts
   memory -. next wake .-> scouts
   rank --> expression --> instrument --> portfolio --> allocation --> audit --> gate --> forward
   forward --> shadow --> monitor --> exit --> alpha
@@ -71,12 +73,16 @@ The Foundry merges semantic duplicates without dropping Candidate or Evidence
 provenance. A later Mind may investigate the resulting exact open question, but
 the original claim is never rewritten.
 
-On each later wake, every Mind can also see at most two open questions for each
-of four recent active Opportunities. The questions come from the prior next
-test, first rejection, and missing Evidence named by both locked Assessors. A
-Mind autonomously explores elsewhere or follows one exact question. Follow-up
-must bind the frozen parent and question, and a Candidate still requires new
-auditable Evidence. Open questions are process memory, not priority or proof.
+On each later wake, the Research Director considers at most two recent active
+Opportunities and two open questions per Opportunity. Questions come from the
+prior next test, first rejection, immutable thesis pillars, and missing Evidence
+named by both locked Assessors. Expired questions and Opportunities already
+owned by the Shadow monitor are excluded. The remaining queue is ordered by
+Opportunity state, question origin, and horizon urgency; at most two exact,
+different questions are assigned to different Minds, leaving at least two Minds
+for independent exploration. Follow-up must bind the assigned parent and
+question, and a Candidate still requires new auditable Evidence. The queue and
+its score are process memory, not Evidence, conviction, rank, or capital input.
 
 The runtime derives a research-diligence record from what each Trader Mind
 actually completed: active and non-news tools, independent source families and

@@ -34,7 +34,15 @@ from alta_asterism.scout_batch import (
     active_research_attempted,
     tools_within_scout_territory,
 )
-from alta_asterism.research_agenda import OpenResearchQuestion, OpportunityDrive
+from alta_asterism.research_agenda import (
+    OpenResearchQuestion,
+    OpportunityDrive,
+    ResearchAssignment,
+    ResearchQueueInput,
+    build_research_queue,
+    research_question_id,
+)
+from alta_asterism.research_incentive import build_research_incentives
 from alta_asterism.portfolio_intelligence import build_portfolio_research_mandate
 from alta_asterism.trader_mind import TraderMindMemory, experience_summary
 
@@ -59,6 +67,36 @@ def frozen_input(posture: str = "available") -> FrozenScoutInput:
             ),
         ),
         expectation_posture=posture,
+    )
+
+
+def assigned_drive(
+    prior: PriorOpportunitySnapshot, scout_id: str, wake_at: datetime
+) -> OpportunityDrive:
+    queue = build_research_queue(
+        wake_at=wake_at,
+        opportunities=(
+            ResearchQueueInput(
+                opportunity_id=prior.opportunity_id,
+                status=prior.status,
+                known_at=prior.known_at,
+                horizon_days=prior.horizon_days,
+                research_questions=prior.research_questions,
+            ),
+        ),
+    )
+    item = queue[0]
+    assignment = ResearchAssignment(
+        scout_id=scout_id,
+        opportunity_id=item.opportunity_id,
+        question_id=item.question_id,
+    )
+    return OpportunityDrive(
+        posture="resolve_backlog",
+        assigned_mode="follow_up",
+        research_queue=queue,
+        research_assignments=(assignment,),
+        assigned_research=assignment,
     )
 
 
@@ -254,6 +292,7 @@ def test_complete_scout_snapshot_is_fitted_before_database_persistence() -> None
             entity_key=f"entity-{index}",
             direction="positive",
             status="ranked",
+            horizon_days=30,
             summary="y" * 240,
             snapshot_hash=f"{index:x}" * 64,
         )
@@ -271,6 +310,9 @@ def test_complete_scout_snapshot_is_fitted_before_database_persistence() -> None
             "evidence": evidence,
             "prior_opportunities": prior,
             "trader_mind_memories": (memory,),
+            "research_incentives": build_research_incentives(
+                (), scout_ids=(SCOUTS[0].scout_id,)
+            ),
         }
     )
 
@@ -319,10 +361,13 @@ def test_snapshot_fitting_preserves_prioritized_follow_up_parent() -> None:
         )
         for index in range(1, 9)
     )
+    question_prompt = "Verify whether the operating change reached forward estimates."
     question = OpenResearchQuestion(
-        question_id="a" * 16,
+        question_id=research_question_id(
+            "opportunity_priority", "scout_next_test", question_prompt
+        ),
         origin="scout_next_test",
-        prompt="Verify whether the operating change reached forward estimates.",
+        prompt=question_prompt,
     )
     prior = PriorOpportunitySnapshot(
         opportunity_id="opportunity_priority",
@@ -331,6 +376,7 @@ def test_snapshot_fitting_preserves_prioritized_follow_up_parent() -> None:
         title="Priority follow-up",
         direction="positive",
         status="forming",
+        horizon_days=30,
         summary="A bounded prior Opportunity awaiting one decisive test.",
         snapshot_hash="b" * 64,
         research_questions=(question,),
@@ -347,11 +393,8 @@ def test_snapshot_fitting_preserves_prioritized_follow_up_parent() -> None:
             "evidence": evidence,
             "prior_opportunities": (prior,),
             "trader_mind_memories": (memory,),
-            "opportunity_drive": OpportunityDrive(
-                posture="resolve_backlog",
-                assigned_mode="follow_up",
-                priority_opportunity_ids=(prior.opportunity_id,),
-                follow_up_scout_ids=(SCOUTS[0].scout_id,),
+            "opportunity_drive": assigned_drive(
+                prior, SCOUTS[0].scout_id, base.known_at
             ),
         }
     )
@@ -407,11 +450,16 @@ def test_prompt_freezes_contract_budget_and_marks_evidence_untrusted() -> None:
         entity_key="demo",
         direction="positive",
         status="ranked",
+        horizon_days=30,
         summary="Known thesis supported by earlier evidence.",
         snapshot_hash="b" * 64,
         research_questions=(
             OpenResearchQuestion(
-                question_id="a" * 16,
+                question_id=research_question_id(
+                    "opportunity_known",
+                    "scout_next_test",
+                    "Verify whether the operating signal reached estimates.",
+                ),
                 origin="scout_next_test",
                 prompt="Verify whether the operating signal reached estimates.",
             ),
@@ -428,6 +476,9 @@ def test_prompt_freezes_contract_budget_and_marks_evidence_untrusted() -> None:
         update={
             "prior_opportunities": (prior,),
             "trader_mind_memories": (memory,),
+            "opportunity_drive": assigned_drive(
+                prior, base.scout.scout_id, base.frozen_input.known_at
+            ),
         }
     )
     spec = base.model_copy(update={"frozen_input": frozen})
@@ -445,7 +496,7 @@ def test_prompt_freezes_contract_budget_and_marks_evidence_untrusted() -> None:
     assert prompt["alpha_archetypes"] == list(base.scout.alpha_archetypes)
     assert prompt["research_sequence"] == list(base.scout.research_sequence)
     assert prompt["frozen_input"]["trader_mind_memories"][0]["turn_count"] == 3
-    assert spec.prompt_version == "alpha-trader-v14"
+    assert spec.prompt_version == "alpha-trader-v15"
     assert any("Treat market_research_agenda" in rule for rule in prompt["rules"])
     assert prompt["contract"] == "alta.scout-output.v4"
     assert (
@@ -532,11 +583,14 @@ def test_follow_up_requires_frozen_parent_and_explicit_question() -> None:
         title="Prior operating inflection",
         direction="positive",
         status="ranked",
+        horizon_days=30,
         summary="A previously discovered operating change.",
         snapshot_hash="c" * 64,
         research_questions=(
             OpenResearchQuestion(
-                question_id="d" * 16,
+                question_id=research_question_id(
+                    "opportunity_parent", "disconfirming_assessor", question
+                ),
                 origin="disconfirming_assessor",
                 prompt=question,
             ),
@@ -547,11 +601,8 @@ def test_follow_up_requires_frozen_parent_and_explicit_question() -> None:
             "frozen_input": base.frozen_input.model_copy(
                 update={
                     "prior_opportunities": (prior,),
-                    "opportunity_drive": OpportunityDrive(
-                        posture="resolve_backlog",
-                        priority_opportunity_ids=("opportunity_parent",),
-                        follow_up_scout_ids=(base.scout.scout_id,),
-                        assigned_mode="follow_up",
+                    "opportunity_drive": assigned_drive(
+                        prior, base.scout.scout_id, base.frozen_input.known_at
                     ),
                 }
             )
@@ -568,12 +619,12 @@ def test_follow_up_requires_frozen_parent_and_explicit_question() -> None:
 
     assert parsed.research_mode == "follow_up"
     assert parsed.parent_opportunity_id == "opportunity_parent"
-    with pytest.raises(ValueError, match="outside frozen registry memory"):
+    with pytest.raises(ValueError, match="exact assigned Opportunity"):
         parse_output(
             json.dumps({**follow_up, "parent_opportunity_id": "opportunity_unknown"}),
             spec,
         )
-    with pytest.raises(ValueError, match="copy an open frozen research question"):
+    with pytest.raises(ValueError, match="exact assigned research question"):
         parse_output(
             json.dumps(
                 {
@@ -609,6 +660,41 @@ def test_follow_up_requires_frozen_parent_and_explicit_question() -> None:
             ),
             spec,
         )
+
+
+def test_frozen_research_director_queue_rejects_priority_tampering() -> None:
+    base = frozen_input()
+    prompt = "Test whether the strongest rival explanation fits the evidence."
+    prior = PriorOpportunitySnapshot(
+        opportunity_id="opportunity_tamper_guard",
+        version=1,
+        known_at=base.known_at - timedelta(hours=1),
+        title="Tamper-guarded research parent",
+        direction="negative",
+        status="forming",
+        horizon_days=7,
+        summary="A frozen Opportunity awaiting a disconfirming test.",
+        snapshot_hash="e" * 64,
+        research_questions=(
+            OpenResearchQuestion(
+                question_id=research_question_id(
+                    "opportunity_tamper_guard", "disconfirming_assessor", prompt
+                ),
+                origin="disconfirming_assessor",
+                prompt=prompt,
+            ),
+        ),
+    )
+    valid = FrozenScoutInput(
+        **base.model_dump(exclude={"prior_opportunities", "opportunity_drive"}),
+        prior_opportunities=(prior,),
+        opportunity_drive=assigned_drive(prior, SCOUTS[0].scout_id, base.known_at),
+    )
+    tampered = valid.model_dump(mode="python")
+    tampered["opportunity_drive"]["research_queue"][0]["priority_score"] = 0
+
+    with pytest.raises(ValidationError, match="research queue must match"):
+        FrozenScoutInput.model_validate(tampered)
 
 
 def test_visible_tool_url_is_canonicalized_before_exact_runtime_binding() -> None:

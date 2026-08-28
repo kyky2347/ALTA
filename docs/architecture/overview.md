@@ -20,6 +20,7 @@ flowchart TB
   mindmemory["[Code] Per-Mind experience<br/>bounded · prior-cycle · non-Evidence"]
   foundry["[Code] Foundry + cross-cycle registry<br/>stable identity · dedup · refresh"]
   agenda["[Code] Open research agenda<br/>next test · rejection · Assessor gaps"]
+  director["[Code] Research Director<br/>decision gap · horizon · unique assignment"]
   assessors["[Agents] DeepSeek Pro + Grok 4.6<br/>locked private assessment"]
   underwriting["[Agents] Two locked scenario tickets<br/>SPY-relative odds · payoff · risks"]
   decision["[Agents + Code] PM decision intelligence<br/>priced-in · variant · base rate · readiness · half-life"]
@@ -48,7 +49,8 @@ flowchart TB
   mandate -. later point-in-time wake .-> scouts
   mindmemory -. next frozen wake .-> scouts
   foundry --> agenda
-  agenda -. exact parent + question · later wake .-> scouts
+  agenda --> director
+  director -. exact parent + question · later wake .-> scouts
   moderator --> ranking --> expression --> instrument --> portfolio --> allocation --> auditor
   auditor --> validation --> shadow --> monitor --> measurement --> cohort
   measurement --> feedback
@@ -68,6 +70,7 @@ does not collapse their independent contexts into a shared chat.
 ```mermaid
 sequenceDiagram
   participant O as Cycle orchestrator (code)
+  participant D as Research Director (code)
   participant S as Active Trader Minds (4 Agents)
   participant F as Foundry and registry (code)
   participant A as Private Assessors (2 Agents)
@@ -82,8 +85,10 @@ sequenceDiagram
   participant P as Position Monitor Agent
   participant C as Isolated Paper executor (code)
 
-  O->>S: Frozen wake, completed-bar research seed, portfolio mandate, open questions, prior experience, mature feedback, revocable incentive, and per-role tools
-  S->>S: Autonomously explore or follow one exact question using allowed public tools
+  O->>D: Frozen open questions, state, horizon, and idle streak
+  D-->>S: Unique exact follow-ups plus at least two independent exploration seats
+  O->>S: Frozen wake, completed-bar seed, portfolio mandate, prior experience, mature feedback, revocable incentive, and per-role tools
+  S->>S: Explore independently or test only the exact assigned question
   S-->>F: Candidate or no-op plus research record and falsifiable pillars
   F->>F: Compare durable identity and Raw content history
   F-->>O: Persist bounded registry memory and open questions for the next frozen wake

@@ -16,6 +16,7 @@ from .mind_worker import (
 )
 from .market_research_projection import MarketResearchAgendaProjector
 from .research_diligence import build_research_diligence
+from .research_agenda import ResearchQueueInput, build_research_queue
 from .research_incentive import build_research_incentives
 from .scouts import (
     CandidateOutput,
@@ -48,6 +49,30 @@ class ScoutRepository:
         self.database = database
 
     def validate_frozen_input(self, frozen_input: FrozenScoutInput) -> None:
+        # model_copy is intentionally used while fitting role-scoped snapshots;
+        # rebuild the contract here so no unchecked update can cross persistence.
+        validated = FrozenScoutInput.model_validate(
+            frozen_input.model_dump(mode="python")
+        )
+        if validated != frozen_input:
+            raise ValueError("frozen Scout input failed canonical validation")
+        expected_queue = build_research_queue(
+            wake_at=frozen_input.known_at,
+            opportunities=tuple(
+                ResearchQueueInput(
+                    opportunity_id=item.opportunity_id,
+                    status=item.status,
+                    known_at=item.known_at,
+                    horizon_days=item.horizon_days,
+                    research_questions=item.research_questions,
+                )
+                for item in frozen_input.prior_opportunities
+            ),
+        )
+        if frozen_input.opportunity_drive.research_queue != expected_queue:
+            raise ValueError(
+                "durable research director queue does not match registry memory"
+            )
         expected = {item.evidence_id: item for item in frozen_input.evidence}
         expected_minds = {
             item.scout_id: item for item in frozen_input.trader_mind_memories

@@ -26,7 +26,13 @@ from .investment_thesis import ThesisPillarDraft
 from .market_research import MarketResearchAgenda
 from .opportunity_memory import PriorOpportunitySnapshot
 from .portfolio_intelligence import PortfolioResearchMandate
-from .research_agenda import OpportunityDrive, ResearchMode
+from .research_agenda import (
+    OpportunityDrive,
+    ResearchMode,
+    ResearchQueueInput,
+    build_research_queue,
+    research_question_id,
+)
 from .research_incentive import ResearchIncentive
 from .trader_mind import (
     ACTIVE_RESEARCH_TOOLS as ACTIVE_RESEARCH_TOOLS,
@@ -38,7 +44,7 @@ from .trader_mind import (
 )
 
 MAX_FROZEN_INPUT_BYTES = MAX_FROZEN_SCOUT_INPUT_BYTES
-SCOUT_PROMPT_VERSION = "alpha-trader-v14"
+SCOUT_PROMPT_VERSION = "alpha-trader-v15"
 SCOUT_TOOL_CATALOG_VERSION = "alta-active-research-v4"
 CANONICAL_SOURCE_LOCATOR_PATTERN = r"^(?:https|fixture|alta)://[^/?#\s]+(?:/[^?#\s]*)?$"
 
@@ -169,6 +175,64 @@ class FrozenScoutInput(BaseModel):
             raise ValueError(
                 "Opportunity drive priorities must exist in frozen registry memory"
             )
+        expected_queue = build_research_queue(
+            wake_at=self.known_at,
+            opportunities=tuple(
+                ResearchQueueInput(
+                    opportunity_id=item.opportunity_id,
+                    status=item.status,
+                    known_at=item.known_at,
+                    horizon_days=item.horizon_days,
+                    research_questions=item.research_questions,
+                )
+                for item in self.prior_opportunities
+            ),
+        )
+        expected_queue_positions = {
+            (item.opportunity_id, item.question_id): (index, item)
+            for index, item in enumerate(expected_queue)
+        }
+        queue_positions = []
+        for item in drive.research_queue:
+            expected_item = expected_queue_positions.get(
+                (item.opportunity_id, item.question_id)
+            )
+            if expected_item is None or expected_item[1] != item:
+                raise ValueError(
+                    "Opportunity drive research queue must match frozen registry memory"
+                )
+            queue_positions.append(expected_item[0])
+        if queue_positions != sorted(queue_positions):
+            raise ValueError(
+                "Opportunity drive research queue must match frozen registry memory"
+            )
+        questions_by_opportunity = {
+            item.opportunity_id: {
+                question.question_id: question for question in item.research_questions
+            }
+            for item in self.prior_opportunities
+        }
+        for opportunity in self.prior_opportunities:
+            if any(
+                question.question_id
+                != research_question_id(
+                    opportunity.opportunity_id,
+                    question.origin,
+                    question.prompt,
+                )
+                for question in opportunity.research_questions
+            ):
+                raise ValueError(
+                    "frozen research question identity does not match its content"
+                )
+        for queued in drive.research_queue:
+            question = questions_by_opportunity.get(queued.opportunity_id, {}).get(
+                queued.question_id
+            )
+            if question is None:
+                raise ValueError(
+                    "Opportunity drive queue must cite an exact frozen question"
+                )
         scout_ids = {item.scout_id for item in SCOUTS}
         if not set(drive.follow_up_scout_ids).issubset(scout_ids):
             raise ValueError("Opportunity drive cites an unknown Trader Mind")
@@ -209,8 +273,15 @@ class FrozenScoutInput(BaseModel):
         self, scout_id: str, territories: tuple[str, ...]
     ) -> "FrozenScoutInput":
         scoped = self.for_territories(territories)
+        drive = scoped.opportunity_drive.for_scout(scout_id)
+        assigned_parent_ids = set(drive.priority_opportunity_ids)
         return scoped.model_copy(
             update={
+                "prior_opportunities": tuple(
+                    item
+                    for item in scoped.prior_opportunities
+                    if item.opportunity_id in assigned_parent_ids
+                ),
                 "trader_mind_memories": tuple(
                     item
                     for item in scoped.trader_mind_memories
@@ -224,7 +295,7 @@ class FrozenScoutInput(BaseModel):
                     for item in scoped.research_incentives
                     if item.scout_id == scout_id
                 ),
-                "opportunity_drive": scoped.opportunity_drive.for_scout(scout_id),
+                "opportunity_drive": drive,
                 "market_research_agenda": (
                     scoped.market_research_agenda.for_scout(scout_id)
                     if scoped.market_research_agenda is not None
@@ -499,6 +570,9 @@ def fit_frozen_input_for_scout(
                 update={"alpha_feedback": (), "research_incentives": ()}
             )
             continue
+        if (priority_ids or prompt_too_large) and fitted.research_incentives:
+            fitted = fitted.model_copy(update={"research_incentives": ()})
+            continue
         if fitted.portfolio_research_mandate is not None:
             fitted = fitted.model_copy(update={"portfolio_research_mandate": None})
             continue
@@ -511,33 +585,11 @@ def fit_frozen_input_for_scout(
         if fitted.prior_opportunities:
             retained = fitted.prior_opportunities[:-1]
             retained_ids = {item.opportunity_id for item in retained}
-            retained_priorities = tuple(
-                item
-                for item in fitted.opportunity_drive.priority_opportunity_ids
-                if item in retained_ids
-            )
-            drive_update = {"priority_opportunity_ids": retained_priorities}
-            if not retained_priorities:
-                drive_update.update(
-                    {
-                        "assigned_mode": "explore",
-                        "follow_up_scout_ids": (),
-                        "posture": (
-                            "expand_search"
-                            if fitted.opportunity_drive.route_change_required
-                            else "balanced"
-                        ),
-                        "directive": (
-                            "Continue independent discovery because the bounded "
-                            "Scout snapshot could not retain a parent Opportunity."
-                        ),
-                    }
-                )
             fitted = fitted.model_copy(
                 update={
                     "prior_opportunities": retained,
-                    "opportunity_drive": fitted.opportunity_drive.model_copy(
-                        update=drive_update
+                    "opportunity_drive": (
+                        fitted.opportunity_drive.restrict_to_opportunities(retained_ids)
                     ),
                 }
             )
@@ -777,8 +829,12 @@ def _safe_tool_evidence_ref(value: Any) -> ToolEvidenceRef | None:
 def _validate_follow_up(value: ScoutOutput, spec: ScoutRunSpec) -> None:
     if value.research_mode != "follow_up":
         return
-    if spec.frozen_input.opportunity_drive.assigned_mode != "follow_up":
+    drive = spec.frozen_input.opportunity_drive
+    assignment = drive.assigned_research
+    if drive.assigned_mode != "follow_up" or assignment is None:
         raise ValueError("follow_up output requires a frozen follow_up assignment")
+    if value.parent_opportunity_id != assignment.opportunity_id:
+        raise ValueError("follow_up output must use its exact assigned Opportunity")
     parent = next(
         (
             item
@@ -791,10 +847,18 @@ def _validate_follow_up(value: ScoutOutput, spec: ScoutRunSpec) -> None:
         raise ValueError(
             "follow_up output cites an Opportunity outside frozen registry memory"
         )
-    if value.research_question not in {
-        question.prompt for question in parent.research_questions
-    }:
-        raise ValueError("follow_up output must copy an open frozen research question")
+    question = next(
+        (
+            item
+            for item in parent.research_questions
+            if item.question_id == assignment.question_id
+        ),
+        None,
+    )
+    if question is None or value.research_question != question.prompt:
+        raise ValueError(
+            "follow_up output must copy its exact assigned research question"
+        )
 
 
 def _resolve_tool_evidence_refs(
@@ -936,9 +1000,9 @@ def build_prompt(spec: ScoutRunSpec) -> str:
             "Separate sourced facts from inference. State the strongest first rejection, what makes the setup investable now, what would kill it, and the next evidence that should be checked.",
             "A high-confidence Candidate still requires a precise falsifier; otherwise return no_op.",
             "Treat prior_opportunities as bounded registry memory, not evidence. Do not repeat a prior thesis unless this turn finds genuinely new source content that changes its state. Reuse stable entity/event/catalyst identity keys for a supported update; return no_op for a semantic duplicate.",
-            "Use opportunity_drive.assigned_mode as the starting research allocation. When assigned follow_up, first attempt one compatible open question from a priority Opportunity with differentiated, high-information work; return no_op or continue explore if no compatible question can be tested. When assigned explore, continue independent anomaly discovery even when a backlog exists. A prior Opportunity never deserves attention merely because it exists.",
+            "When opportunity_drive assigns follow_up, test only assigned_research and do not substitute another backlog item. If it is untestable, return no_op or use only remaining budget for independent exploration. Unassigned Minds explore independently.",
             "When opportunity_drive.route_change_required is true, do not repeat the last failed route unchanged: vary at least one of entity, source class, or causal hypothesis while staying inside this Mind's mandate and tool budget.",
-            "For follow_up, copy the exact frozen parent opportunity_id and one exact open research-question prompt, preserve supported identity keys, and seek genuinely new Evidence even if the answer is no_op. For explore, leave parent_opportunity_id and research_question empty. Research lineage is attribution only, never a ranking or capital instruction.",
+            "For follow_up, copy the exact assigned Opportunity and question and seek new Evidence. Queue score is process priority only, never confidence, expected return, rank, or capital permission. For explore, leave research lineage empty.",
             "An opposite-direction thesis is not a duplicate, but it still requires new auditable evidence and a distinct causal prediction.",
             "The gateway admits at most budget.max_tool_calls. Once sufficient evidence exists, or any tool reports that the budget is exhausted, stop searching and return the best supported Candidate or an honest no_op; never retry a rejected tool call.",
             "Stay inside this Scout's primary source and search territory.",

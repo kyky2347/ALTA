@@ -700,6 +700,20 @@ def test_cross_cycle_registry_suppresses_same_content_and_refreshes_new_evidence
     )
     assert remembered.research_questions[0].origin == "scout_next_test"
     assert remembered.research_questions[0].prompt.startswith("Verify whether")
+    queue = memory.opportunity_drive.research_queue
+    assignments = memory.opportunity_drive.research_assignments
+    assert 1 <= len(queue) <= 2
+    assert {item.opportunity_id for item in queue} == {remembered.opportunity_id}
+    assert {item.question_id for item in queue}.issubset(
+        {item.question_id for item in remembered.research_questions}
+    )
+    assert any(item.reason_codes[1] == "next_test" for item in queue)
+    assert len(assignments) == len(queue)
+    assert len({item.question_id for item in assignments}) == len(assignments)
+    for assignment in assignments:
+        scoped_drive = memory.opportunity_drive.for_scout(assignment.scout_id)
+        assert scoped_drive.assigned_mode == "follow_up"
+        assert scoped_drive.assigned_research == assignment
     with database.connect() as connection:
         events = connection.execute(
             """SELECT event_type, payload->>'reason' FROM ops.event

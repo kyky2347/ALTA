@@ -18,6 +18,7 @@ class PriorOpportunitySnapshot(BaseModel):
     entity_key: str | None = Field(default=None, max_length=128)
     direction: Literal["positive", "negative", "neutral", "unknown"]
     status: Literal["forming", "ranked", "shadow", "closed", "rejected"]
+    horizon_days: int = Field(ge=1, le=365)
     summary: str = Field(min_length=1, max_length=480)
     snapshot_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
     research_questions: tuple[OpenResearchQuestion, ...] = Field(

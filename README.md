@@ -28,13 +28,16 @@ Replay / Shadow · **Broker boundary:** explicit Tiger Paper acceptance only ·
 **Local development state:** institutional book intelligence and a replayable
 market-research funnel are integrated. Completed daily bars can create at most
 one non-Evidence anomaly question per Trader Mind; each Mind must independently
-re-verify the observation and causal wedge. Aggregate stress, Alpha-source, and
-shared-catalyst concentration constrain construction, and full-book rotation must improve both
-expected Alpha dollars and Alpha per unit of stress capital. The current local
-tree also centralizes every Agent context budget, gives malformed Scout output
-one fresh bounded attempt, backs off degraded optional connectors, and refuses
-to spend private-assessment tokens on Opportunities that deterministic gates
-already reject.
+re-verify the observation and causal wedge. A deterministic Research Director
+now removes expired or position-monitor-owned work, ranks exact open questions
+by decision value and horizon urgency, gives each follow-up Mind a different
+question, and preserves at least two independent-discovery seats. Aggregate
+stress, Alpha-source, and shared-catalyst concentration constrain construction,
+and full-book rotation must improve both expected Alpha dollars and Alpha per
+unit of stress capital. The current local tree also centralizes every Agent
+context budget, gives malformed Scout output one fresh bounded attempt, backs
+off degraded optional connectors, and refuses to spend private-assessment
+tokens on Opportunities that deterministic gates already reject.
 
 [Quick start](#quick-start) · [Architecture](docs/architecture/overview.md) ·
 [Operations](docs/operations/autonomous-shadow.md) ·
@@ -92,7 +95,9 @@ flowchart TB
     minds["4 active Trader Minds<br/>different Alpha archetypes and tool routes"]
     thesis["Frozen Thesis Ledger<br/>observable · confirm · invalidate · due"]
     registry["Opportunity Foundry and registry<br/>identity · dedup · refresh · open questions"]
+    director["Deterministic Research Director<br/>decision gap · urgency · unique assignment"]
     sources --> screen -. "non-Evidence question" .-> minds --> thesis --> registry
+    registry --> director -. "exact non-Evidence follow-up" .-> minds
     mandate -. "non-Evidence context" .-> minds
   end
 
@@ -132,6 +137,12 @@ one another's first view; the expression proposer and implementation Auditor use
 different model routes; rank scores stay hidden from the expression role; and
 no Agent receives an order tool.
 
+The Research Director is code, not another opinionated Agent. It scores only
+the cost of leaving a decision gap unresolved: Opportunity state, question
+origin, and remaining horizon. Expired work and active Shadow positions leave
+the queue; exact question assignments are frozen into each Run; duplicated
+follow-up work is rejected; and the score can never enter ranking or capital.
+
 ### The specialized team
 
 | Role                    | Mandate                                                                                                                           | Authority boundary                                                    |
@@ -140,6 +151,7 @@ no Agent receives an order tool.
 | Market-dislocation Mind | Find price, volatility, flow, breadth, and relative-value anomalies                                                               | Must identify a falsifiable non-technical mechanism                   |
 | Causal-policy Mind      | Trace official policy, macro, input-cost, and supply-chain transmission                                                           | Must map issuer-level exposure and timing                             |
 | Expectation-gap Mind    | Find measurable gaps between priced expectations and emerging fundamentals                                                        | Must seek counterevidence and an observable resolution path           |
+| Research Director       | Prioritize exact unresolved questions, allocate unique follow-ups, and protect independent exploration                            | Deterministic non-Evidence process control; cannot judge or trade     |
 | Two private Assessors   | Underwrite independent scenario distributions, base rates, variants, and first rejections                                         | Locked views; no instrument selection                                 |
 | Moderator and ranker    | Reconcile disagreements, preserve uncertainty, and admit only decision-grade edge                                                 | Moderator is an Agent; rank mechanics are deterministic               |
 | Implementation PM       | Compare direct stock, ETF/proxy, option, and `Wait`                                                                               | Proposes a bounded slate; cannot submit orders                        |
@@ -155,18 +167,18 @@ remain external-provider dependencies, not repository guarantees.
 
 ## What is implemented
 
-| Area          | Current capability                                                                                                                                                                                        |
-| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Discovery     | Four concurrent Trader Minds, autonomous tool calls, a completed-bar anomaly funnel, explore/follow-up allocation, route rotation, a frozen book-aware mandate, no-op support, and bounded process memory |
-| Evidence      | Raw-first point-in-time records, stable identity, content deduplication, immutable thesis pillars, provenance, and replay                                                                                 |
-| Deliberation  | Private heterogeneous assessment, scenario odds, reference-class base rates, priced-in/variant separation, bounded moderation, and conservative admission                                                 |
-| Expression    | Up to three Stock / ETF / Option / Wait hypotheses, real quote or option-chain gates, implementation comparison, and independent audit                                                                    |
-| Portfolio     | Cost deduction, Alpha decay, single-trade and aggregate stress limits, liquidity, gross/factor/Alpha-source/shared-catalyst buckets, stress-efficient capital competition, and pre-intent revalidation    |
-| Learning      | Cost-adjusted SPY-relative Shadow measurement, frozen cohorts, configuration drift, missingness, and maturity-gated performance attribution                                                               |
-| Incentives    | Symmetric, revocable research-budget bonus based only on a conservative forward Alpha bound; no rank, risk, capital, or broker influence                                                                  |
-| Reliability   | Single-owner scheduler, two watchdogs, canonical context budgets, one auditable fresh Scout retry, connector backoff, same-frozen-wake recovery, idempotent transitions, and clean shutdown               |
-| Observability | Loopback JSON/SSE for runtime, Agent runs, opportunities, debates, expressions, positions, cohorts, and Alpha summaries                                                                                   |
-| Capital       | Disabled by default; isolated CLI-only Tiger Paper acceptance with exact-account binding, one-share limits, and final-flat verification                                                                   |
+| Area          | Current capability                                                                                                                                                                                                                                                                    |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Discovery     | Four concurrent Trader Minds, autonomous tool calls, a completed-bar anomaly funnel, an urgency-aware Research Director with unique follow-up assignments and two protected exploration seats, route rotation, a frozen book-aware mandate, no-op support, and bounded process memory |
+| Evidence      | Raw-first point-in-time records, stable identity, content deduplication, immutable thesis pillars, provenance, and replay                                                                                                                                                             |
+| Deliberation  | Private heterogeneous assessment, scenario odds, reference-class base rates, priced-in/variant separation, bounded moderation, and conservative admission                                                                                                                             |
+| Expression    | Up to three Stock / ETF / Option / Wait hypotheses, real quote or option-chain gates, implementation comparison, and independent audit                                                                                                                                                |
+| Portfolio     | Cost deduction, Alpha decay, single-trade and aggregate stress limits, liquidity, gross/factor/Alpha-source/shared-catalyst buckets, stress-efficient capital competition, and pre-intent revalidation                                                                                |
+| Learning      | Cost-adjusted SPY-relative Shadow measurement, frozen cohorts, configuration drift, missingness, and maturity-gated performance attribution                                                                                                                                           |
+| Incentives    | Symmetric, revocable research-budget bonus based only on a conservative forward Alpha bound; no rank, risk, capital, or broker influence                                                                                                                                              |
+| Reliability   | Single-owner scheduler, two watchdogs, canonical context budgets, one auditable fresh Scout retry, connector backoff, same-frozen-wake recovery, idempotent transitions, and clean shutdown                                                                                           |
+| Observability | Loopback JSON/SSE for runtime, Agent runs, opportunities, debates, expressions, positions, cohorts, and Alpha summaries                                                                                                                                                               |
+| Capital       | Disabled by default; isolated CLI-only Tiger Paper acceptance with exact-account binding, one-share limits, and final-flat verification                                                                                                                                               |
 
 ### Where the research edge is intended to come from
 
@@ -292,7 +304,7 @@ does not expose an order API.
 | `/api/v1/system/summary`        | Durable object counts                                           |
 | `/api/v1/system/runtime`        | Agent, source, heartbeat, credential-revision, and safety state |
 | `/api/v1/mvp/status`            | Current cycle and recent events                                 |
-| `/api/v1/runs/{id}`             | Role runs and stage outcomes                                    |
+| `/api/v1/runs/{id}`             | Role runs, frozen research queue/assignment, and stage outcomes |
 | `/api/v1/opportunities/{id}`    | Evidence, thesis, debate, ranking, and audit trail              |
 | `/api/v1/expressions/{id}`      | Expression, construction, and Shadow state                      |
 | `/api/v1/alpha/summary`         | Forward Shadow measurement and underwriting calibration         |
@@ -306,14 +318,24 @@ The current local working tree passes:
 | Gate                      |                                                                     Result |
 | ------------------------- | -------------------------------------------------------------------------: |
 | Node gateway / harness    |                                                                  141 tests |
-| Opportunity OS            |                                                                  240 tests |
+| Opportunity OS            |                                                                  243 tests |
 | Isolated capital package  |                                                                   25 tests |
 | Deterministic lifecycle   | 3 Candidates → 3 Opportunities → 1 audited Shadow position → observed exit |
 | Replay                    |         `16be618841b4ced276fea1c3297bd0a934093b995bce50bfadad0b74e9f9816c` |
 | Accelerated soak          |                              14 cycles, zero failures, zero manual repairs |
 | Foreground service        |                           `live` and `ready`, capital disabled, clean stop |
+| Research Director deploy  |              2 unique follow-ups + 2 explore; 4/4 Runs succeeded; idle end |
 | Supervised wall-clock run |   26 completed idle cycles; 3 Opportunities; 0 ranks, positions, or orders |
 | Sensitive-file check      | No credential files or credential-like values found in first-party changes |
+
+The Research Director cold start exposed and fixed two real context-budget
+defects: a global queue could exceed the 16 KiB frozen-wake limit, and a
+prospective incentive could displace the assigned follow-up parent at the
+12 KiB prompt limit. The rerun persisted two different exact follow-ups and two
+independent exploration Runs under `alpha-trader-v15`; all four Minds succeeded,
+the cycle ended `MVP_IDLE`, consecutive failures returned to zero, capital
+remained disabled, and the service stopped cleanly. This verifies orchestration
+and refusal behavior, not profitable discovery.
 
 The soak advances simulated event time; it is not 24 hours of live wall-clock
 model operation. Engineering verification proves paths and refusal behavior,
