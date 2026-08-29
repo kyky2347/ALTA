@@ -2,86 +2,29 @@ import json
 from decimal import Decimal
 from typing import Any
 
-from .alpha_feedback import AlphaFeedbackProjector
 import psycopg
 from psycopg.types.json import Jsonb
 
-from .contracts import Event
 from .alpha_governance import (
     AlphaCapitalGovernance,
     AlphaCapitalGovernancePolicy,
-    CapitalPerformanceObservation,
-    evaluate_alpha_capital_governance,
 )
+from .alpha_feedback import AlphaFeedbackProjector
+from .alpha_reporting import (
+    alpha_capital_governance as load_alpha_capital_governance,
+    alpha_summary as build_alpha_summary,
+    forecast_calibration_governance as load_forecast_calibration_governance,
+)
+from .contracts import Event
 from .foundry import CandidateDraft, materialized_thesis_pillars
+from .forecast_calibration import (
+    ForecastCalibrationGovernance,
+    ForecastCalibrationPolicy,
+)
+from .investment_thesis import pillar_research_question
 from .migrations import CURRENT_TABLES, LATEST_REVISION, MIGRATIONS
 from .research_agenda import build_open_research_questions
 from .research_diligence import ResearchDiligence, strongest_diligence
-from .investment_thesis import pillar_research_question
-from .underwriting_calibration import (
-    AlphaPerformanceObservation,
-    CalibrationObservation,
-    frozen_expected_net_alpha_bps,
-    summarize_alpha_evidence,
-    summarize_underwriting_calibration,
-)
-
-
-def _mean_decimal(values: list[Decimal]) -> str | None:
-    if not values:
-        return None
-    return str(sum(values, Decimal(0)) / Decimal(len(values)))
-
-
-def _positive_rate(values: list[Decimal]) -> str | None:
-    if not values:
-        return None
-    return str(Decimal(sum(value > 0 for value in values)) / Decimal(len(values)))
-
-
-def _calibration_observations(
-    implementation_rows: list[tuple],
-    realized_by_position: dict[str, Decimal],
-) -> tuple[CalibrationObservation, ...]:
-    observations = []
-    for position_id, expression_kind, position_thesis in implementation_rows:
-        if expression_kind != "stock" or position_id not in realized_by_position:
-            continue
-        expected_alpha = frozen_expected_net_alpha_bps(position_thesis)
-        if expected_alpha is not None:
-            observations.append(
-                CalibrationObservation(
-                    position_id=position_id,
-                    expected_alpha_bps=expected_alpha,
-                    realized_alpha_bps=realized_by_position[position_id],
-                )
-            )
-    return tuple(observations)
-
-
-def _capital_governance_payload(value: AlphaCapitalGovernance) -> dict[str, Any]:
-    return {
-        "policyVersion": value.policy_version,
-        "sourcePortfolioPolicyVersion": value.source_portfolio_policy_version,
-        "posture": value.posture,
-        "capitalMultiplier": str(value.capital_multiplier),
-        "sampleSize": value.sample_size,
-        "windowSize": value.window_size,
-        "recentMeanAlphaBps": (
-            str(value.recent_mean_alpha_bps)
-            if value.recent_mean_alpha_bps is not None
-            else None
-        ),
-        "confidence95UpperAlphaBps": (
-            str(value.confidence95_upper_alpha_bps)
-            if value.confidence95_upper_alpha_bps is not None
-            else None
-        ),
-        "maxDrawdownNavBps": str(value.max_drawdown_nav_bps),
-        "evidencePosture": value.evidence_posture,
-        "observedThrough": value.observed_through,
-        "reasonCodes": list(value.reason_codes),
-    }
 
 
 OPPORTUNITY_DETAIL_KEYS = (
@@ -726,82 +669,7 @@ class Database:
         }
 
     def alpha_summary(self, environment: str) -> dict[str, Any]:
-        with self.connect() as connection:
-            rows = connection.execute(
-                """SELECT aggregate_id, payload, known_at FROM (
-                    SELECT DISTINCT ON (aggregate_id)
-                        aggregate_id, payload, known_at, sequence
-                    FROM ops.event
-                    WHERE environment = %s
-                      AND event_type = 'position.performance.measured'
-                    ORDER BY aggregate_id, sequence DESC
-                ) latest ORDER BY sequence""",
-                (environment,),
-            ).fetchall()
-            open_positions = connection.execute(
-                """SELECT count(*) FROM research.shadow_position
-                WHERE environment = %s AND status = 'open'""",
-                (environment,),
-            ).fetchone()[0]
-            position_ids = [row[0] for row in rows]
-            implementation_rows = (
-                connection.execute(
-                    """SELECT p.id, e.kind, p.position_thesis
-                    FROM research.shadow_position p
-                    JOIN research.expression e ON e.id = p.expression_id
-                    WHERE p.id = ANY(%s) AND p.environment = %s
-                    ORDER BY p.id""",
-                    (position_ids, environment),
-                ).fetchall()
-                if position_ids
-                else []
-            )
-        returns = [Decimal(row[1]["net_return_bps"]) for row in rows]
-        alphas = [
-            Decimal(row[1]["realized_alpha_bps"])
-            for row in rows
-            if row[1].get("realized_alpha_bps") is not None
-        ]
-        pnl = [Decimal(row[1]["net_pnl"]) for row in rows]
-        realized_by_position = {
-            row[0]: Decimal(row[1]["realized_alpha_bps"])
-            for row in rows
-            if row[1].get("realized_alpha_bps") is not None
-        }
-        alpha_evidence = summarize_alpha_evidence(
-            tuple(
-                AlphaPerformanceObservation(
-                    position_id=row[0],
-                    realized_alpha_bps=Decimal(row[1]["realized_alpha_bps"]),
-                )
-                for row in rows
-                if row[1].get("realized_alpha_bps") is not None
-            )
-        )
-        from .implementation import PortfolioRiskPolicy
-
-        portfolio_policy = PortfolioRiskPolicy()
-        capital_governance = self.alpha_capital_governance(
-            environment,
-            reference_nav=portfolio_policy.reference_nav,
-            source_portfolio_policy_version=portfolio_policy.version,
-        )
-        return {
-            "measurement": "realized_shadow_cost_adjusted",
-            "closedPositions": len(rows),
-            "openPositions": open_positions,
-            "positiveReturnRate": _positive_rate(returns),
-            "meanNetReturnBps": _mean_decimal(returns),
-            "meanRealizedAlphaBps": _mean_decimal(alphas),
-            "cumulativeNetPnl": str(sum(pnl, Decimal(0))),
-            "lastMeasuredAt": rows[-1][2] if rows else None,
-            "alphaEvidence": alpha_evidence,
-            "capitalGovernance": _capital_governance_payload(capital_governance),
-            "underwritingCalibration": summarize_underwriting_calibration(
-                _calibration_observations(implementation_rows, realized_by_position)
-            ),
-            "warning": alpha_evidence["warning"],
-        }
+        return build_alpha_summary(self, environment)
 
     def alpha_capital_governance(
         self,
@@ -811,51 +679,28 @@ class Database:
         source_portfolio_policy_version: str,
         policy: AlphaCapitalGovernancePolicy | None = None,
     ) -> AlphaCapitalGovernance:
-        policy = policy or AlphaCapitalGovernancePolicy()
-        with self.connect() as connection:
-            rows = connection.execute(
-                """WITH latest AS (
-                    SELECT DISTINCT ON (aggregate_id)
-                        aggregate_id, payload, known_at, sequence
-                    FROM ops.event
-                    WHERE environment = %s
-                      AND event_type = 'position.performance.measured'
-                      AND payload->>'cost_adjusted' = 'true'
-                      AND payload->>'realized_alpha_bps' IS NOT NULL
-                    ORDER BY aggregate_id, sequence DESC
-                )
-                SELECT latest.aggregate_id, latest.known_at, latest.payload,
-                       count(*) OVER () AS total_sample_size
-                FROM latest
-                JOIN research.shadow_position position
-                  ON position.id = latest.aggregate_id
-                 AND position.environment = %s
-                WHERE position.position_thesis->'implementation_plan'
-                      ->>'policy_version' = %s
-                ORDER BY latest.sequence DESC
-                LIMIT %s""",
-                (
-                    environment,
-                    environment,
-                    source_portfolio_policy_version,
-                    policy.window_size,
-                ),
-            ).fetchall()
-        observations = tuple(
-            CapitalPerformanceObservation(
-                position_id=row[0],
-                known_at=row[1],
-                net_pnl=Decimal(row[2]["net_pnl"]),
-                realized_alpha_bps=Decimal(row[2]["realized_alpha_bps"]),
-            )
-            for row in reversed(rows)
-        )
-        return evaluate_alpha_capital_governance(
-            observations,
+        return load_alpha_capital_governance(
+            self,
+            environment,
             reference_nav=reference_nav,
             source_portfolio_policy_version=source_portfolio_policy_version,
             policy=policy,
-            total_sample_size=int(rows[0][3]) if rows else 0,
+        )
+
+    def forecast_calibration_governance(
+        self,
+        environment: str,
+        *,
+        source_portfolio_policy_version: str,
+        expression_kind: str = "stock",
+        policy: ForecastCalibrationPolicy | None = None,
+    ) -> ForecastCalibrationGovernance:
+        return load_forecast_calibration_governance(
+            self,
+            environment,
+            source_portfolio_policy_version=source_portfolio_policy_version,
+            expression_kind=expression_kind,
+            policy=policy,
         )
 
     def opportunity_detail(
@@ -1041,10 +886,42 @@ class Database:
         )
         return [dict(zip(keys, row, strict=True)) for row in rows]
 
+    def events_before(
+        self, cursor: int, limit: int = 100, environment: str | None = None
+    ) -> list[dict[str, Any]]:
+        with self.connect() as connection:
+            environment_filter = " AND environment = %s" if environment else ""
+            parameters = (
+                (cursor, environment, min(max(limit, 1), 100))
+                if environment
+                else (cursor, min(max(limit, 1), 100))
+            )
+            rows = connection.execute(
+                """SELECT sequence, id, environment::text, version, known_at,
+                aggregate_type, aggregate_id, event_type, payload FROM ops.event
+                WHERE sequence < %s"""
+                + environment_filter
+                + " ORDER BY sequence DESC LIMIT %s",
+                parameters,
+            ).fetchall()
+        keys = (
+            "cursor",
+            "id",
+            "environment",
+            "version",
+            "known_at",
+            "aggregate_type",
+            "aggregate_id",
+            "event_type",
+            "payload",
+        )
+        return [dict(zip(keys, row, strict=True)) for row in reversed(rows)]
+
 
 def event_json(event: dict[str, Any]) -> str:
     return json.dumps(
         {
+            "cursor": event["cursor"],
             "eventId": event["id"],
             "eventType": event["event_type"],
             "aggregateType": event["aggregate_type"],

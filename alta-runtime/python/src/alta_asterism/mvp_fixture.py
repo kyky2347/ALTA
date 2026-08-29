@@ -125,13 +125,24 @@ class FixtureMindClient:
                     source_locator=(
                         f"https://fixture-source-{index}.example/{scout_id}"
                     ),
-                    content={"fixture": True, "source": index},
+                    content={
+                        "fixture": True,
+                        "source": index,
+                        "result_text": f"Fixture research result {index} for {scout_id}.",
+                    },
                     content_hash=character * 64,
                 )
                 for index, (tool, character) in enumerate(
                     zip(tools, "def", strict=True), start=1
                 )
             )
+            output["tool_evidence_refs"] = [
+                {
+                    "tool_call_id": discovery.tool_call_id,
+                    "source_locator": discovery.source_locator,
+                }
+                for discovery in discoveries
+            ]
         return ModelTurn(
             final_response=json.dumps(output, separators=(",", ":")),
             thread_id=f"fixture_thread_{scout_id}",

@@ -607,7 +607,11 @@ def test_tool_discovery_is_promoted_to_append_only_evidence_before_candidate(
     assert outcomes[0].status == "succeeded"
     assert outcomes[0].output is not None
     assert len(outcomes[0].output.evidence_ids) == 1
-    assert outcomes[0].output.tool_evidence_refs == ()
+    assert outcomes[0].output.tool_evidence_refs[0].tool_call_id == "tool_change_1"
+    assert (
+        outcomes[0].output.tool_evidence_refs[0].source_locator
+        == "https://fixture.invalid/event"
+    )
     with database.connect() as connection:
         row = connection.execute(
             """SELECT c.evidence_ids, r.source, r.body, e.known_at, c.known_at,
@@ -633,7 +637,12 @@ def test_tool_discovery_is_promoted_to_append_only_evidence_before_candidate(
         "Untrusted alta_news_search result for https://fixture.invalid/event:"
     )
     assert "fixture.invalid/event" in row[5]
-    assert artifact["output"]["tool_evidence_refs"] == []
+    assert artifact["output"]["tool_evidence_refs"] == [
+        {
+            "tool_call_id": "tool_change_1",
+            "source_locator": "https://fixture.invalid/event",
+        }
+    ]
 
 
 def test_fake_app_server_deadline_interrupts_one_turn_and_batch_continues(

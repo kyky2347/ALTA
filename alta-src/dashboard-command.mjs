@@ -1,0 +1,122 @@
+import path from "node:path";
+import process from "node:process";
+import { createOperatorConsole } from "./operator-console.mjs";
+
+const MANAGED_ACTIONS = new Set([
+  "install",
+  "start",
+  "stop",
+  "restart",
+  "status",
+  "open",
+  "logs",
+  "uninstall",
+  "run",
+]);
+
+function parseOptions(args) {
+  const options = { host: "127.0.0.1", port: 8877 };
+  for (let index = 0; index < args.length; index += 1) {
+    const value = args[index];
+    if (value === "--host" && args[index + 1]) options.host = args[++index];
+    else if (value === "--port" && args[index + 1])
+      options.port = Number(args[++index]);
+    else throw new Error(`Unknown dashboard option ${value}`);
+  }
+  if (
+    !Number.isInteger(options.port) ||
+    options.port < 1024 ||
+    options.port > 65535
+  )
+    throw new Error("Dashboard port must be from 1024 through 65535");
+  if (!["127.0.0.1", "localhost", "::1"].includes(options.host))
+    throw new Error("The operator dashboard must bind to a loopback address");
+  return options;
+}
+
+function printStatus(status) {
+  const host = status.host
+    ? status.host.state === "stopped" || status.host.processAlive
+      ? status.host.state
+      : `${status.host.state} (stale)`
+    : "unknown";
+  console.log("ALTA managed operator dashboard");
+  console.log(`  installed: ${status.installed ? "yes" : "no"}`);
+  console.log(
+    `  host manager: ${status.platformActive ? "active" : "inactive"}`,
+  );
+  console.log(`  readiness: ${status.ready ? "ready" : "not ready"}`);
+  console.log(`  endpoint: ${status.endpoint}`);
+  console.log(
+    `  host process: ${host} (pid ${status.host?.processId ?? "none"})`,
+  );
+}
+
+async function managedCommand(action, options, dashboard) {
+  if (options.length)
+    throw new Error(`dashboard ${action} does not accept arguments`);
+  if (action === "run") return dashboard.run();
+  if (action === "install") {
+    if (dashboard.installed()) await dashboard.stop();
+    await dashboard.assertEndpointAvailable();
+    const file = dashboard.install();
+    const status = await dashboard.waitForReadiness();
+    console.log(`Installed managed dashboard: ${file}`);
+    printStatus(status);
+    console.log("  access: run ./alta dashboard open for the one-time URL");
+    return;
+  }
+  if (action === "start") {
+    if (!dashboard.installed())
+      throw new Error("Dashboard service is not installed");
+    const current = await dashboard.status();
+    if (current.ready) return printStatus(current);
+    await dashboard.assertEndpointAvailable();
+    dashboard.platform.start();
+    return printStatus(await dashboard.waitForReadiness());
+  }
+  if (action === "restart") {
+    if (!dashboard.installed())
+      throw new Error("Dashboard service is not installed");
+    dashboard.platform.restart();
+    return printStatus(await dashboard.waitForReadiness());
+  }
+  if (action === "stop") await dashboard.stop();
+  else if (action === "uninstall") {
+    await dashboard.stop();
+    dashboard.platform.uninstall();
+  } else if (action === "status") return printStatus(await dashboard.status());
+  else if (action === "open") return console.log(dashboard.openUrl());
+  else if (action === "logs") {
+    for (const [name, lines] of Object.entries(dashboard.tailLogs())) {
+      console.log(`\n${name}:`);
+      console.log(lines.filter(Boolean).join("\n") || "  (empty)");
+    }
+    return;
+  }
+  return printStatus(await dashboard.status());
+}
+
+export async function dashboardCommand(args, dependencies) {
+  const [action, ...rest] = args;
+  if (MANAGED_ACTIONS.has(action))
+    return managedCommand(action, rest, dependencies.dashboardService);
+
+  const options = parseOptions(args);
+  const consoleServer = createOperatorConsole({
+    ...options,
+    staticDir: path.join(dependencies.rootDir, "alta-dashboard", "dist"),
+    service: dependencies.service,
+    environmentFactory: dependencies.environmentFactory,
+  });
+  const location = await consoleServer.listen();
+  console.log("ALTA operator dashboard");
+  console.log(`  open: ${location.openUrl}`);
+  console.log("  safety: loopback-only, shadow research, capital disabled");
+  const stop = async () => {
+    await consoleServer.close();
+  };
+  process.once("SIGINT", stop);
+  process.once("SIGTERM", stop);
+  await new Promise((resolve) => consoleServer.server.once("close", resolve));
+}

@@ -1,10 +1,12 @@
 from types import SimpleNamespace
+from decimal import Decimal
 
 import pytest
 
 from alta_asterism.expression_tournament import (
     EvaluatedExpression,
     ExpressionHypothesis,
+    _decision_metrics,
     normalized_hypotheses,
     select_audited_expression,
 )
@@ -89,3 +91,33 @@ def test_expression_slate_cannot_exceed_market_request_budget() -> None:
             preferred_symbol=None,
             payoff_thesis="Wait.",
         )
+
+
+def test_expression_decision_metrics_make_cost_and_stress_tradeoffs_comparable() -> (
+    None
+):
+    plan = SimpleNamespace(
+        status="ready",
+        alpha_clock=SimpleNamespace(
+            time_adjusted_expected_net_alpha_bps=Decimal("120")
+        ),
+        expected_net_alpha_bps=Decimal("150"),
+        estimated_cost_bps=Decimal("30"),
+        target_notional=Decimal("10000"),
+        estimated_stress_loss=Decimal("2000"),
+        execution_plan=SimpleNamespace(
+            implementation_shortfall_budget_bps=Decimal("20")
+        ),
+    )
+
+    assert _decision_metrics(plan) == {
+        "unreserved_expected_alpha_bps": "unavailable",
+        "forecast_calibration_reserve_bps": "0",
+        "time_adjusted_expected_net_alpha_bps": "120",
+        "time_adjusted_expected_alpha_dollars": "120",
+        "estimated_cost_bps": "30",
+        "target_notional_dollars": "10000",
+        "estimated_stress_loss_dollars": "2000",
+        "expected_alpha_per_stress_dollar": "0.06",
+        "execution_reserve_headroom_bps": "100",
+    }

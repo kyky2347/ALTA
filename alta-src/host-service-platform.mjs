@@ -2,8 +2,24 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { atomicWrite } from "./durable-file.mjs";
 
 export const OPPORTUNITY_SERVICE_LABEL = "app.alta.asterism.opportunity";
+export const OPPORTUNITY_SYSTEMD_UNIT = "alta-opportunity.service";
+
+export function managedServiceLayout({ platform, stateDir, projectRoot }) {
+  if (platform.platform === "darwin") {
+    const home = platform.home ?? os.homedir();
+    return {
+      workingDirectory: home,
+      logDirectory: path.join(home, "Library", "Logs", "ALTA"),
+    };
+  }
+  return {
+    workingDirectory: projectRoot,
+    logDirectory: path.join(stateDir, "home", "log"),
+  };
+}
 
 function xml(value) {
   return value
@@ -16,19 +32,30 @@ function systemd(value) {
   return `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
 }
 
-export function launchdDefinition({ node, cli, root, stdout, stderr }) {
+export function managedLaunchdDefinition({
+  label,
+  node,
+  cli,
+  args,
+  root,
+  stdout,
+  stderr,
+}) {
+  // Keep launchd's executable boundary on an Apple-owned binary while passing
+  // the exact runtime path as data. This invokes neither a shell nor PATH; the
+  // non-protected working/log layout is handled separately below.
+  const argumentsXml = ["/usr/bin/env", node, cli, ...args]
+    .map((argument) => `    <string>${xml(argument)}</string>`)
+    .join("\n");
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>${OPPORTUNITY_SERVICE_LABEL}</string>
+  <string>${xml(label)}</string>
   <key>ProgramArguments</key>
   <array>
-    <string>${xml(node)}</string>
-    <string>${xml(cli)}</string>
-    <string>service</string>
-    <string>run</string>
+${argumentsXml}
   </array>
   <key>WorkingDirectory</key>
   <string>${xml(root)}</string>
@@ -52,16 +79,33 @@ export function launchdDefinition({ node, cli, root, stdout, stderr }) {
 `;
 }
 
-export function systemdDefinition({ node, cli, root }) {
-  return `[Unit]
-Description=ALTA autonomous Opportunity OS (research-only)
-After=docker.service network-online.target
-Wants=network-online.target
+export function launchdDefinition(values) {
+  return managedLaunchdDefinition({
+    ...values,
+    label: OPPORTUNITY_SERVICE_LABEL,
+    args: ["service", "run"],
+  });
+}
 
+export function managedSystemdDefinition({
+  description,
+  node,
+  cli,
+  args,
+  root,
+  after = [],
+  wants = [],
+}) {
+  const afterLine = after.length ? `After=${after.join(" ")}\n` : "";
+  const wantsLine = wants.length ? `Wants=${wants.join(" ")}\n` : "";
+  const command = [node, cli, ...args].map(systemd).join(" ");
+  return `[Unit]
+Description=${description}
+${afterLine}${wantsLine}
 [Service]
 Type=simple
 WorkingDirectory=${systemd(root)}
-ExecStart=${systemd(node)} ${systemd(cli)} service run
+ExecStart=${command}
 Restart=on-failure
 RestartSec=30s
 TimeoutStopSec=45s
@@ -74,10 +118,22 @@ WantedBy=default.target
 `;
 }
 
+export function systemdDefinition(values) {
+  return managedSystemdDefinition({
+    ...values,
+    description: "ALTA autonomous Opportunity OS (research-only)",
+    args: ["service", "run"],
+    after: ["docker.service", "network-online.target"],
+    wants: ["network-online.target"],
+  });
+}
+
 function commandRunner(command, args, { allowFailure = false } = {}) {
   const result = spawnSync(command, args, {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
+    timeout: 45_000,
+    maxBuffer: 1024 * 1024,
   });
   if (result.error) throw result.error;
   if (result.status !== 0 && !allowFailure) {
@@ -91,25 +147,23 @@ function commandRunner(command, args, { allowFailure = false } = {}) {
   };
 }
 
-function atomicWrite(file, value) {
-  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-  const temporary = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(temporary, value, { flag: "wx", mode: 0o600 });
-  fs.renameSync(temporary, file);
-  fs.chmodSync(file, 0o600);
-}
-
 export class HostServicePlatform {
   constructor({
     platform = process.platform,
     home = os.homedir(),
     uid = typeof process.getuid === "function" ? process.getuid() : null,
     runner = commandRunner,
+    label = OPPORTUNITY_SERVICE_LABEL,
+    systemdUnit = OPPORTUNITY_SYSTEMD_UNIT,
+    fallbackCommand = "./alta service run",
   } = {}) {
     this.platform = platform;
     this.home = home;
     this.uid = uid;
     this.runner = runner;
+    this.label = label;
+    this.systemdUnit = systemdUnit;
+    this.fallbackCommand = fallbackCommand;
   }
 
   definitionPath() {
@@ -118,7 +172,7 @@ export class HostServicePlatform {
         this.home,
         "Library",
         "LaunchAgents",
-        `${OPPORTUNITY_SERVICE_LABEL}.plist`,
+        `${this.label}.plist`,
       );
     if (this.platform === "linux")
       return path.join(
@@ -126,10 +180,10 @@ export class HostServicePlatform {
         ".config",
         "systemd",
         "user",
-        "alta-opportunity.service",
+        this.systemdUnit,
       );
     throw new Error(
-      "Managed 24x7 installation supports macOS launchd and Linux systemd-user; use `./alta service run` on this platform",
+      `Managed user services support macOS launchd and Linux systemd-user; use \`${this.fallbackCommand}\` on this platform`,
     );
   }
 
@@ -141,24 +195,15 @@ export class HostServicePlatform {
       this.runner("launchctl", ["bootout", domain, file], {
         allowFailure: true,
       });
-      this.runner("launchctl", ["bootstrap", domain, file]);
-      this.runner("launchctl", [
-        "enable",
-        `${domain}/${OPPORTUNITY_SERVICE_LABEL}`,
-      ]);
-      if (start)
-        this.runner("launchctl", [
-          "kickstart",
-          "-k",
-          `${domain}/${OPPORTUNITY_SERVICE_LABEL}`,
-        ]);
+      this.runner("launchctl", ["enable", `${domain}/${this.label}`]);
+      if (start) this.runner("launchctl", ["bootstrap", domain, file]);
     } else {
       this.runner("systemctl", ["--user", "daemon-reload"]);
       this.runner("systemctl", [
         "--user",
         "enable",
         ...(start ? ["--now"] : []),
-        "alta-opportunity.service",
+        this.systemdUnit,
       ]);
     }
     return file;
@@ -169,50 +214,38 @@ export class HostServicePlatform {
       return this.runner("launchctl", [
         "kickstart",
         "-k",
-        `gui/${this.uid}/${OPPORTUNITY_SERVICE_LABEL}`,
+        `gui/${this.uid}/${this.label}`,
       ]);
-    return this.runner("systemctl", [
-      "--user",
-      "start",
-      "alta-opportunity.service",
-    ]);
+    return this.runner("systemctl", ["--user", "start", this.systemdUnit]);
   }
 
   stop() {
     if (this.platform === "darwin")
       return this.runner(
         "launchctl",
-        ["kill", "SIGTERM", `gui/${this.uid}/${OPPORTUNITY_SERVICE_LABEL}`],
+        ["kill", "SIGTERM", `gui/${this.uid}/${this.label}`],
         { allowFailure: true },
       );
-    return this.runner(
-      "systemctl",
-      ["--user", "stop", "alta-opportunity.service"],
-      { allowFailure: true },
-    );
+    return this.runner("systemctl", ["--user", "stop", this.systemdUnit], {
+      allowFailure: true,
+    });
   }
 
   restart() {
     if (this.platform === "darwin") return this.start();
-    return this.runner("systemctl", [
-      "--user",
-      "restart",
-      "alta-opportunity.service",
-    ]);
+    return this.runner("systemctl", ["--user", "restart", this.systemdUnit]);
   }
 
   status() {
     if (this.platform === "darwin")
       return this.runner(
         "launchctl",
-        ["print", `gui/${this.uid}/${OPPORTUNITY_SERVICE_LABEL}`],
+        ["print", `gui/${this.uid}/${this.label}`],
         { allowFailure: true },
       );
-    return this.runner(
-      "systemctl",
-      ["--user", "is-active", "alta-opportunity.service"],
-      { allowFailure: true },
-    );
+    return this.runner("systemctl", ["--user", "is-active", this.systemdUnit], {
+      allowFailure: true,
+    });
   }
 
   uninstall() {
@@ -224,7 +257,7 @@ export class HostServicePlatform {
     else {
       this.runner(
         "systemctl",
-        ["--user", "disable", "--now", "alta-opportunity.service"],
+        ["--user", "disable", "--now", this.systemdUnit],
         { allowFailure: true },
       );
     }

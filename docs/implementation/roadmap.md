@@ -1,7 +1,7 @@
 # Implementation roadmap
 
 This roadmap turns the ALTA design into independently verifiable stages. It is
-written for maintainers extending the current `0.25.0` baseline, not as a claim
+written for maintainers extending the current `0.26.0` baseline, not as a claim
 that research Alpha has already been established.
 
 ## Current baseline
@@ -62,7 +62,7 @@ The repository already contains the complete vertical research slice:
 - rolling, current-policy Alpha capital governance that can only reduce later
   Shadow risk from prior cost-adjusted benchmarked outcomes and drawdown.
 
-The verified release name is `INCENTIVE_LOOP_VERIFIED`. Real-world
+The verified release name is `FORWARD_EVIDENCE_VERIFIED`. Real-world
 Alpha remains unproven.
 
 ## Sequencing principles
@@ -114,6 +114,9 @@ Every stage must preserve these rules:
 | B30   | Completed-bar research-priority funnel                     | Local complete | PIT screen questions are replayable and cannot bypass evidence |
 | B31   | Shared catalyst-risk ledger                                | Local complete | Cross-ticker event crowding binds research and entry capacity  |
 | B32   | Decision-impact research director                          | Local complete | Unique PIT questions; two exploration seats remain protected   |
+| B33   | Evidence-bound quality and execution comparison            | Local complete | Only cited research earns credit; guarded limits cannot chase  |
+| B34   | Mature forecast-error reserve and evidence console         | Local complete | Comparable errors haircut edge; weak calibration caps capital  |
+| B35   | Forward lifecycle diagnostics and legacy-risk quarantine   | Local complete | Observed paths diagnose leakage; unknown risk fails closed     |
 | F1    | Sustained forward Shadow evidence                          | Next           | 6–12 week sample and documented data quality                   |
 | F2    | Agent and source ablation                                  | Future         | Incremental contribution is statistically credible             |
 | F3    | Unattended or broader Paper rollout                        | Not authorized | New review, operator approval, and kill controls               |
@@ -991,6 +994,105 @@ Implemented controls in the local development tree:
 This director allocates research attention only. It cannot supply Evidence,
 change a rank, choose an expression, modify a risk limit, create an intent, or
 claim that a high-priority question contains Alpha.
+
+## B33 — evidence-bound quality and execution comparison
+
+Objective: prevent research activity from masquerading as research quality and
+make payoff selection compare economically meaningful implementations without
+turning deterministic metrics into an automatic trade score.
+
+Implemented controls in the local development tree:
+
+- source-family, independent-domain, non-news-depth, and cross-check credit is
+  derived only from frozen Evidence cited by the Candidate or exact validated
+  tool call/source pairs that it binds;
+- completed but unbound browsing remains recorded as process cost and produces
+  an explicit screen-grade reason instead of silently increasing quality;
+- collected tool results are still promoted to append-only Evidence, while the
+  durable Scout artifact retains their exact validated provenance for replay;
+- every market-valid expression exposes time-adjusted expected Alpha dollars,
+  expected Alpha per stress-loss dollar, estimated costs, target notional, and
+  execution-reserve headroom to the independent implementation Auditor;
+- these economics remain separate fields rather than a blended score, so a
+  lower-efficiency carrier may be selected only for a stated payoff reason such
+  as materially better thesis purity, timing fit, or bounded convexity;
+- guarded buy limits use the observed ask as a hard ceiling, automatic repricing
+  remains disabled, and the execution contract rejects a limit that chases
+  above the captured market.
+
+This stage improves evidence discipline and implementation comparability. It
+does not prove the forecasts, select trades mechanically, authorize live
+capital, or establish that the system produces Alpha.
+
+## B34 — mature forecast-error reserve and evidence console
+
+Objective: turn sufficiently mature forward forecast errors into a conservative
+new-trade control, while making the evidence quality visible without presenting
+Shadow results as proven performance.
+
+Implemented controls in the local development tree:
+
+- calibration uses only closed, cost-adjusted, SPY-relative Shadow outcomes
+  paired with the exact net-Alpha forecast frozen at entry;
+- the first scope is direct stock under the same portfolio-policy version, so
+  incomparable ETF and option payoff distributions cannot contaminate the
+  reserve;
+- fewer than 30 comparable observations remain descriptive and apply neither a
+  forecast haircut nor a calibration-derived size change;
+- after maturity, the reserve equals historical overforecast bias plus 25% of
+  rolling mean absolute error, capped at 500 basis points, and is deducted
+  before costs and Alpha decay;
+- a directional hit rate below 45% caps new position size at one half; favorable
+  calibration may restore ordinary size but can never add leverage;
+- the calibration policy, sample, reserve, and capital posture are frozen into
+  every implementation plan and reloaded immediately before intent; a tighter
+  result requires replanning;
+- the Shadow-book console exposes comparable closes, confidence interval,
+  realized Alpha, forecast error, directional hit rate, reserve, and the
+  tightest evidence-driven capital multiplier, including empty and immature
+  states.
+
+The thresholds are conservative frozen policy parameters, not parameters fitted
+to the current sample. This stage reduces repeated overconfidence and makes the
+proof burden operationally visible. It does not establish positive Alpha.
+
+## B35 — forward lifecycle diagnostics and legacy-risk quarantine
+
+Objective: separate discovery quality from implementation and exit leakage,
+while preventing incomplete historical records from understating portfolio
+risk.
+
+Implemented controls in the local development tree:
+
+- every completed Shadow position derives a point-in-time lifecycle diagnostic
+  from executable bid observations captured while the position was open and the
+  actual close price;
+- the diagnostic records maximum favorable excursion, maximum adverse
+  excursion, observed peak-to-trough drawdown, exit capture, time to best
+  observed price, and holding time without interpolating missing intraday data;
+- the Alpha summary and Shadow-book console aggregate those fields and expose a
+  positive-excursion miss rate so research, timing, and exit leakage can be
+  investigated separately;
+- fewer than 30 measured positions remain explicitly `collecting`; the metrics
+  are descriptive at every sample size and do not tune prompts, exit rules,
+  ranking weights, or capital;
+- malformed path observations are skipped rather than blocking durable close
+  accounting or final performance measurement;
+- legacy or malformed open positions without a trustworthy stress ticket are
+  charged their full current notional as stress loss, and valid scaled stress is
+  clamped between zero and current notional.
+
+This stage deliberately refuses automatic policy optimization. Strategy
+selection across many signals or exit variants can create severe multiple-test
+bias, and implementation costs can erase apparently attractive gross returns.
+See Novy-Marx's
+[multiple-signal backtest analysis](https://www.nber.org/papers/w21329), Bailey
+and López de Prado's
+[Deflated Sharpe Ratio](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2460551),
+and the Review of Financial Studies work on the
+[implementable efficient frontier](https://academic.oup.com/rfs/advance-article/doi/10.1093/rfs/hhag022/8524346).
+The lifecycle fields are an audit surface for a later preregistered study, not
+evidence that ALTA has discovered a profitable exit policy.
 
 ## F1 — sustained forward Shadow evidence
 

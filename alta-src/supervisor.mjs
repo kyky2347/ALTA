@@ -1,19 +1,14 @@
-import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
-import { randomUUID } from "node:crypto";
 import { boundedNumber, sleep } from "./resource-control.mjs";
 import { acquireLease } from "./storage.mjs";
+import { atomicWriteJson } from "./durable-file.mjs";
 
 function writeStatus(file, value) {
-  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-  const temporary = `${file}.${randomUUID()}.tmp`;
-  fs.writeFileSync(
-    temporary,
-    `${JSON.stringify({ ...value, updatedAt: new Date().toISOString() }, null, 2)}\n`,
-    { mode: 0o600 },
-  );
-  fs.renameSync(temporary, file);
+  atomicWriteJson(file, {
+    ...value,
+    updatedAt: new Date().toISOString(),
+  });
 }
 
 function settings(env = process.env) {

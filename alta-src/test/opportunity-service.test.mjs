@@ -20,6 +20,7 @@ function fixture(t, sourceEnv = {}) {
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const platform = {
     platform: "darwin",
+    home: root,
     definitionPath: () => path.join(root, "service.plist"),
     install: () => path.join(root, "service.plist"),
     status: () => ({ code: 1, stdout: "", stderr: "" }),
@@ -96,8 +97,8 @@ test("foreground service bootstraps dependencies, migrates, and supervises", asy
   const { service } = fixture(t);
   service.environmentFactory = (environment) => ({
     up: async () => calls.push("up"),
-    python: async (args) => {
-      calls.push(args.join(" "));
+    python: async (args, options) => {
+      calls.push({ command: args.join(" "), timeoutMs: options.timeoutMs });
       assert.equal(environment.ALTA_AUTONOMOUS_ENABLED, "1");
       return 0;
     },
@@ -109,8 +110,14 @@ test("foreground service bootstraps dependencies, migrates, and supervises", asy
   assert.equal(code, 0);
   assert.deepEqual(calls, [
     "up",
-    "-m alta_asterism migrate upgrade",
-    `-m alta_asterism supervisor --host 127.0.0.1 --port 8876 --state-file ${service.supervisorStateFile}`,
+    {
+      command: "-m alta_asterism migrate upgrade",
+      timeoutMs: 300_000,
+    },
+    {
+      command: `-m alta_asterism supervisor --host 127.0.0.1 --port 8876 --state-file ${service.supervisorStateFile}`,
+      timeoutMs: undefined,
+    },
   ]);
   assert.equal(state.state, "exited");
   assert.equal(state.exitCode, 0);

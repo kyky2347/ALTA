@@ -398,7 +398,9 @@ class ScoutRepository:
             tools=turn.tools,
             discoveries=turn.discovered_evidence,
             frozen_source_locators=tuple(
-                item.source_locator for item in spec.frozen_input.evidence
+                item.source_locator
+                for item in spec.frozen_input.evidence
+                if item.evidence_id in output.evidence_ids
             ),
             output=output,
         )
@@ -628,9 +630,11 @@ class ScoutRepository:
         evidence_ids = tuple(dict.fromkeys((*output.evidence_ids, *promoted)))
         if len(evidence_ids) > 20:
             raise ValueError("collected evidence exceeds Candidate limit")
-        return output.model_copy(
-            update={"evidence_ids": evidence_ids, "tool_evidence_refs": ()}
-        )
+        # Keep the exact, validated tool references in the durable Scout artifact.
+        # The promoted evidence IDs are the facts consumed downstream; the refs are
+        # retained only so research diligence can prove which completed calls the
+        # Candidate actually bound to its thesis.
+        return output.model_copy(update={"evidence_ids": evidence_ids})
 
     def fail(
         self,

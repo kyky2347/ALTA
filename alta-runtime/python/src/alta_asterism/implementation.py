@@ -8,6 +8,7 @@ from .alpha_isolation import AlphaSource, SystematicExposure
 from .alpha_lifecycle import AlphaClock
 from .execution_planning import ExecutionPlan
 from .expression_base import FrozenContract
+from .forecast_calibration import ForecastCalibrationGovernance
 
 
 class PortfolioRiskPolicy(FrozenContract):
@@ -133,7 +134,10 @@ class TradeImplementationPlan(FrozenContract):
     research_quality_score: Decimal | None = Field(default=None, ge=0, le=1)
     research_quality_multiplier: Decimal = Field(default=Decimal(1), gt=0, le=1)
     alpha_capital_governance: AlphaCapitalGovernance | None = None
+    forecast_calibration_governance: ForecastCalibrationGovernance | None = None
     reference_nav: Decimal = Field(gt=0)
+    unreserved_expected_alpha_bps: Decimal | None = None
+    forecast_calibration_reserve_bps: Decimal = Field(default=Decimal(0), ge=0)
     expected_alpha_bps: Decimal | None = None
     estimated_cost_bps: Decimal | None = Field(default=None, ge=0)
     expected_net_alpha_bps: Decimal | None = None
@@ -270,6 +274,22 @@ class TradeImplementationPlan(FrozenContract):
                 raise ValueError(
                     "ready implementation exceeds its Alpha governance cap"
                 )
+            if (
+                self.forecast_calibration_governance is not None
+                and self.target_notional
+                > self.position_notional_limit
+                * self.forecast_calibration_governance.capital_multiplier
+            ):
+                raise ValueError(
+                    "ready implementation exceeds its forecast calibration cap"
+                )
+            if (
+                self.unreserved_expected_alpha_bps is not None
+                and self.expected_alpha_bps
+                != self.unreserved_expected_alpha_bps
+                - self.forecast_calibration_reserve_bps
+            ):
+                raise ValueError("implementation forecast calibration bridge disagrees")
             if self.alpha_clock is not None and (
                 self.expected_net_alpha_bps
                 != self.alpha_clock.raw_expected_net_alpha_bps

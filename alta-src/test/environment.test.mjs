@@ -242,6 +242,31 @@ test("managed Python delegates to a signal-aware passthrough runner", async (t) 
   });
 });
 
+test("managed Python enforces an explicit execution deadline", async (t) => {
+  const { root, state, files } = temporaryRuntime(t);
+  ensureRuntimeConfiguration(root, state);
+  fs.mkdirSync(path.dirname(files.python), { recursive: true });
+  fs.writeFileSync(files.python, "python");
+  const manager = new RuntimeEnvironment({
+    rootDir: root,
+    stateDir: state,
+    passthroughRunner: async (_command, _args, options) =>
+      new Promise((resolve) =>
+        options.signal.addEventListener(
+          "abort",
+          () => resolve({ code: 1, signal: "SIGTERM", stdout: "", stderr: "" }),
+          { once: true },
+        ),
+      ),
+    binaries: { uv: "uv", docker: null },
+  });
+
+  await assert.rejects(
+    manager.python(["-m", "alta_asterism"], { timeoutMs: 10 }),
+    /exceeded its deadline/,
+  );
+});
+
 test("environment status is fast and non-fatal when no container engine is installed", async (t) => {
   const { root, state } = temporaryRuntime(t);
   const manager = new RuntimeEnvironment({

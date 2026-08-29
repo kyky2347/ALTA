@@ -352,6 +352,19 @@ def test_full_book_executes_idempotent_alpha_rotation(
                     "net_return_bps": "100",
                     "realized_alpha_bps": "50",
                     "cost_adjusted": True,
+                    "path_diagnostics": {
+                        "version": "alta-path-diagnostics-v1",
+                        "price_observations": 3,
+                        "opened_at": now.isoformat(),
+                        "closed_at": measured_at.isoformat(),
+                        "maximum_favorable_excursion_bps": "180",
+                        "maximum_adverse_excursion_bps": "-70",
+                        "maximum_drawdown_bps": "120",
+                        "net_return_bps": "100",
+                        "exit_capture_ratio": "0.5556",
+                        "time_to_best_seconds": 1,
+                        "holding_seconds": 1,
+                    },
                 },
                 correlation_id="opportunity_b5_fixture",
             ),
@@ -370,6 +383,17 @@ def test_full_book_executes_idempotent_alpha_rotation(
     assert alpha_summary["capitalGovernance"]["posture"] == "collecting"
     assert alpha_summary["capitalGovernance"]["sampleSize"] == 1
     assert alpha_summary["capitalGovernance"]["capitalMultiplier"] == "0.50"
+    forecast_governance = alpha_summary["forecastCalibrationGovernance"]
+    assert forecast_governance["posture"] == "collecting"
+    assert forecast_governance["sampleSize"] == 1
+    assert forecast_governance["alphaReserveBps"] == "0"
+    assert forecast_governance["capitalMultiplier"] == "1"
+    path_diagnostics = alpha_summary["pathDiagnostics"]
+    assert path_diagnostics["posture"] == "collecting"
+    assert path_diagnostics["measuredPositions"] == 1
+    assert path_diagnostics["meanMaximumFavorableExcursionBps"] == "180.00"
+    assert path_diagnostics["meanMaximumAdverseExcursionBps"] == "-70.00"
+    assert path_diagnostics["meanExitCaptureRatio"] == "0.5556"
     assert "unproven" in alpha_summary["warning"].lower()
 
 

@@ -5,7 +5,7 @@
 _A virtual trading platform operated by specialized LLM agents._
 
 [![CI](https://github.com/kyky2347/ALTA/actions/workflows/ci.yml/badge.svg)](https://github.com/kyky2347/ALTA/actions/workflows/ci.yml)
-[![Release: 0.25.0](https://img.shields.io/badge/release-0.25.0-2563eb.svg)](CHANGELOG.md)
+[![Release: 0.26.0](https://img.shields.io/badge/release-0.26.0-2563eb.svg)](CHANGELOG.md)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Use: research only](https://img.shields.io/badge/use-research--only-orange.svg)](docs/research-scope.md)
 
@@ -21,7 +21,7 @@ Shadow ledger.
 > Alpha. It has no live-trading mode and must not be connected to live brokerage
 > credentials or real capital.
 
-**Current release:** `0.25.0` (`INCENTIVE_LOOP_VERIFIED`) · **Normal mode:**
+**Current release:** `0.26.0` (`FORWARD_EVIDENCE_VERIFIED`) · **Normal mode:**
 Replay / Shadow · **Broker boundary:** explicit Tiger Paper acceptance only ·
 **Real-world Alpha:** unproven
 
@@ -37,10 +37,26 @@ and full-book rotation must improve both expected Alpha dollars and Alpha per
 unit of stress capital. The current local tree also centralizes every Agent
 context budget, gives malformed Scout output one fresh bounded attempt, backs
 off degraded optional connectors, and refuses to spend private-assessment
-tokens on Opportunities that deterministic gates already reject.
+tokens on Opportunities that deterministic gates already reject. Research
+quality now credits only frozen Evidence or exact tool results that the
+Candidate actually cites; unrelated browsing remains visible as process cost
+but cannot inflate source breadth. The implementation desk also receives
+time-adjusted Alpha dollars, stress efficiency, and execution-reserve headroom
+for every admissible payoff, while a guarded buy limit may reach—but never chase
+above—the observed ask. Mature, comparable direct-stock forecast errors now
+close the underwriting loop: after 30 cost-adjusted forward closes, repeated
+overforecasting becomes a downside-only Alpha reserve and weak directional
+calibration caps new size. The local console exposes that proof burden without
+presenting Shadow results as proven performance. Closed positions now retain an
+observed executable-price path so favorable/adverse excursion, drawdown, and
+exit capture can distinguish discovery quality from implementation leakage;
+those diagnostics are descriptive and cannot auto-tune exits. Historical or
+malformed positions without a trustworthy risk ticket are charged their full
+current notional as stress loss rather than receiving a favorable assumption.
 
 [Quick start](#quick-start) · [Architecture](docs/architecture/overview.md) ·
 [Operations](docs/operations/autonomous-shadow.md) ·
+[Operator console](docs/operations/operator-console.md) ·
 [Research scope](docs/research-scope.md) · [Security](SECURITY.md) ·
 [Attribution](ATTRIBUTION.md) · [中文说明](README.zh-CN.md)
 
@@ -84,6 +100,19 @@ attractive company with a fully priced security may still be `Wait`; the same
 opportunity may be better expressed through a proxy or option; and an elegant
 trade structure cannot rescue weak evidence.
 
+## Operator console
+
+[![Synthetic ALTA operator console showing the live opportunity and Agent hand-off flow](docs/assets/alta-operator-console.png)](docs/assets/alta-operator-console.png)
+
+_Synthetic operator preview. It demonstrates the observable workflow and uses
+no brokerage account, real capital, private credentials, or performance data._
+
+[![Synthetic ALTA forward-evidence console showing calibration and lifecycle diagnostics](docs/assets/alta-forward-evidence.png)](docs/assets/alta-forward-evidence.png)
+
+_Forward evidence is kept separate from brokerage. The console labels sample
+maturity, uncertainty, forecast error, capital posture, and observed lifecycle
+quality without presenting Shadow results as proven Alpha._
+
 ## How ALTA works
 
 ```mermaid
@@ -116,12 +145,15 @@ flowchart TB
     monitor["Position Monitor<br/>confirm · weaken · invalidate"]
     outcome["Forward measurement<br/>costs · benchmark · missingness"]
     feedback["Maturity-gated feedback<br/>Mind · archetype · route · research mode"]
+    calibration["Mature forecast calibration<br/>error reserve · directional caution"]
     ledger --> monitor --> outcome --> feedback
+    outcome --> calibration
   end
 
   registry --> assess
   construct --> ledger
   feedback -. "later frozen wake" .-> minds
+  calibration -. "next forecast + pre-intent recheck" .-> construct
   state[("PostgreSQL + Redis")] <--> registry
   state <--> ledger
   state --> mandate
@@ -170,14 +202,14 @@ remain external-provider dependencies, not repository guarantees.
 | Area          | Current capability                                                                                                                                                                                                                                                                    |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Discovery     | Four concurrent Trader Minds, autonomous tool calls, a completed-bar anomaly funnel, an urgency-aware Research Director with unique follow-up assignments and two protected exploration seats, route rotation, a frozen book-aware mandate, no-op support, and bounded process memory |
-| Evidence      | Raw-first point-in-time records, stable identity, content deduplication, immutable thesis pillars, provenance, and replay                                                                                                                                                             |
+| Evidence      | Raw-first point-in-time records, stable identity, content deduplication, immutable thesis pillars, cited-source research quality, provenance, and replay                                                                                                                              |
 | Deliberation  | Private heterogeneous assessment, scenario odds, reference-class base rates, priced-in/variant separation, bounded moderation, and conservative admission                                                                                                                             |
-| Expression    | Up to three Stock / ETF / Option / Wait hypotheses, real quote or option-chain gates, implementation comparison, and independent audit                                                                                                                                                |
-| Portfolio     | Cost deduction, Alpha decay, single-trade and aggregate stress limits, liquidity, gross/factor/Alpha-source/shared-catalyst buckets, stress-efficient capital competition, and pre-intent revalidation                                                                                |
-| Learning      | Cost-adjusted SPY-relative Shadow measurement, frozen cohorts, configuration drift, missingness, and maturity-gated performance attribution                                                                                                                                           |
+| Expression    | Up to three Stock / ETF / Option / Wait hypotheses, real quote or option-chain gates, comparable Alpha/stress/execution economics, and independent audit                                                                                                                              |
+| Portfolio     | Cost deduction, Alpha decay, mature forecast-error reserve, single-trade and aggregate stress limits, fail-closed legacy risk, liquidity, gross/factor/Alpha-source/shared-catalyst buckets, stress-efficient capital competition, and pre-intent revalidation                        |
+| Learning      | Cost-adjusted SPY-relative Shadow measurement, observed MFE/MAE/drawdown/exit capture, frozen cohorts, configuration drift, missingness, maturity-gated performance attribution, and comparable forecast calibration                                                                  |
 | Incentives    | Symmetric, revocable research-budget bonus based only on a conservative forward Alpha bound; no rank, risk, capital, or broker influence                                                                                                                                              |
 | Reliability   | Single-owner scheduler, two watchdogs, canonical context budgets, one auditable fresh Scout retry, connector backoff, same-frozen-wake recovery, idempotent transitions, and clean shutdown                                                                                           |
-| Observability | Loopback JSON/SSE for runtime, Agent runs, opportunities, debates, expressions, positions, cohorts, and Alpha summaries                                                                                                                                                               |
+| Observability | Authenticated local operator console plus loopback JSON/SSE for runtime, Agent runs, opportunities, debates, expressions, positions, cohorts, and Alpha summaries                                                                                                                     |
 | Capital       | Disabled by default; isolated CLI-only Tiger Paper acceptance with exact-account binding, one-share limits, and final-flat verification                                                                                                                                               |
 
 ### Where the research edge is intended to come from
@@ -293,40 +325,96 @@ The normal unattended service remains Shadow-only. The optional Tiger path is a
 separate, explicitly invoked engineering acceptance and is never enabled by the
 24×7 scheduler.
 
+## Local operator console
+
+ALTA includes a responsive real-time operator console built around two linked
+views: **Asterism Trace** shows opportunities moving through discovery,
+completion, committee challenge, expression, audit, and Shadow observation;
+**Decision Ledger** replays the append-only record behind those transitions.
+Selecting any durable object opens its saved evidence, assessments, hand-offs,
+model route, tool provenance, artifacts, and audit state. The console never
+claims to expose a model's private chain-of-thought.
+
+```shell
+corepack pnpm install --frozen-lockfile
+pnpm dashboard:build
+./alta dashboard install
+./alta dashboard open
+```
+
+The managed console starts after login and is restarted after an unexpected
+failure. `open` prints its one-time loopback URL only on explicit request; the
+URL is never written to service logs and is erased from owner-only host state
+after use. The browser receives an HttpOnly console session, never the
+Opportunity API bearer token. Start, restart, and safe-stop controls require
+same-origin CSRF validation. Safe stop also stops PostgreSQL and Redis while
+leaving the local console available for a later restart. These controls manage
+only the Shadow research runtime; they cannot install the service, reach Tiger
+Paper, submit an order, or enable capital. Use `./alta dashboard status|logs`,
+`./alta dashboard stop`, and `./alta dashboard uninstall` for lifecycle work.
+Running `./alta dashboard` without an action remains a foreground development
+mode. See the [operator-console guide](docs/operations/operator-console.md).
+
+The console is designed for imperfect operating conditions: refreshes are
+single-flight and time-bounded, transient failures recover with capped backoff,
+healthy partial responses remain visible, and the last synchronized browser
+snapshot is explicitly marked stale instead of silently disappearing. Lifecycle
+actions use an owner-only cross-process lease and power-durable persisted phases,
+so concurrent clicks and a restarted console reconcile with real service state.
+An owner-only session secret keeps an already authorized browser connected
+across a console-process restart; CSRF material rotates per process and the
+browser refreshes it after detecting the new console instance. A versioned
+console contract fails closed with a specific rebuild instruction instead of
+letting a stale frontend issue ambiguous controls. Docker lifecycle commands,
+the migration boundary, upstream reads, and browser requests all have bounded
+deadlines.
+The autonomous runtime remains independent of the dashboard and recovers through
+the host service manager, Python supervisor, PostgreSQL durable volume, Redis
+append-only state, database ownership lock, and frozen-cycle replay boundaries.
+The console has its own host-managed lifecycle and persistent browser session,
+so its failure cannot stop research and its restart does not sign out an already
+authorized browser. This is recoverable single-host operation, not multi-host
+high availability; off-host backups, redundant infrastructure, alert delivery,
+and an external SLO remain deployment responsibilities.
+
 ## Observability contract
 
-ALTA exposes a loopback, read-only JSON/SSE surface for a future dashboard. It
-does not expose an order API.
+The console consumes ALTA's loopback JSON/event surface through a local
+server-side proxy. Direct `/api/v1` access remains read-only and does not expose
+an order API.
 
-| Endpoint                        | Purpose                                                         |
-| ------------------------------- | --------------------------------------------------------------- |
-| `/health/live`, `/health/ready` | Process and dependency health                                   |
-| `/api/v1/system/summary`        | Durable object counts                                           |
-| `/api/v1/system/runtime`        | Agent, source, heartbeat, credential-revision, and safety state |
-| `/api/v1/mvp/status`            | Current cycle and recent events                                 |
-| `/api/v1/runs/{id}`             | Role runs, frozen research queue/assignment, and stage outcomes |
-| `/api/v1/opportunities/{id}`    | Evidence, thesis, debate, ranking, and audit trail              |
-| `/api/v1/expressions/{id}`      | Expression, construction, and Shadow state                      |
-| `/api/v1/alpha/summary`         | Forward Shadow measurement and underwriting calibration         |
-| `/api/v1/evaluation/summary`    | Frozen cohort, drift, coverage, missingness, and readiness      |
-| `/api/v1/stream`                | Cursor-based server-sent events                                 |
+| Endpoint                        | Purpose                                                            |
+| ------------------------------- | ------------------------------------------------------------------ |
+| `/health/live`, `/health/ready` | Process and dependency health                                      |
+| `/api/v1/system/summary`        | Durable object counts                                              |
+| `/api/v1/system/runtime`        | Agent, source, heartbeat, credential-revision, and safety state    |
+| `/api/v1/mvp/status`            | Current cycle and recent events                                    |
+| `/api/v1/events`                | Forward/backward cursor-paged append-only history for replay       |
+| `/api/v1/runs/{id}`             | Role runs, frozen research queue/assignment, and stage outcomes    |
+| `/api/v1/opportunities/{id}`    | Evidence, thesis, debate, ranking, and audit trail                 |
+| `/api/v1/expressions/{id}`      | Expression, construction, and Shadow state                         |
+| `/api/v1/alpha/summary`         | Forward Alpha, lifecycle quality, calibration, and capital posture |
+| `/api/v1/evaluation/summary`    | Frozen cohort, drift, coverage, missingness, and readiness         |
+| `/api/v1/stream`                | Cursor-based server-sent events                                    |
 
 ## Verification status
 
 The current local working tree passes:
 
-| Gate                      |                                                                     Result |
-| ------------------------- | -------------------------------------------------------------------------: |
-| Node gateway / harness    |                                                                  141 tests |
-| Opportunity OS            |                                                                  243 tests |
-| Isolated capital package  |                                                                   25 tests |
-| Deterministic lifecycle   | 3 Candidates → 3 Opportunities → 1 audited Shadow position → observed exit |
-| Replay                    |         `16be618841b4ced276fea1c3297bd0a934093b995bce50bfadad0b74e9f9816c` |
-| Accelerated soak          |                              14 cycles, zero failures, zero manual repairs |
-| Foreground service        |                           `live` and `ready`, capital disabled, clean stop |
-| Research Director deploy  |              2 unique follow-ups + 2 explore; 4/4 Runs succeeded; idle end |
-| Supervised wall-clock run |   26 completed idle cycles; 3 Opportunities; 0 ranks, positions, or orders |
-| Sensitive-file check      | No credential files or credential-like values found in first-party changes |
+| Gate                      |                                                                           Result |
+| ------------------------- | -------------------------------------------------------------------------------: |
+| Node gateway / harness    |                                                                        155 tests |
+| Opportunity OS            |                                                                        263 tests |
+| Isolated capital package  |                                                                         25 tests |
+| Deterministic lifecycle   |       3 Candidates → 3 Opportunities → 1 audited Shadow position → observed exit |
+| Replay                    |               `16be618841b4ced276fea1c3297bd0a934093b995bce50bfadad0b74e9f9816c` |
+| Accelerated soak          |                                    14 cycles, zero failures, zero manual repairs |
+| Foreground service        |                                 `live` and `ready`, capital disabled, clean stop |
+| Research Director deploy  |                    2 unique follow-ups + 2 explore; 4/4 Runs succeeded; idle end |
+| Supervised wall-clock run |         26 completed idle cycles; 3 Opportunities; 0 ranks, positions, or orders |
+| Sensitive-file check      |       No credential files or credential-like values found in first-party changes |
+| Forecast calibration      | 30-sample maturity gate, downside-only reserve, size cap, and pre-intent recheck |
+| Lifecycle diagnostics     |         PIT executable path, MFE/MAE/drawdown/capture; descriptive and read-only |
 
 The Research Director cold start exposed and fixed two real context-budget
 defects: a global queue could exceed the 16 KiB frozen-wake limit, and a

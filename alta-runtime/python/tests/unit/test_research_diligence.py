@@ -12,16 +12,52 @@ def test_cross_checked_research_requires_non_news_and_independent_sources() -> N
         beneficiary_path="Pricing change reaches gross margin and estimates.",
         disconfirming_evidence="A competitor filing shows the change may be temporary.",
         next_test="Check the next reported gross-margin bridge.",
+        tool_evidence_refs=(
+            SimpleNamespace(
+                tool_call_id="call_primary",
+                source_locator="https://issuer.example/filing",
+            ),
+            SimpleNamespace(
+                tool_call_id="call_market",
+                source_locator="https://exchange.example/quote",
+            ),
+            SimpleNamespace(
+                tool_call_id="call_news",
+                source_locator="https://publisher.example/context",
+            ),
+        ),
     )
     result = build_research_diligence(
         tools=(
-            SimpleNamespace(tool_name="alta_web_research", status="completed"),
-            SimpleNamespace(tool_name="alta_finance_data", status="completed"),
-            SimpleNamespace(tool_name="alta_news_search", status="completed"),
+            SimpleNamespace(
+                tool_call_id="call_primary",
+                tool_name="alta_web_research",
+                status="completed",
+            ),
+            SimpleNamespace(
+                tool_call_id="call_market",
+                tool_name="alta_finance_data",
+                status="completed",
+            ),
+            SimpleNamespace(
+                tool_call_id="call_news",
+                tool_name="alta_news_search",
+                status="completed",
+            ),
         ),
         discoveries=(
-            SimpleNamespace(source_locator="https://issuer.example/filing"),
-            SimpleNamespace(source_locator="https://exchange.example/quote"),
+            SimpleNamespace(
+                tool_call_id="call_primary",
+                source_locator="https://issuer.example/filing",
+            ),
+            SimpleNamespace(
+                tool_call_id="call_market",
+                source_locator="https://exchange.example/quote",
+            ),
+            SimpleNamespace(
+                tool_call_id="call_news",
+                source_locator="https://publisher.example/context",
+            ),
         ),
         frozen_source_locators=(),
         output=output,
@@ -33,11 +69,12 @@ def test_cross_checked_research_requires_non_news_and_independent_sources() -> N
     assert result.independent_source_domains == (
         "exchange.example",
         "issuer.example",
+        "publisher.example",
     )
     assert result.reason_codes == ()
     quality = research_quality_components(result)
-    assert quality["research_quality"] > quality["source_breadth"]
-    assert quality["research_quality"] > 0.9
+    assert quality["research_quality"] == 1
+    assert quality["source_breadth"] == 1
 
 
 def test_news_only_candidate_remains_screen_grade_without_becoming_a_rejection() -> (
@@ -48,11 +85,26 @@ def test_news_only_candidate_remains_screen_grade_without_becoming_a_rejection()
         beneficiary_path=None,
         disconfirming_evidence=None,
         next_test=None,
+        tool_evidence_refs=(
+            SimpleNamespace(
+                tool_call_id="call_news",
+                source_locator="https://publisher.example/story",
+            ),
+        ),
     )
     result = build_research_diligence(
-        tools=(SimpleNamespace(tool_name="alta_news_search", status="completed"),),
+        tools=(
+            SimpleNamespace(
+                tool_call_id="call_news",
+                tool_name="alta_news_search",
+                status="completed",
+            ),
+        ),
         discoveries=(
-            SimpleNamespace(source_locator="https://publisher.example/story"),
+            SimpleNamespace(
+                tool_call_id="call_news",
+                source_locator="https://publisher.example/story",
+            ),
         ),
         frozen_source_locators=(),
         output=output,
@@ -64,6 +116,52 @@ def test_news_only_candidate_remains_screen_grade_without_becoming_a_rejection()
     quality = research_quality_components(result)
     assert 0 < quality["research_quality"] < 0.6
     assert quality["non_news_depth"] == 0
+
+
+def test_uncited_research_cannot_inflate_candidate_diligence() -> None:
+    output = SimpleNamespace(
+        kind="candidate",
+        beneficiary_path="A measurable operating path is stated.",
+        disconfirming_evidence="A rival explanation is stated.",
+        next_test="Check the next primary operating update.",
+        tool_evidence_refs=(),
+    )
+    result = build_research_diligence(
+        tools=(
+            SimpleNamespace(
+                tool_call_id="call_primary",
+                tool_name="alta_web_research",
+                status="completed",
+            ),
+            SimpleNamespace(
+                tool_call_id="call_market",
+                tool_name="alta_finance_data",
+                status="completed",
+            ),
+        ),
+        discoveries=(
+            SimpleNamespace(
+                tool_call_id="call_primary",
+                source_locator="https://issuer.example/filing",
+            ),
+            SimpleNamespace(
+                tool_call_id="call_market",
+                source_locator="https://exchange.example/quote",
+            ),
+        ),
+        frozen_source_locators=(
+            "https://frozen-one.example/evidence",
+            "https://frozen-two.example/evidence",
+        ),
+        output=output,
+    )
+
+    assert result.posture == "screen_grade"
+    assert result.active_research_calls == 2
+    assert result.non_news_research_calls == 0
+    assert result.source_families == ()
+    assert "active_research_not_bound_to_candidate" in result.reason_codes
+    assert "research_path_not_cross_checked" in result.reason_codes
 
 
 def test_missing_process_record_never_invents_research_quality() -> None:

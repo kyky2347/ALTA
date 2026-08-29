@@ -2,13 +2,15 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import net from "node:net";
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { acquireLease } from "./storage.mjs";
+import { atomicWrite } from "./durable-file.mjs";
 import { loadResourceCredentials } from "./resource-credentials.mjs";
 import { credentialInventory } from "./credential-control.mjs";
 import {
   HostServicePlatform,
   launchdDefinition,
+  managedServiceLayout,
   systemdDefinition,
 } from "./host-service-platform.mjs";
 
@@ -82,14 +84,6 @@ const DEFAULT_SETTINGS = Object.freeze({
   ALTA_TIGER_PAPER_ENABLED: "0",
 });
 
-function atomicWrite(file, value, mode = 0o600) {
-  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-  const temporary = `${file}.${randomUUID()}.tmp`;
-  fs.writeFileSync(temporary, value, { flag: "wx", mode });
-  fs.renameSync(temporary, file);
-  fs.chmodSync(file, mode);
-}
-
 function parseSettings(file) {
   const allowed = new Set([
     ...Object.keys(DEFAULT_SETTINGS),
@@ -161,6 +155,12 @@ export class OpportunityService {
     this.sourceEnv = sourceEnv;
     this.platform = platform;
     this.environmentFactory = environmentFactory;
+    const layout = managedServiceLayout({
+      platform,
+      stateDir,
+      projectRoot: rootDir,
+    });
+    this.launchWorkingDirectory = layout.workingDirectory;
     this.configFile = path.join(stateDir, "opportunity-service.env");
     this.tokenFile = path.join(stateDir, "secrets", "opportunity_api_token");
     this.stateFile = path.join(stateDir, "runtime", "opportunity-host.json");
@@ -170,16 +170,9 @@ export class OpportunityService {
       "opportunity-supervisor.json",
     );
     this.lockFile = path.join(stateDir, "runtime", "opportunity-host.lock");
-    this.stdoutFile = path.join(
-      stateDir,
-      "home",
-      "log",
-      "opportunity-service.log",
-    );
+    this.stdoutFile = path.join(layout.logDirectory, "opportunity-service.log");
     this.stderrFile = path.join(
-      stateDir,
-      "home",
-      "log",
+      layout.logDirectory,
       "opportunity-service.error.log",
     );
   }
@@ -256,7 +249,7 @@ export class OpportunityService {
     const values = {
       node: this.node,
       cli: this.cliFile,
-      root: this.rootDir,
+      root: this.launchWorkingDirectory,
       stdout: this.stdoutFile,
       stderr: this.stderrFile,
     };
@@ -275,6 +268,10 @@ export class OpportunityService {
       recursive: true,
       mode: 0o700,
     });
+    for (const file of [this.stdoutFile, this.stderrFile]) {
+      if (!fs.existsSync(file)) atomicWrite(file, "");
+      else fs.chmodSync(file, 0o600);
+    }
     return this.platform.install(this.definition(), { start });
   }
 
@@ -335,7 +332,7 @@ export class OpportunityService {
       if (controller.signal.aborted) return 0;
       const migration = await manager.python(
         ["-m", "alta_asterism", "migrate", "upgrade"],
-        { signal: controller.signal },
+        { signal: controller.signal, timeoutMs: 5 * 60_000 },
       );
       if (migration !== 0) {
         exitCode = migration;

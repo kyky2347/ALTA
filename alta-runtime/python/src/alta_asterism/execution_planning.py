@@ -19,9 +19,11 @@ _BPS_QUANTUM = Decimal("0.0001")
 class ExecutionPlan(FrozenContract):
     """Bounded execution instructions; never an order or an Agent capability."""
 
-    version: Literal["alta-execution-plan-v1", "alta-execution-plan-v2"] = (
-        "alta-execution-plan-v2"
-    )
+    version: Literal[
+        "alta-execution-plan-v1",
+        "alta-execution-plan-v2",
+        "alta-execution-plan-v3",
+    ] = "alta-execution-plan-v3"
     mode: Literal["shadow_model", "tiger_paper_mirror"]
     status: Literal["ready", "wait"]
     order_style: Literal["guarded_limit", "none"]
@@ -54,7 +56,10 @@ class ExecutionPlan(FrozenContract):
                 raise ValueError("ready execution must use DAY time in force")
             if self.research_quantity <= 0 or self.acceptance_quantity <= 0:
                 raise ValueError("ready execution requires positive quantities")
-            if self.version == "alta-execution-plan-v2" and any(
+            if self.version in {
+                "alta-execution-plan-v2",
+                "alta-execution-plan-v3",
+            } and any(
                 value is None
                 for value in (
                     self.arrival_midpoint,
@@ -64,7 +69,15 @@ class ExecutionPlan(FrozenContract):
                     self.estimated_participation_bps,
                 )
             ):
-                raise ValueError("v2 ready execution requires a complete arrival plan")
+                raise ValueError("ready execution requires a complete arrival plan")
+            if self.version == "alta-execution-plan-v3":
+                observed_ask = self.arrival_midpoint * (
+                    Decimal(1) + self.arrival_spread_bps / Decimal(20_000)
+                )
+                if self.entry_limit_price > observed_ask.quantize(
+                    Decimal("0.01"), rounding=ROUND_UP
+                ):
+                    raise ValueError("v3 buy limit cannot chase above the observed ask")
             if (
                 self.estimated_participation_bps is not None
                 and self.estimated_participation_bps > self.participation_cap_bps
@@ -103,8 +116,7 @@ def build_execution_plan(
         if alpha_clock.stage == "expiring"
         else ("patient" if alpha_clock.stage == "forming" else "normal")
     )
-    urgency_buffer = Decimal(10) if urgency == "time_sensitive" else Decimal(5)
-    entry_offset = urgency_buffer.quantize(_BPS_QUANTUM, rounding=ROUND_HALF_EVEN)
+    entry_offset = Decimal(0).quantize(_BPS_QUANTUM, rounding=ROUND_HALF_EVEN)
     participation = _participation_bps(instrument, target_quantity)
     midpoint = (instrument.quote.bid + instrument.quote.ask) / Decimal(2)
     spread_bps = (
@@ -125,9 +137,9 @@ def build_execution_plan(
             cancellation_rule="No order is admissible beyond observed participation.",
             reason_codes=("execution_participation_unverified",),
         )
-    entry_limit_price = (
-        instrument.quote.ask * (Decimal(1) + entry_offset / Decimal(10_000))
-    ).quantize(Decimal("0.01"), rounding=ROUND_UP)
+    entry_limit_price = instrument.quote.ask.quantize(
+        Decimal("0.01"), rounding=ROUND_UP
+    )
     slippage_allowance = Decimal(50 if instrument.kind == "option" else 5)
     shortfall_budget = (spread_bps + entry_offset + slippage_allowance).quantize(
         _BPS_QUANTUM, rounding=ROUND_HALF_EVEN

@@ -32,6 +32,8 @@ import { supervise } from "./supervisor.mjs";
 import { OpportunityService } from "./opportunity-service.mjs";
 import { opportunityServiceCommand } from "./opportunity-service-command.mjs";
 import { credentialCommand } from "./credential-command.mjs";
+import { dashboardCommand } from "./dashboard-command.mjs";
+import { DashboardService } from "./dashboard-service.mjs";
 import {
   loadResourceCredentials,
   TOOL_CREDENTIAL_KEYS,
@@ -83,6 +85,10 @@ Usage:
                                 Manage isolated Python, PostgreSQL, and Redis
   ./alta service [install|start|stop|restart|status|logs|uninstall|run]
                                 Operate the unattended 24x7 Opportunity service
+  ./alta dashboard [install|start|stop|restart|status|open|logs|uninstall]
+                                Operate the restartable local operator console
+  ./alta dashboard [--host 127.0.0.1] [--port 8877]
+                                Run a foreground console for development
   ./alta status                  Show storage and supervisor health
   ./alta setup                   Build the private binary and prepare local state
   ./alta build                   Rebuild the private release binary
@@ -100,6 +106,8 @@ Examples:
   ./alta env setup
   ./alta service install
   ./alta service status
+  ./alta dashboard install
+  ./alta dashboard open
   ./alta credentials status
   ./alta credentials set deepseek
   ./alta env python --version
@@ -528,6 +536,16 @@ function opportunityService() {
   });
 }
 
+function managedDashboardService(service = opportunityService()) {
+  return new DashboardService({
+    rootDir: ROOT_DIR,
+    stateDir: STATE_DIR,
+    cliFile: path.join(SOURCE_DIR, "cli.mjs"),
+    service,
+    environmentFactory: environmentManager,
+  });
+}
+
 function printEnvironment(status) {
   console.log("ALTA v3.5 managed environment");
   console.log(
@@ -824,6 +842,15 @@ async function dispatchCommand(command, args) {
     credentials: () =>
       credentialCommand(args, { service: opportunityService() }),
     service: () => runServiceCommand(args),
+    dashboard: () => {
+      const service = opportunityService();
+      return dashboardCommand(args, {
+        rootDir: ROOT_DIR,
+        service,
+        environmentFactory: environmentManager,
+        dashboardService: managedDashboardService(service),
+      });
+    },
     status,
     supervise: async () => {
       process.exitCode = await supervisorCommand(args);

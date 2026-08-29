@@ -110,6 +110,15 @@ No Agent receives database credentials, provider credentials, a broker client,
 or an order mutation tool. The optional Paper action is performed only by an
 isolated deterministic executor after research, audit, market, and risk gates.
 
+Research quality follows the same evidence boundary. A completed search call is
+observable, but it earns source-diversity or cross-check credit only when the
+Candidate binds the exact validated call and canonical source locator, or cites
+frozen Evidence already in its wake. At implementation time, deterministic code
+projects comparable time-adjusted Alpha dollars, Alpha per stress dollar, and
+execution-reserve headroom for each market-valid payoff. The Auditor uses those
+figures as decision inputs rather than an automatic score, and the final guarded
+buy limit cannot exceed the observed ask.
+
 The rolling capital posture is scoped to the exact current portfolio-policy
 version and the latest measurement for each closed Shadow position. It never
 uses open PnL, model confidence, reconstructed forecasts, or duplicate events.
@@ -422,22 +431,24 @@ by default, but it is never an unbounded hot loop.
 
 ## Observability contract
 
-The future dashboard consumes the read-only loopback `/api/v1` JSON and SSE
-surface. It does not need database access or log scraping.
+The bundled operator console consumes the read-only loopback `/api/v1` JSON and
+event surface through its authenticated local proxy. It does not need database
+access or log scraping.
 
-| Surface                         | Information                                                              |
-| ------------------------------- | ------------------------------------------------------------------------ |
-| `/health/live`, `/health/ready` | Process, dependencies, heartbeat, and readiness                          |
-| `/api/v1/system/summary`        | Durable object counts                                                    |
-| `/api/v1/system/runtime`        | Sources, Agents, cursors, safety posture, and Alpha state                |
-| `/api/v1/mvp/status`            | Current cycle, stages, and recent events                                 |
-| `/api/v1/runs/{id}`             | Frozen input, role, status, budgets, and artifact metadata               |
-| `/api/v1/opportunities/{id}`    | Evidence, Thesis Ledger, scenarios, rank, and audit                      |
-| `/api/v1/expressions/{id}`      | Recommendation, instrument, validation, and Shadow state                 |
-| `/api/v1/alpha/summary`         | Forward Shadow Alpha evidence, uncertainty, and entry-frozen calibration |
-| `/api/v1/alpha/feedback`        | PIT Mind, archetype, route maturity and outcome feedback                 |
-| `/api/v1/evaluation/summary`    | Frozen cohort drift, coverage, missingness, and readiness                |
-| `/api/v1/stream`                | Cursor-based server-sent events                                          |
+| Surface                         | Information                                                               |
+| ------------------------------- | ------------------------------------------------------------------------- |
+| `/health/live`, `/health/ready` | Process, dependencies, heartbeat, and readiness                           |
+| `/api/v1/system/summary`        | Durable object counts                                                     |
+| `/api/v1/system/runtime`        | Sources, Agents, cursors, safety posture, and Alpha state                 |
+| `/api/v1/mvp/status`            | Current cycle, stages, and recent events                                  |
+| `/api/v1/events`                | Forward `cursor` or backward `before` durable history for timeline replay |
+| `/api/v1/runs/{id}`             | Frozen input, role, status, budgets, and artifact metadata                |
+| `/api/v1/opportunities/{id}`    | Evidence, Thesis Ledger, scenarios, rank, and audit                       |
+| `/api/v1/expressions/{id}`      | Recommendation, instrument, validation, and Shadow state                  |
+| `/api/v1/alpha/summary`         | Forward Alpha, observed lifecycle quality, uncertainty, and calibration   |
+| `/api/v1/alpha/feedback`        | PIT Mind, archetype, route maturity and outcome feedback                  |
+| `/api/v1/evaluation/summary`    | Frozen cohort drift, coverage, missingness, and readiness                 |
+| `/api/v1/stream`                | Cursor-based server-sent events                                           |
 
 The API is read-only, loopback-bound, bounded, and optionally bearer-protected.
 It exposes rationales and structured artifacts, not hidden chain-of-thought.
@@ -456,6 +467,8 @@ The forward Shadow evaluation should include:
 - forecast calibration and Brier score;
 - unique Candidate contribution by Scout, source, model, and prompt version;
 - discovery lead time, turnover, exposure overlap, and maximum drawdown;
+- observed maximum favorable/adverse excursion and exit capture, without
+  interpolating missing intraday prices or treating them as an optimized exit;
 - ablations that remove individual roles or sources.
 
 Until a sufficiently large independent forward sample exists, the API and

@@ -20,6 +20,7 @@ is separate from historical build records.
 
 - [Getting started](operations/getting-started.md)
 - [Autonomous Shadow operations](operations/autonomous-shadow.md)
+- [Local operator console](operations/operator-console.md)
 
 ## Audit and history
 

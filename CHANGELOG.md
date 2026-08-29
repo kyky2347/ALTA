@@ -6,8 +6,21 @@ semantic versioning while the project remains experimental.
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-08-29
+
 ### Added
 
+- Forward lifecycle diagnostics for every measurable closed Shadow position,
+  using only observations captured during the holding interval. The Alpha API
+  and operator console now expose maximum favorable/adverse excursion, observed
+  drawdown, exit capture, time to best, and positive-excursion misses.
+- A mature-sample forecast calibration controller that compares entry-frozen,
+  cost-adjusted direct-stock Alpha forecasts with later benchmark-relative
+  Shadow outcomes. After 30 comparable closes it deducts an overforecast/error
+  reserve from new underwriting; weak directional calibration also caps size.
+- A forward-Alpha evidence surface in the local operator console showing sample
+  maturity, confidence interval, forecast error, directional calibration,
+  applied reserve, and the tightest evidence-driven capital posture.
 - A deterministic Research Director that removes expired and monitor-owned
   work, prioritizes exact Opportunity questions by decision gap and remaining
   horizon, assigns different follow-ups to different Trader Minds, and reserves
@@ -31,6 +44,14 @@ semantic versioning while the project remains experimental.
 
 ### Changed
 
+- Legacy or malformed open positions without a trustworthy implementation-risk
+  ticket now consume their full current notional as stress loss instead of
+  receiving a favorable zero-risk assumption.
+- Alpha evidence queries and forecast/capital governance now live behind a
+  narrow reporting persistence boundary instead of expanding the core database
+  adapter. The operator shell likewise delegates the Shadow evidence book to a
+  focused component; public API fields, replay semantics, and safety posture are
+  unchanged.
 - Open-question construction now preserves a disconfirming Assessor gap before
   lower-value thesis prompts can consume the bounded agenda, and the Scout
   contract is `alpha-trader-v15`.
@@ -62,6 +83,12 @@ semantic versioning while the project remains experimental.
 
 ### Safety
 
+- Lifecycle diagnostics are descriptive forward evidence only. They cannot
+  tune an exit, alter a rank, change capital, or authorize a broker action, and
+  malformed diagnostics cannot block close accounting.
+- Forecast calibration is downside-only: immature samples cannot tune forecasts,
+  favorable errors cannot create a negative reserve or extra leverage, and a
+  tighter reserve or capital posture forces pre-intent replanning.
 - Research queue scores and assignments are frozen non-Evidence process state;
   they cannot enter ranking, expression, capital, or execution, and tampered or
   substituted follow-ups fail before persistence.

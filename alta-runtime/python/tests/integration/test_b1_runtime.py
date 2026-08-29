@@ -161,6 +161,10 @@ def test_supervisor_restart_summary_and_sse_reconnect(
         assert summary["meta"]["version"] == __version__
         assert datetime.fromisoformat(summary["meta"]["knownAt"]).tzinfo is not None
         assert summary["data"]["counts"]["event"] == 1
+        ledger = request_json(port, "/api/v1/events?cursor=0&limit=10")
+        assert ledger["data"]["events"][0]["eventId"] == "event_1"
+        assert ledger["data"]["events"][0]["cursor"] == first_cursor
+        assert ledger["meta"]["nextCursor"] == first_cursor
         evaluation = request_json(port, "/api/v1/evaluation/summary")
         assert evaluation["data"]["performance"]["readiness"] == "not_started"
         assert "Alpha is unproven" in evaluation["data"]["warning"]
@@ -183,6 +187,8 @@ def test_supervisor_restart_summary_and_sse_reconnect(
                 event_type="run.ready",
             )
         )
+        older = request_json(port, f"/api/v1/events?before={second_cursor}&limit=10")
+        assert [event["eventId"] for event in older["data"]["events"]] == ["event_1"]
         reconnect = urllib.request.Request(
             f"http://127.0.0.1:{port}/api/v1/stream",
             headers={"Last-Event-ID": str(first_cursor)},

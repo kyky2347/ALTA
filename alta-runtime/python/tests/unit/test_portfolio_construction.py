@@ -6,6 +6,8 @@ import pytest
 from alta_asterism.alpha_governance import AlphaCapitalGovernance
 from alta_asterism.alpha_isolation import AlphaIsolation
 from alta_asterism.expression import QuoteSnapshot
+from alta_asterism.execution_planning import ExecutionPlan
+from alta_asterism.forecast_calibration import ForecastCalibrationGovernance
 from alta_asterism.implementation import (
     AlphaSourceBucket,
     CatalystBucket,
@@ -108,6 +110,7 @@ def plan(
     isolation: AlphaIsolation | None = None,
     research_quality_score: Decimal | None = None,
     alpha_capital_governance: AlphaCapitalGovernance | None = None,
+    forecast_calibration_governance: ForecastCalibrationGovernance | None = None,
     catalyst_key: str | None = None,
 ):
     constructor = PortfolioConstructor(None, PortfolioRiskPolicy())  # type: ignore[arg-type]
@@ -122,6 +125,7 @@ def plan(
         alpha_isolation=isolation,
         research_quality_score=research_quality_score,
         alpha_capital_governance=alpha_capital_governance,
+        forecast_calibration_governance=forecast_calibration_governance,
         catalyst_key=catalyst_key,
     )
 
@@ -267,11 +271,23 @@ def test_ready_plan_contains_a_non_chasing_execution_instruction() -> None:
     assert result.execution_plan.order_style == "guarded_limit"
     assert result.execution_plan.entry_limit_offset_bps <= Decimal("25")
     assert result.execution_plan.automatic_reprice is False
-    assert result.execution_plan.version == "alta-execution-plan-v2"
+    assert result.execution_plan.version == "alta-execution-plan-v3"
     assert result.execution_plan.entry_limit_price is not None
+    assert result.execution_plan.entry_limit_price <= instrument().quote.ask
+    assert result.execution_plan.entry_limit_offset_bps == 0
     assert result.execution_plan.arrival_midpoint is not None
     assert result.execution_plan.implementation_shortfall_budget_bps is not None
     assert result.execution_plan.max_attempts == 1
+
+
+def test_execution_contract_rejects_a_buy_limit_above_the_observed_ask() -> None:
+    execution = plan(instrument()).execution_plan
+    assert execution is not None
+    payload = execution.model_dump()
+    payload["entry_limit_price"] = instrument().quote.ask + Decimal("0.01")
+
+    with pytest.raises(ValueError, match="cannot chase above the observed ask"):
+        ExecutionPlan.model_validate(payload)
 
 
 def test_prospective_replacement_credit_preserves_the_gross_limit() -> None:
@@ -372,6 +388,89 @@ def test_entry_revalidation_rejects_a_stale_larger_governance_budget(
     monkeypatch.setattr(constructor, "load_alpha_governance", lambda: preservation)
 
     assert "alpha_governance_tightened_before_entry" in constructor.revalidate(ready)
+
+
+def calibration(
+    *,
+    reserve: str = "0",
+    multiplier: str = "1",
+    posture: str = "calibrated",
+) -> ForecastCalibrationGovernance:
+    return ForecastCalibrationGovernance(
+        policy_version="alta-forecast-calibration-v1",
+        source_portfolio_policy_version="alta-portfolio-risk-v7",
+        expression_kind="stock",
+        posture=posture,  # type: ignore[arg-type]
+        capital_multiplier=Decimal(multiplier),
+        sample_size=30,
+        window_size=30,
+        minimum_sample=30,
+        mean_forecast_error_bps=Decimal("-80"),
+        mean_absolute_error_bps=Decimal("80"),
+        directional_hit_rate=Decimal("0.6"),
+        alpha_reserve_bps=Decimal(reserve),
+        observed_through=NOW,
+        reason_codes=("forecast_error_reserve_applied",),
+    )
+
+
+def test_mature_forecast_error_reserve_reduces_the_admitted_edge() -> None:
+    baseline = plan(instrument())
+    reserved = plan(
+        instrument(),
+        forecast_calibration_governance=calibration(reserve="100"),
+    )
+
+    assert reserved.status == "ready"
+    assert reserved.unreserved_expected_alpha_bps == baseline.expected_alpha_bps
+    assert reserved.expected_alpha_bps == baseline.expected_alpha_bps - Decimal("100")
+    assert reserved.forecast_calibration_reserve_bps == Decimal("100")
+    assert reserved.expected_net_alpha_bps == (
+        reserved.expected_alpha_bps - reserved.estimated_cost_bps
+    )
+
+
+def test_forecast_reserve_can_fail_a_marginal_idea_closed() -> None:
+    reserved = plan(
+        instrument(),
+        forecast_calibration_governance=calibration(reserve="500"),
+    )
+
+    assert reserved.status == "wait"
+    assert reserved.reason_codes == ("insufficient_net_alpha_after_costs",)
+
+
+def test_weak_directional_calibration_caps_new_position_size() -> None:
+    result = plan(
+        instrument(),
+        forecast_calibration_governance=calibration(
+            reserve="0", multiplier="0.50", posture="caution"
+        ),
+    )
+
+    assert result.status == "ready"
+    assert result.target_notional == Decimal("5000")
+    assert result.binding_constraint == "position_nav_limit"
+
+
+def test_entry_revalidation_detects_a_new_forecast_reserve(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ready = plan(
+        instrument(),
+        forecast_calibration_governance=calibration(reserve="25"),
+    )
+    constructor = PortfolioConstructor(None, PortfolioRiskPolicy())  # type: ignore[arg-type]
+    monkeypatch.setattr(constructor, "load_state", lambda: PortfolioState())
+    monkeypatch.setattr(
+        constructor,
+        "load_forecast_calibration",
+        lambda _kind: calibration(reserve="100"),
+    )
+
+    assert "forecast_calibration_reserve_changed_before_entry" in (
+        constructor.revalidate(ready)
+    )
 
 
 def test_weak_or_multi_leg_alpha_fails_closed_before_allocating_risk() -> None:

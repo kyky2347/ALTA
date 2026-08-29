@@ -1,8 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
-import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { stripRemoteAccessEnvironment } from "./remote-access-policy.mjs";
+import { atomicWrite } from "./durable-file.mjs";
 
 export const ALTA_PYTHON_VERSION = "3.12.13";
 
@@ -51,14 +52,6 @@ const AGENT_SAFE_ENVIRONMENT_KEYS = new Set([
   "XDG_CONFIG_HOME",
   "XDG_DATA_HOME",
 ]);
-
-function atomicWrite(file, value) {
-  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-  const temporary = `${file}.${randomUUID()}.tmp`;
-  fs.writeFileSync(temporary, value, { flag: "wx", mode: 0o600 });
-  fs.renameSync(temporary, file);
-  fs.chmodSync(file, 0o600);
-}
 
 function parseEnvFile(file) {
   const result = {};

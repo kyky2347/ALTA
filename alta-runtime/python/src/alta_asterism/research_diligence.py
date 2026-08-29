@@ -8,16 +8,18 @@ from pydantic import Field
 from .expression_base import FrozenContract, contract_hash
 from .trader_mind import ACTIVE_RESEARCH_TOOLS
 
-RESEARCH_QUALITY_VERSION = "alta-research-quality-v1"
+RESEARCH_QUALITY_VERSION = "alta-research-quality-v2"
 RESEARCH_DECISION_HURDLE = Decimal("0.60")
 
 
 class ResearchTool(Protocol):
+    tool_call_id: str
     tool_name: str
     status: str
 
 
 class ResearchDiscovery(Protocol):
+    tool_call_id: str
     source_locator: str
 
 
@@ -97,18 +99,35 @@ def build_research_diligence(
     active = tuple(
         item for item in completed if item.tool_name in ACTIVE_RESEARCH_TOOLS
     )
-    families = tuple(sorted({_tool_family(item.tool_name) for item in active}))
-    non_news = tuple(
+    cited_tool_pairs = {
+        (item.tool_call_id, item.source_locator)
+        for item in getattr(output, "tool_evidence_refs", ())
+        if item.tool_call_id is not None
+    }
+    cited_tool_call_ids = {item[0] for item in cited_tool_pairs}
+    cited_active = tuple(
         item
         for item in active
+        if getattr(item, "tool_call_id", None) in cited_tool_call_ids
+    )
+    families = tuple(sorted({_tool_family(item.tool_name) for item in cited_active}))
+    non_news = tuple(
+        item
+        for item in cited_active
         if _tool_family(item.tool_name) not in {"news_locator", "social_locator"}
+    )
+    cited_tool_locators = tuple(
+        item.source_locator
+        for item in discoveries
+        if (getattr(item, "tool_call_id", None), item.source_locator)
+        in cited_tool_pairs
     )
     domains = tuple(
         sorted(
             {
                 hostname
                 for locator in (
-                    *(item.source_locator for item in discoveries),
+                    *cited_tool_locators,
                     *frozen_source_locators,
                 )
                 if (hostname := _hostname(locator)) is not None
@@ -129,8 +148,10 @@ def build_research_diligence(
     counterevidence = bool(getattr(output, "disconfirming_evidence", None))
     next_test = bool(getattr(output, "next_test", None))
     reasons = []
-    if len(active) < 2:
+    if len(cited_active) < 2:
         reasons.append("research_path_not_cross_checked")
+    if active and not cited_active:
+        reasons.append("active_research_not_bound_to_candidate")
     if not non_news:
         reasons.append("non_news_research_absent")
     if len(domains) < 2:

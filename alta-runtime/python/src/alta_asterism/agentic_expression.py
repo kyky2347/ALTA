@@ -233,7 +233,7 @@ class AgenticExpressionFlow:
     """Lets an Agent choose payoff shape before the position lifecycle takes over."""
 
     PROMPT_VERSION = "agentic-expression-v13"
-    AUDIT_PROMPT_VERSION = "expression-audit-v11"
+    AUDIT_PROMPT_VERSION = "expression-audit-v12"
 
     def __init__(
         self,
@@ -1040,6 +1040,7 @@ class AgenticExpressionFlow:
                     "Do not infer uncited facts, liquidity, Greeks, or broker capability.",
                     "Check thesis purity, implementation cost, tail risk, time horizon, and duplicate portfolio exposure.",
                     "Compare every slate entry on quoted spread, net Alpha clock, stress, capacity, timing, path dependence, convexity, and retained exposure; ignore proposer scores.",
+                    "Use each entry's decision_metrics to compare cost-adjusted Alpha dollars, Alpha per stress dollar, and remaining execution-reserve headroom. Prefer a non-dominated implementation; selecting a lower-efficiency or lower-headroom carrier requires a concrete payoff reason such as materially better thesis purity, timing fit, or bounded convexity in rationale.",
                     "Independently classify the complete systematic exposure set for the selected expression. Return it in confirmed_systematic_exposures and list every proposer disagreement in exposure_disagreements; do not silently average a disagreement away.",
                     "Score alpha_isolation_score from 0 to 1 based on whether the expected return is genuinely attributable to the frozen variant wedge rather than broad beta, sector, style, liquidity, crowding, or event-gap exposure. This score cannot be copied from thesis_purity.",
                     "Return hedge_posture and basis_risk independently. If clean Alpha requires a short, pair, spread, basket, or dynamic hedge, use requires_multi_leg and require wait because this runtime supports one bounded long leg.",

@@ -75,6 +75,23 @@ test("operation leases reject live duplicates and recover after release", (t) =>
   assert.equal(fs.existsSync(file), false);
 });
 
+test("operation leases recover a cross-boot PID reuse artifact", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "alta-lease-boot-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const file = path.join(root, "runtime", "operation.lock");
+  write(
+    file,
+    `${JSON.stringify({ pid: process.pid, createdAt: "2000-01-01T00:00:00.000Z" })}\n`,
+  );
+
+  const recovered = acquireLease(file);
+  const current = JSON.parse(fs.readFileSync(file, "utf8"));
+
+  assert.equal(current.pid, process.pid);
+  assert.notEqual(current.createdAt, "2000-01-01T00:00:00.000Z");
+  recovered.release();
+});
+
 test("storage maintenance skips all cleanup during a runtime build", async (t) => {
   const state = fs.mkdtempSync(path.join(os.tmpdir(), "alta-build-lock-"));
   t.after(() => fs.rmSync(state, { recursive: true, force: true }));

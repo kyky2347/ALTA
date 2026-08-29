@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "alta-asterism"
-version = "0.25.0"
+version = "0.26.0"
 description = "Research-only virtual trading platform operated by specialized LLM agents"
 requires-python = "==3.12.*"
 dependencies = [

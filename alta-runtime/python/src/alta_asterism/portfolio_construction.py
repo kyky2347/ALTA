@@ -10,6 +10,7 @@ from .alpha_isolation import (
 from .alpha_lifecycle import AlphaClock, build_alpha_clock
 from .database import Database
 from .execution_planning import build_execution_plan
+from .forecast_calibration import ForecastCalibrationGovernance
 from .implementation import PortfolioRiskPolicy, PortfolioState, TradeImplementationPlan
 from .market_data import MarketInstrument
 from .opportunity_identity import normalize_catalyst_bucket
@@ -58,6 +59,20 @@ class PortfolioConstructor:
             source_portfolio_policy_version=self.policy.version,
         )
 
+    def load_forecast_calibration(
+        self, expression_kind: str
+    ) -> ForecastCalibrationGovernance:
+        if expression_kind != "stock" or self.database is None:
+            return ForecastCalibrationGovernance.unscoped(
+                self.policy.version,
+                expression_kind,
+            )
+        return self.database.forecast_calibration_governance(
+            "shadow",
+            source_portfolio_policy_version=self.policy.version,
+            expression_kind=expression_kind,
+        )
+
     def plan(
         self,
         instrument: MarketInstrument,
@@ -76,11 +91,16 @@ class PortfolioConstructor:
         alpha_isolation: AlphaIsolation | None = None,
         research_quality_score: Decimal | None = None,
         alpha_capital_governance: AlphaCapitalGovernance | None = None,
+        forecast_calibration_governance: (ForecastCalibrationGovernance | None) = None,
         catalyst_key: str | None = None,
     ) -> TradeImplementationPlan:
         state = state or self.load_state()
         policy = self.policy
         capital_governance = alpha_capital_governance or self.load_alpha_governance()
+        forecast_calibration = (
+            forecast_calibration_governance
+            or self.load_forecast_calibration(instrument.kind)
+        )
         isolation = alpha_isolation or legacy_alpha_isolation()
         isolation_multiplier = (
             min(isolation.sizing_multiplier, policy.starter_size_multiplier)
@@ -131,6 +151,7 @@ class PortfolioConstructor:
             "research_quality_score": research_quality_score,
             "research_quality_multiplier": research_multiplier,
             "alpha_capital_governance": capital_governance,
+            "forecast_calibration_governance": forecast_calibration,
             "reference_nav": policy.reference_nav,
             "loss_budget": loss_budget,
             "position_notional_limit": position_limit,
@@ -160,7 +181,9 @@ class PortfolioConstructor:
         if decision.status == "wait":
             return self._wait(common, decision.reason_codes[0])
         consensus = consensus_underwriting(locked)
-        expected_alpha = consensus["uncertainty_adjusted_expected_alpha_bps"]
+        unreserved_expected_alpha = consensus["uncertainty_adjusted_expected_alpha_bps"]
+        calibration_reserve = forecast_calibration.alpha_reserve_bps
+        expected_alpha = unreserved_expected_alpha - calibration_reserve
         cost_bps = self._cost_bps(instrument)
         expected_net_alpha = expected_alpha - cost_bps
         decision_horizon_days = min(horizon_days, decision.edge_half_life_days)
@@ -184,6 +207,8 @@ class PortfolioConstructor:
             return self._wait(
                 common,
                 alpha_reason,
+                unreserved_expected_alpha=unreserved_expected_alpha,
+                calibration_reserve=calibration_reserve,
                 expected_alpha=expected_alpha,
                 cost_bps=cost_bps,
                 expected_net_alpha=expected_net_alpha,
@@ -212,11 +237,14 @@ class PortfolioConstructor:
             isolation_multiplier=isolation_multiplier,
             research_multiplier=research_multiplier,
             capital_multiplier=capital_governance.capital_multiplier,
+            forecast_calibration_multiplier=(forecast_calibration.capital_multiplier),
         )
         if liquidity_capacity is None:
             return self._wait(
                 common,
                 "liquidity_capacity_unverified",
+                unreserved_expected_alpha=unreserved_expected_alpha,
+                calibration_reserve=calibration_reserve,
                 expected_alpha=expected_alpha,
                 cost_bps=cost_bps,
                 expected_net_alpha=expected_net_alpha,
@@ -232,6 +260,8 @@ class PortfolioConstructor:
             return self._wait(
                 common,
                 "risk_budget_below_minimum_trade",
+                unreserved_expected_alpha=unreserved_expected_alpha,
+                calibration_reserve=calibration_reserve,
                 expected_alpha=expected_alpha,
                 cost_bps=cost_bps,
                 expected_net_alpha=expected_net_alpha,
@@ -258,6 +288,8 @@ class PortfolioConstructor:
             return self._wait(
                 common,
                 execution.reason_codes[0],
+                unreserved_expected_alpha=unreserved_expected_alpha,
+                calibration_reserve=calibration_reserve,
                 expected_alpha=expected_alpha,
                 cost_bps=cost_bps,
                 expected_net_alpha=expected_net_alpha,
@@ -269,6 +301,8 @@ class PortfolioConstructor:
             )
         return TradeImplementationPlan(
             status="ready",
+            unreserved_expected_alpha_bps=unreserved_expected_alpha,
+            forecast_calibration_reserve_bps=calibration_reserve,
             expected_alpha_bps=expected_alpha,
             estimated_cost_bps=cost_bps,
             expected_net_alpha_bps=expected_net_alpha,
@@ -351,6 +385,7 @@ class PortfolioConstructor:
         isolation_multiplier: Decimal,
         research_multiplier: Decimal,
         capital_multiplier: Decimal,
+        forecast_calibration_multiplier: Decimal,
     ) -> tuple[
         Decimal,
         Decimal | None,
@@ -369,7 +404,12 @@ class PortfolioConstructor:
         constraints = {
             "market_data_limit": market_limit,
             "position_nav_limit": position_limit
-            * min(isolation_multiplier, research_multiplier, capital_multiplier),
+            * min(
+                isolation_multiplier,
+                research_multiplier,
+                capital_multiplier,
+                forecast_calibration_multiplier,
+            ),
             "gross_nav_remaining": max(
                 Decimal(0),
                 gross_limit
@@ -488,6 +528,33 @@ class PortfolioConstructor:
             > plan.position_notional_limit * current_governance.capital_multiplier
         ):
             reasons.append("alpha_governance_tightened_before_entry")
+        frozen_calibration = plan.forecast_calibration_governance
+        if frozen_calibration is None:
+            reasons.append("forecast_calibration_policy_changed_before_entry")
+        else:
+            current_calibration = self.load_forecast_calibration(
+                frozen_calibration.expression_kind
+            )
+            if (
+                current_calibration.policy_version != frozen_calibration.policy_version
+                or current_calibration.source_portfolio_policy_version
+                != frozen_calibration.source_portfolio_policy_version
+                or current_calibration.expression_kind
+                != frozen_calibration.expression_kind
+            ):
+                reasons.append("forecast_calibration_policy_changed_before_entry")
+            else:
+                if (
+                    plan.target_notional
+                    > plan.position_notional_limit
+                    * current_calibration.capital_multiplier
+                ):
+                    reasons.append("forecast_calibration_tightened_before_entry")
+                if (
+                    current_calibration.alpha_reserve_bps
+                    > plan.forecast_calibration_reserve_bps
+                ):
+                    reasons.append("forecast_calibration_reserve_changed_before_entry")
         if plan.estimated_stress_loss > plan.loss_budget:
             reasons.append("loss_budget_changed_before_entry")
         stress_credit = (
@@ -621,6 +688,8 @@ class PortfolioConstructor:
         common: dict,
         reason: str,
         *,
+        unreserved_expected_alpha: Decimal | None = None,
+        calibration_reserve: Decimal = Decimal(0),
         expected_alpha: Decimal | None = None,
         cost_bps: Decimal | None = None,
         expected_net_alpha: Decimal | None = None,
@@ -634,6 +703,8 @@ class PortfolioConstructor:
     ) -> TradeImplementationPlan:
         return TradeImplementationPlan(
             status="wait",
+            unreserved_expected_alpha_bps=unreserved_expected_alpha,
+            forecast_calibration_reserve_bps=calibration_reserve,
             expected_alpha_bps=expected_alpha,
             estimated_cost_bps=cost_bps,
             expected_net_alpha_bps=expected_net_alpha,

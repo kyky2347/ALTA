@@ -170,6 +170,7 @@ export class RuntimeEnvironment {
       cwd: this.files.pythonProject,
       env: this.uvEnvironment(),
       capture: false,
+      timeoutMs: 15 * 60_000,
       missing:
         "uv is required (https://docs.astral.sh/uv/getting-started/installation/)",
     });
@@ -186,6 +187,7 @@ export class RuntimeEnvironment {
       cwd: this.rootDir,
       env: this.uvEnvironment(),
       capture: false,
+      timeoutMs: 15 * 60_000,
     });
     await this.execute(
       this.files.python,
@@ -193,7 +195,11 @@ export class RuntimeEnvironment {
         "-c",
         "import pgvector, psycopg, pydantic, redis, alta_asterism; print('ALTA Python runtime ready')",
       ],
-      { env: this.uvEnvironment(), capture: false },
+      {
+        env: this.uvEnvironment(),
+        capture: false,
+        timeoutMs: 60_000,
+      },
     );
   }
 
@@ -233,7 +239,7 @@ export class RuntimeEnvironment {
         "-c",
         "CREATE EXTENSION IF NOT EXISTS vector",
       ),
-      { env: this.env },
+      { env: this.env, timeoutMs: 30_000 },
     );
     await this.execute(
       this.docker,
@@ -245,7 +251,7 @@ export class RuntimeEnvironment {
         "-ec",
         'REDISCLI_AUTH="$(cat /run/secrets/redis_password)" redis-cli --no-auth-warning ping | grep -qx PONG',
       ),
-      { env: this.env },
+      { env: this.env, timeoutMs: 30_000 },
     );
   }
 
@@ -257,6 +263,7 @@ export class RuntimeEnvironment {
       await this.execute(this.docker, this.composeArguments("pull"), {
         env: this.env,
         capture: false,
+        timeoutMs: 10 * 60_000,
       });
       await this.#composeUp();
       await this.verifyServices();
@@ -282,7 +289,7 @@ export class RuntimeEnvironment {
         "180",
         "--remove-orphans",
       ),
-      { env: this.env, capture: false },
+      { env: this.env, capture: false, timeoutMs: 210_000 },
     );
   }
 
@@ -293,7 +300,7 @@ export class RuntimeEnvironment {
       await this.execute(
         this.docker,
         this.composeArguments("down", "--remove-orphans"),
-        { env: this.env, capture: false },
+        { env: this.env, capture: false, timeoutMs: 90_000 },
       );
     });
   }
@@ -328,11 +335,11 @@ export class RuntimeEnvironment {
     await this.execute(
       this.docker,
       this.composeArguments("logs", "--tail", "200", ...services),
-      { env: this.env, capture: false },
+      { env: this.env, capture: false, timeoutMs: 30_000 },
     );
   }
 
-  async python(args, { signal } = {}) {
+  async python(args, { signal, timeoutMs } = {}) {
     if (!fs.existsSync(this.files.python))
       throw new Error("Run ./alta env setup before using the managed Python");
     const controller = new AbortController();
@@ -344,14 +351,24 @@ export class RuntimeEnvironment {
     else signal?.addEventListener("abort", forwardAbort, { once: true });
     process.once("SIGINT", onInterrupt);
     process.once("SIGTERM", onInterrupt);
+    let timedOut = false;
+    const timeout = Number.isFinite(timeoutMs)
+      ? setTimeout(() => {
+          timedOut = true;
+          controller.abort(new Error("Managed Python exceeded its deadline"));
+        }, timeoutMs)
+      : null;
+    timeout?.unref?.();
     try {
       const result = await this.passthroughRunner(this.files.python, args, {
         cwd: this.rootDir,
         env: this.uvEnvironment(),
         signal: controller.signal,
       });
+      if (timedOut) throw new Error("Managed Python exceeded its deadline");
       return result.code;
     } finally {
+      if (timeout) clearTimeout(timeout);
       signal?.removeEventListener("abort", forwardAbort);
       process.removeListener("SIGINT", onInterrupt);
       process.removeListener("SIGTERM", onInterrupt);

@@ -329,6 +329,43 @@ def _handler(
                         "warnings": [],
                     },
                 )
+            if request.path == "/api/v1/events":
+                raw_cursor = query.get("cursor", ["0"])[0]
+                try:
+                    cursor = int(raw_cursor)
+                    if cursor < 0:
+                        raise ValueError
+                except ValueError:
+                    return self.json_response(
+                        400, {"error": {"code": "invalid_cursor"}}
+                    )
+                raw_before = query.get("before", [None])[0]
+                if raw_before is not None:
+                    try:
+                        before = int(raw_before)
+                        if before <= 0:
+                            raise ValueError
+                    except ValueError:
+                        return self.json_response(
+                            400, {"error": {"code": "invalid_before"}}
+                        )
+                    events = database.events_before(
+                        before, limit, environment=settings.environment.value
+                    )
+                else:
+                    events = database.events_after(
+                        cursor, limit, environment=settings.environment.value
+                    )
+                serialized = [json.loads(event_json(event)) for event in events]
+                next_cursor = serialized[-1]["cursor"] if serialized else cursor
+                return self.json_response(
+                    200,
+                    {
+                        "data": {"events": serialized},
+                        "meta": {**meta, "nextCursor": next_cursor},
+                        "warnings": [],
+                    },
+                )
             detail_routes = (
                 ("/api/v1/runs/", database.run_detail),
                 ("/api/v1/opportunities/", database.opportunity_detail),

@@ -122,11 +122,21 @@ class HybridAgentClient:
                     tool_call_id=tools[index].tool_call_id,
                     tool_name=tools[index].tool_name,
                     source_locator=f"https://source{index + 1}.example/research",
-                    content={"fixture": index + 1},
+                    content={
+                        "fixture": index + 1,
+                        "result_text": f"Fixture research result {index + 1}.",
+                    },
                     content_hash=character * 64,
                 )
                 for index, character in enumerate(("d", "e", "f"))
             )
+            payload["tool_evidence_refs"] = [
+                {
+                    "tool_call_id": discovery.tool_call_id,
+                    "source_locator": discovery.source_locator,
+                }
+                for discovery in discoveries
+            ]
             return replace(
                 turn,
                 final_response=json.dumps(payload, separators=(",", ":")),

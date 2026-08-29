@@ -3,9 +3,11 @@
   "private": true,
   "description": "A research-only virtual trading platform operated by specialized LLM agents.",
   "scripts": {
-    "check": "pnpm format && pnpm lint:markdown",
-    "format": "prettier --check *.json *.md docs/**/*.md alta-src/**/*.mjs",
-    "format:fix": "prettier --write *.json *.md docs/**/*.md alta-src/**/*.mjs",
+    "check": "pnpm format && pnpm lint:markdown && pnpm dashboard:lint && pnpm dashboard:build",
+    "format": "prettier --check *.json *.md docs/**/*.md alta-src/**/*.mjs alta-dashboard/src alta-dashboard/*.{json,ts,html}",
+    "format:fix": "prettier --write *.json *.md docs/**/*.md alta-src/**/*.mjs alta-dashboard/src alta-dashboard/*.{json,ts,html}",
+    "dashboard:build": "pnpm --dir alta-dashboard build",
+    "dashboard:lint": "pnpm --dir alta-dashboard lint",
     "lint:markdown": "markdownlint-cli2",
     "write-hooks-schema": "cargo run --manifest-path ./vendor/openai-codex/codex-rs/Cargo.toml -p codex-hooks --bin write_hooks_schema_fixtures"
   },

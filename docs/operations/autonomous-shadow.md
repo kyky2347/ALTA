@@ -1,6 +1,6 @@
 # Autonomous Shadow operations
 
-> **Release:** `0.25.0` — `INCENTIVE_LOOP_VERIFIED`
+> **Release:** `0.26.0` — `FORWARD_EVIDENCE_VERIFIED`
 >
 > **Capital boundary:** internal Shadow by default. Only the explicit
 > `acceptance` command can call an isolated one-share Tiger Paper mirror. Live
@@ -85,18 +85,26 @@ question, and a Candidate still requires new auditable Evidence. The queue and
 its score are process memory, not Evidence, conviction, rank, or capital input.
 
 The runtime derives a research-diligence record from what each Trader Mind
-actually completed: active and non-news tools, independent source families and
-domains, causal beneficiary path, counterevidence, and next test. It is durable
-process metadata, not Evidence and not a fixed approval score. The downstream
-team can challenge shallow or single-source work without preventing an Agent
-from presenting an unusual, well-supported route to Alpha.
+actually completed, but source families, independent domains, non-news depth,
+and cross-check credit come only from frozen Evidence or exact tool results the
+Candidate cites. Unbound browsing remains observable as process cost and cannot
+inflate research quality. Causal beneficiary path, counterevidence, and next
+test remain explicit. This is durable process metadata, not Evidence and not a
+fixed approval score. The downstream team can challenge shallow or
+single-source work without preventing an Agent from presenting an unusual,
+well-supported route to Alpha.
 
 After ranking, the implementation PM proposes at most three distinct payoff
 hypotheses. Each receives actual market, construction, Alpha-clock, and capital
-checks before the independent Auditor selects one or chooses `Wait`. The
-selected instrument is quoted and constructed again before a frozen absolute
-limit is admitted. This is a bounded implementation tournament, not permission
-for an Agent to place or reprice an order.
+checks before the independent Auditor selects one or chooses `Wait`. For every
+admissible entry the audit snapshot exposes time-adjusted expected Alpha
+dollars, expected Alpha per stress-loss dollar, estimated costs, and remaining
+execution-reserve headroom without collapsing them into an automatic score.
+The selected instrument is quoted and constructed again before a frozen
+absolute limit is admitted. A buy limit may equal the observed ask but cannot
+be placed above it, and automatic repricing remains forbidden. This is a
+bounded implementation tournament, not permission for an Agent to place or
+reprice an order.
 
 Every non-Wait hypothesis must bind the exact Thesis Ledger pillar IDs its
 payoff monetizes. Later Position Monitor runs append one status per selected
@@ -482,6 +490,14 @@ Every completed Shadow close writes an append-only performance event containing:
 - the Candidate, Trader Mind, Alpha archetype, explore/follow-up mode, and
   bounded research route frozen
   when the position opened.
+- an observed lifecycle diagnostic derived only from executable bid observations
+  captured while the position was open and the actual close: MFE, MAE, maximum
+  observed drawdown, exit capture, time to best observation, and holding time.
+
+Sparse quotes are not interpolated. Malformed lifecycle samples are omitted
+rather than blocking the close ledger or final return measurement. The lifecycle
+aggregate remains descriptive even after its 30-position reporting threshold;
+it cannot tune an exit, change capital, or authorize a broker action.
 
 For direct-stock expressions, the API also compares the two locked ex-ante
 underwriting tickets with realized forward Alpha. Options and proxy ETFs are
@@ -502,6 +518,16 @@ The Expression Agent may explain the posture but cannot override it. The
 portfolio constructor reloads it immediately before intent, rejects stale or
 tightened plans, and never grants a multiplier above 1.0. Rolling recovery is
 allowed only through later small Shadow observations replacing older results.
+
+A second, separate controller closes the forecast-calibration loop only for
+comparable direct-stock positions under the same portfolio-policy version. It
+does nothing before 30 closed, cost-adjusted, benchmarked observations. After
+that maturity gate, historical overforecast bias plus 25% of rolling mean
+absolute error becomes a downside-only reserve, capped at 500 bp and deducted
+from new expected Alpha before costs and decay. Directional hit rate below 45%
+also caps new size at 50%. Favorable bias cannot create a negative reserve or a
+multiplier above 1.0. The frozen reserve and policy are reloaded immediately
+before intent; any tighter result requires a fresh implementation plan.
 
 The `/api/v1/alpha/feedback` projection returns only prior, closed outcomes at a
 strict point-in-time cutoff. A Mind sees performance values only after 30
@@ -524,7 +550,7 @@ has no code path to models, ranking, expression, limits, capital, or brokers.
 | `/api/v1/runs/{id}`          | Role input binding, budgets, status, and artifact                   |
 | `/api/v1/opportunities/{id}` | Evidence, Thesis Ledger, agenda/lineage, challenge, rank, and audit |
 | `/api/v1/expressions/{id}`   | Recommendation, risk/implementation plan, and Shadow state          |
-| `/api/v1/alpha/summary`      | Closed sample, benchmark, calibration, and rolling capital posture  |
+| `/api/v1/alpha/summary`      | Closed sample, lifecycle quality, reserve, and capital postures     |
 | `/api/v1/alpha/feedback`     | PIT Mind/archetype/route/mode maturity and feedback                 |
 | `/api/v1/evaluation/summary` | Cohort drift, coverage, missingness, and sample readiness           |
 | `/api/v1/stream`             | Cursor-based lifecycle events                                       |

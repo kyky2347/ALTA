@@ -6,6 +6,7 @@ description = "Pinned OpenAI Codex fixtures reviewed at upstream commit 4861236,
 paths = [
   '''(?:^|/)(?:vendor/openai-codex/)?codex-rs/Cargo\.lock$''',
   '''(?:^|/)(?:vendor/openai-codex/)?codex-rs/agent-identity/src/lib\.rs$''',
+  '''(?:^|/)(?:vendor/openai-codex/)?codex-rs/app-server-protocol/src/protocol/item_builders_tests\.rs$''',
   '''(?:^|/)(?:vendor/openai-codex/)?codex-rs/app-server/README\.md$''',
   '''(?:^|/)(?:vendor/openai-codex/)?codex-rs/app-server/tests/suite/v2/connection_handling_websocket\.rs$''',
   '''(?:^|/)(?:vendor/openai-codex/)?codex-rs/cli/src/login\.rs$''',
@@ -15,5 +16,7 @@ paths = [
   '''(?:^|/)(?:vendor/openai-codex/)?codex-rs/exec/tests/suite/apply_patch\.rs$''',
   '''(?:^|/)(?:vendor/openai-codex/)?codex-rs/login/src/auth/agent_identity\.rs$''',
   '''(?:^|/)(?:vendor/openai-codex/)?codex-rs/login/src/auth/auth_tests\.rs$''',
+  '''(?:^|/)(?:vendor/openai-codex/)?codex-rs/memories/write/src/phase1\.rs$''',
+  '''(?:^|/)(?:vendor/openai-codex/)?codex-rs/network-proxy/src/credential_broker_tests\.rs$''',
   '''(?:^|/)(?:vendor/openai-codex/)?codex-rs/secrets/src/sanitizer\.rs$''',
 ]

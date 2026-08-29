@@ -1,12 +1,14 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import process from "node:process";
-import { randomUUID } from "node:crypto";
 import { unlinkFiles, walkFiles } from "./file-inventory.mjs";
 import { boundedNumber } from "./resource-control.mjs";
+import { atomicWriteJson, syncDirectory } from "./durable-file.mjs";
 
 const GIB = 1024 ** 3;
 const DAY_MS = 24 * 60 * 60 * 1000;
+const BOOT_STARTED_AT_MS = Date.now() - os.uptime() * 1000;
 
 function processIsAlive(pid) {
   if (!Number.isInteger(pid) || pid <= 0) return false;
@@ -26,11 +28,19 @@ export function acquireLease(
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       const descriptor = fs.openSync(file, "wx", 0o600);
-      fs.writeFileSync(
-        descriptor,
-        `${JSON.stringify({ pid: process.pid, createdAt: new Date().toISOString() })}\n`,
-      );
-      fs.closeSync(descriptor);
+      let initialized = false;
+      try {
+        fs.writeFileSync(
+          descriptor,
+          `${JSON.stringify({ pid: process.pid, createdAt: new Date().toISOString() })}\n`,
+        );
+        fs.fsyncSync(descriptor);
+        initialized = true;
+      } finally {
+        fs.closeSync(descriptor);
+        if (!initialized) fs.rmSync(file, { force: true });
+      }
+      syncDirectory(path.dirname(file));
       let released = false;
       return {
         release() {
@@ -38,6 +48,7 @@ export function acquireLease(
           released = true;
           try {
             fs.unlinkSync(file);
+            syncDirectory(path.dirname(file));
           } catch (error) {
             if (error.code !== "ENOENT") throw error;
           }
@@ -48,10 +59,17 @@ export function acquireLease(
       let stale = false;
       try {
         const value = JSON.parse(fs.readFileSync(file, "utf8"));
-        stale = !processIsAlive(value.pid);
+        const createdAt = Date.parse(value.createdAt);
+        stale =
+          !processIsAlive(value.pid) ||
+          (Number.isFinite(createdAt) &&
+            createdAt < BOOT_STARTED_AT_MS - 5_000);
       } catch {
         try {
-          stale = Date.now() - fs.statSync(file).mtimeMs > staleMs;
+          const modifiedAt = fs.statSync(file).mtimeMs;
+          stale =
+            modifiedAt < BOOT_STARTED_AT_MS - 5_000 ||
+            Date.now() - modifiedAt > staleMs;
         } catch (statError) {
           if (statError.code !== "ENOENT") throw statError;
           continue;
@@ -60,6 +78,7 @@ export function acquireLease(
       if (stale) {
         try {
           fs.unlinkSync(file);
+          syncDirectory(path.dirname(file));
         } catch (unlinkError) {
           if (unlinkError.code !== "ENOENT") throw unlinkError;
         }
@@ -171,15 +190,6 @@ function defaultPolicy(env = process.env) {
   };
 }
 
-function atomicJson(file, value) {
-  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-  const temporary = `${file}.${randomUUID()}.tmp`;
-  fs.writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, {
-    mode: 0o600,
-  });
-  fs.renameSync(temporary, file);
-}
-
 export function formatBytes(bytes) {
   if (!Number.isFinite(bytes)) return "unknown";
   const units = ["B", "KiB", "MiB", "GiB", "TiB"];
@@ -229,7 +239,7 @@ export class StorageManager {
         usage.totalBytes < this.policy.maxBytes,
       expiresAt: Date.now() + this.policy.admissionCacheMs,
     };
-    atomicJson(this.statusFile, snapshot);
+    atomicWriteJson(this.statusFile, snapshot);
     return snapshot;
   }
 

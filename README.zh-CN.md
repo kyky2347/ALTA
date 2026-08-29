@@ -18,7 +18,7 @@ ALTA 是一个仅用于研究、以证据为先的公开市场多模型 Agent �
 > ALTA 是实验性研究软件，不构成投资建议、交易推荐或经纪系统，也不承诺能够产生 Alpha。
 > 禁止连接实盘经纪账户凭据，禁止用它管理真实资金。
 
-**状态：** `0.25.0`（`INCENTIVE_LOOP_VERIFIED`）· **常规模式：**
+**状态：** `0.26.0`（`FORWARD_EVIDENCE_VERIFIED`）· **常规模式：**
 Replay / Shadow · **经纪账户路径：** 仅显式 Tiger 模拟盘验收 · **Alpha：** 尚未证明
 
 **本地开发状态：** 已接入机构化组合智能和可重放的市场研究漏斗。完整日线最多给每个 Trader
@@ -29,8 +29,16 @@ Mind 分配一个非 Evidence 异常问题，Mind 必须重新核验行情、因
 当前本地树还统一了所有 Agent 交接的字节预算；结构化输出错误的 Scout 只有一次全新且受限的
 重试；可选数据源故障会指数退避；确定性门槛已经判定不能进入排序的 Opportunity 不再浪费两次
 私有评估模型调用。
+成熟、可比的股票预测误差现在也会闭合承销回路：只有达到 30 个计入成本、相对 SPY 的前向
+Shadow 平仓样本后，持续高估才会被转换成只向下的 Alpha 储备；方向校准偏弱还会把新仓位限制
+在半仓。小样本只展示、不调参，良好结果也不会自动增加杠杆。实时操作台会直接显示样本成熟度、
+置信区间、预测误差、储备和资金姿态，但不会把 Shadow 数据写成已证明的业绩。已平仓持仓还会保留
+持有期间真实捕获的可执行价格路径，用来区分机会发现质量、路径风险与退出损失；这些诊断只读且不会
+自动优化退出。缺少可信风险票据的历史或畸形持仓按当前全额名义价值计入压力损失，不再获得有利的
+零风险假设。
 
 [架构](docs/architecture/overview.md) · [快速开始](#快速开始确定性研究-fixture) ·
+[实时操作台](docs/operations/operator-console.md) ·
 [运行指南](docs/operations/autonomous-shadow.md) ·
 [研究范围](docs/research-scope.md) · [English](README.md)
 
@@ -87,6 +95,7 @@ flowchart TB
     measurement --> feedback["成熟度门控的 Alpha 反馈<br/>Mind · 原型 · 工具路径 · 研究模式"]
     feedback --> incentive["可撤销的研究激励<br/>保守 Alpha 为正 → +1 次调用 · +8k tokens<br/>不影响排序 · 风险 · 资金 · 经纪权限"]
     measurement --> governance["滚动 Alpha 生存治理<br/>回撤 · 不确定性 · 资金姿态"]
+    measurement --> calibration["成熟预测校准<br/>高估储备 · 方向警戒"]
   end
 
   registry --> debate
@@ -102,6 +111,7 @@ flowchart TB
   state --> mandate
   incentive -. 后续冻结 wake · 非 Evidence .-> scouts
   governance -. 下一笔意图前的风险预算 .-> construction
+  calibration -. 下一笔预测与意图前重验证 .-> construction
 ```
 
 Research Director 是确定性代码，不是又一个会表达观点的 Agent。它只衡量一个决策缺口继续
@@ -110,22 +120,33 @@ Research Director 是确定性代码，不是又一个会表达观点的 Agent�
 
 信任边界和组件归属见[架构概览](docs/architecture/overview.md)。
 
+### 本地操作台预览
+
+[![ALTA 合成操作台中的机会流与 Agent 交接](docs/assets/alta-operator-console.png)](docs/assets/alta-operator-console.png)
+
+_这是明确标注的 Synthetic Preview，不含经纪账户、真实资金、私密凭据或真实业绩数据。_
+
+[![ALTA 合成前向证据界面中的校准与生命周期诊断](docs/assets/alta-forward-evidence.png)](docs/assets/alta-forward-evidence.png)
+
+_前向证据与经纪账户边界分离；看板展示样本成熟度、不确定性、预测误差、资金姿态和观察到的
+生命周期质量，但不会把 Shadow 结果表述为已证明的 Alpha。_
+
 ### 当前真正实现了什么
 
 | 范围           | 当前状态                                                                                                                                                                                                                |
 | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 研究生命周期   | 完整日线异常漏斗、主动多来源探索、按决策缺口和期限排序的 Research Director、唯一跟进问题分配、至少两席独立探索、空跑后轮换路线、可证伪 Thesis Ledger、研究尽调、独立挑战、情景与决策承销、表达锦标赛、Shadow 监控和测量 |
 | 证据与状态     | 时点 Evidence、不可改写的论点支柱、受限问题与过程记忆、建仓时冻结的研究归因、成熟度门控的 Mind Alpha 反馈、可撤销的只读研究激励、Replay                                                                                 |
-| 资金生存       | 仅用当前政策、每仓最新一条前向结果缩小后续 Shadow 仓位；小样本正收益永远不会自动放大杠杆                                                                                                                                |
-| 组合构建       | 单笔与组合总压力预算、总敞口、共享因子桶、Alpha 来源与共享催化剂集中度、流动性，以及按 Alpha 美元和压力资本效率进行的持仓竞争                                                                                           |
+| 资金生存       | 仅用当前政策、每仓最新一条前向结果缩小后续 Shadow 仓位；成熟预测误差会扣减后续承销 Alpha，弱方向校准会缩仓，小样本和正结果永远不会自动放大杠杆；未知历史风险按全额名义价值计量                                          |
+| 组合构建       | 单笔与组合总压力预算、总敞口、成熟预测储备、共享因子桶、Alpha 来源与共享催化剂集中度、流动性，以及按 Alpha 美元和压力资本效率进行的持仓竞争                                                                             |
 | 无人值守服务   | 内部调度器、单主租约、按机会积压调整节奏、统一上下文预算、数据源退避、开放持仓更快观察、runtime 重建、一次可审计 Scout 重试、健康看门狗和安全退出                                                                       |
-| 只读可观测性   | Runtime、Run、Opportunity、冻结 cohort、缺失率和 Shadow 测量的 loopback JSON 与 SSE 接口                                                                                                                                |
+| 只读可观测性   | Runtime、Run、Opportunity、冻结 cohort、缺失率、MFE/MAE/回撤/退出捕获和 Shadow 测量的 loopback JSON 与 SSE 接口                                                                                                         |
 | 经纪账户边界   | 默认禁用；隔离的 CLI 只允许一个精确 Tiger 模拟盘账户与 1 股限价验收                                                                                                                                                     |
 | 真实世界 Alpha | **尚未建立**；承销校准仍属探索性，仍需积累更大规模、计入成本的独立前向 Shadow 样本                                                                                                                                      |
 
 ### 最新本地验收
 
-当前本地工作树通过了 141 项 Node/harness 测试、243 项 Opportunity OS Python 测试和
+当前本地工作树通过了 155 项 Node/harness 测试、263 项 Opportunity OS Python 测试和
 25 项隔离 capital 包测试。2026-08-27 08:19–17:00 EDT 的受监督真实墙钟试运行观察到 28 个
 自主周期身份：26 个完成为 `MVP_IDLE`，2 个在修复前因上下文预算边界失败；系统形成 3 个
 Opportunity 和 4 份独立评估，但产生 0 个 Rank、0 个 Expression、0 个持仓和 0 个订单。两处
@@ -276,7 +297,8 @@ Web 深度研究、全球新闻、公共社交搜索和公共金融数据；Feed
 新 Evidence 支撑 Candidate；摘要还会记录受限的全新探索/问题跟进历史。
 
 每个完成的 Scout 产物还会带一份由真实工具 provenance 推导出的确定性研究尽调记录。它记录
-Agent 实际完成了多少主动与非新闻研究、覆盖了哪些相互独立的来源族群和域名、是否给出受益者
+Agent 实际完成了多少主动与非新闻研究，但来源族群、域名和交叉核验只计算 Candidate 明确绑定的
+冻结 Evidence 或精确工具结果；无关浏览仍作为过程成本可见，却不能抬高研究质量。记录还会说明是否给出受益者
 传导链、反证与下一项可观测测试。它只是过程元数据，不是 Evidence，也不会自动批准或否决；
 下游 Agent 可以据此惩罚浅层、单一新闻驱动的研究，同时仍能保留对非常规 Alpha 路径的判断空间。
 
@@ -310,10 +332,14 @@ Trader Mind 只能调用按角色限制的 ALTA 内部只读 MCP 插件面。桌
 
 ## 当前状态
 
-Opportunity OS 版本：`0.25.0` — `INCENTIVE_LOOP_VERIFIED`
+Opportunity OS 版本：`0.26.0` — `FORWARD_EVIDENCE_VERIFIED`
 
 启动器为了兼容固定的自定义 Codex harness，继续保留 `ALTA v3.5` 发行标识；各应用包独立使用
 语义化版本。
+
+`0.26.0` 把前向证据从“最终收益”扩展到真实捕获的持仓价格路径：MFE、MAE、观察回撤、退出捕获
+和到达最佳价格的时间能够帮助区分研究质量、路径风险与退出损失，但不能自动调参、改变资金或下单。
+缺少可信实现票据的历史持仓同时按当前全额名义价值计入压力损失，避免低估未知风险。
 
 `0.25.0` 增加了延迟、对称、可撤销的研究激励，而不是奖励 Agent 制造活动量。每个 Trader Mind
 在样本成熟前都会看到同一份未来奖励契约：只有已经平仓、扣除成本、相对基准计算的 Shadow Alpha
@@ -406,8 +432,10 @@ Prompt、排序、工具、风险、表达或资金。这提高的是研究学�
 
 实施 PM 现在会提出至多三个真正不同的收益结构假设。确定性代码会逐一取得真实行情门控、
 组合构建、Alpha 时钟和资本分配结果，再由不同模型的独立 Auditor 选择其中一个或 `Wait`。
-选中后系统会再次取得同一工具的行情并重新构建。执行票据冻结到达时中点、绝对限价、shortfall
-预算、参与率上限、建议子单数量和单次不追价行为；Shadow 与显式 Tiger 模拟盘镜像使用同一个
+Auditor 会直接比较时间调整后的 Alpha 美元、每单位压力损失的预期 Alpha 和执行预算余量，但这些
+指标不会被合成为自动评分。选中后系统会再次取得同一工具的行情并重新构建。执行票据冻结到达时
+中点、绝对限价、shortfall 预算、参与率上限、建议子单数量和单次不追价行为；买入限价最多等于
+已经观察到的卖一价，不能在卖一价之上追价。Shadow 与显式 Tiger 模拟盘镜像使用同一个
 冻结限价。全周期 Massive 八次请求预算继续 fail-closed，任何 Agent 仍拿不到订单工具。
 
 `0.15.0` 把孤立的单仓定仓升级为主动资本流程。每张新计划都会冻结一个时点一致的 Alpha
@@ -619,21 +647,54 @@ LaunchAgent 或 Linux systemd-user unit。宿主服务负责重启后恢复 Post
 常规 24×7 路径仍然只有 Shadow，不会启用 Tiger 模拟盘变更。Tiger Paper 只存在于显式单周期
 验收命令中。
 
-服务提供 loopback 健康检查以及以下只读看板接口。`/api/v1` 路由可以使用
+项目现在包含一个响应式本地实时操作台：Asterism Trace 展示 Opportunity 从发现、补全、委员会
+辩论、表达、审计到 Shadow 观察的实时流动；Decision Ledger 按顺序回放所有持久化事件。点击
+Opportunity、Agent Run、表达或事件，会显示系统真正保存的输入、证据、评估、交接、模型路由、
+工具来源和审计产物；界面不会伪称展示模型私有思维链。
+
+```shell
+corepack pnpm install --frozen-lockfile
+pnpm dashboard:build
+./alta dashboard install
+./alta dashboard open
+```
+
+受管操作台会在登录后启动，并在异常退出后自动恢复；只有显式执行 `open` 才会打印一次性 loopback
+地址。该地址不会进入服务日志，并会在使用后从 owner-only 宿主状态中删除。浏览器只获得 HttpOnly
+本机会话，看不到后端 Bearer token；启停操作还受同源与 CSRF 校验保护。“安全停止”会停止 Shadow
+服务、PostgreSQL 和 Redis，但保留本地操作台以便再次启动。它不能安装研究服务、调用 Tiger 模拟盘、
+提交订单或启用资本。可用 `./alta dashboard status|logs|stop|uninstall` 管理操作台；不带 action 的
+`./alta dashboard` 仍是前台开发模式。完整说明见
+[操作台指南](docs/operations/operator-console.md)。
+
+操作台现在会把慢请求合并为单个在途刷新并设置超时；短暂断网采用带抖动的有界指数退避，网络恢复
+或窗口重新获得焦点时立即追赶。部分接口失败不会抹掉其它健康数据，最后一次可信快照会明确标为
+陈旧而不是静默消失，控制通道不可信时启停按钮自动锁定。生命周期操作使用 owner-only 跨进程锁并
+通过文件和目录同步耐久记录阶段；重复启停、并发点击或操作台进程重启都会按真实服务状态协调。
+owner-only 会话密钥允许已授权浏览器在操作台进程重启后继续连接，CSRF 则随进程轮换并由浏览器自动
+刷新。前后端有显式协议版本，版本不匹配时会锁住控制并给出重建指引。Docker 启停、迁移、后端代理和
+浏览器请求均有硬超时，避免依赖卡死无限占用操作。操作台本身只是前台控制客户端，不拥有自治运行；
+断电重启后的恢复由宿主服务管理器、Python supervisor、PostgreSQL 持久卷、Redis AOF、数据库 owner
+lock 和冻结周期重放共同负责。研究服务和操作台各自使用独立的用户级受管服务；macOS LaunchAgent
+在登录后启动，操作台故障不会停止研究，操作台恢复也不会注销仍在有效期内的浏览器会话。这里实现的
+是单机可恢复运行，不是多机高可用；异机备份、冗余基础设施、外部告警投递和 SLO 仍属于部署责任。
+
+服务提供 loopback 健康检查以及以下只读接口。`/api/v1` 路由可以使用
 `ALTA_API_TOKEN` 进行 Bearer 保护；服务不提供订单 API。
 
-| 接口                            | 用途                              |
-| ------------------------------- | --------------------------------- |
-| `/health/live`、`/health/ready` | 进程与依赖健康状态                |
-| `/api/v1/system/summary`        | 持久化对象统计                    |
-| `/api/v1/system/runtime`        | Agent、数据源、心跳和安全状态     |
-| `/api/v1/mvp/status`            | 当前周期与近期事件                |
-| `/api/v1/runs/{id}`             | Run 详情和阶段结果                |
-| `/api/v1/opportunities/{id}`    | 证据、辩论、排序和审计链路        |
-| `/api/v1/expressions/{id}`      | 拟议工具和 Shadow 状态            |
-| `/api/v1/alpha/summary`         | 前向 Shadow 测量与事前承销校准    |
-| `/api/v1/evaluation/summary`    | 冻结 cohort、漂移、覆盖率和就绪度 |
-| `/api/v1/stream`                | 基于 cursor 的 Server-Sent Events |
+| 接口                            | 用途                                      |
+| ------------------------------- | ----------------------------------------- |
+| `/health/live`、`/health/ready` | 进程与依赖健康状态                        |
+| `/api/v1/system/summary`        | 持久化对象统计                            |
+| `/api/v1/system/runtime`        | Agent、数据源、心跳和安全状态             |
+| `/api/v1/mvp/status`            | 当前周期与近期事件                        |
+| `/api/v1/events`                | 支持前向/后向 cursor 分页的追加型历史账本 |
+| `/api/v1/runs/{id}`             | Run 详情和阶段结果                        |
+| `/api/v1/opportunities/{id}`    | 证据、辩论、排序和审计链路                |
+| `/api/v1/expressions/{id}`      | 拟议工具和 Shadow 状态                    |
+| `/api/v1/alpha/summary`         | 前向 Alpha、生命周期质量与承销校准        |
+| `/api/v1/evaluation/summary`    | 冻结 cohort、漂移、覆盖率和就绪度         |
+| `/api/v1/stream`                | 基于 cursor 的 Server-Sent Events         |
 
 ## 测试
 

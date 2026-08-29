@@ -88,6 +88,7 @@ class EvaluatedExpression:
             },
             "market_gate": self.market_gate,
             "admissible": self.ready,
+            "decision_metrics": _decision_metrics(plan),
             "instrument": (
                 {
                     "kind": instrument.kind,
@@ -120,25 +121,14 @@ class EvaluatedExpression:
                 {
                     "status": plan.status,
                     "reason_codes": plan.reason_codes,
-                    "expected_net_alpha_bps": _text(plan.expected_net_alpha_bps),
-                    "time_adjusted_expected_net_alpha_bps": (
-                        _text(plan.alpha_clock.time_adjusted_expected_net_alpha_bps)
-                        if plan.alpha_clock is not None
-                        else None
-                    ),
-                    "estimated_cost_bps": _text(plan.estimated_cost_bps),
-                    "target_notional": str(plan.target_notional),
-                    "estimated_stress_loss": str(plan.estimated_stress_loss),
-                    "liquidity_capacity": _text(plan.liquidity_capacity),
                     "binding_constraint": plan.binding_constraint,
-                    "exposure_capacity": _text(plan.exposure_capacity),
                     "exposure_binding_tag": plan.exposure_binding_tag,
                     "execution": (
                         {
                             "status": plan.execution_plan.status,
                             "order_style": plan.execution_plan.order_style,
-                            "entry_limit_offset_bps": str(
-                                plan.execution_plan.entry_limit_offset_bps
+                            "entry_limit_price": str(
+                                plan.execution_plan.entry_limit_price
                             ),
                             "arrival_spread_bps": _text(
                                 plan.execution_plan.arrival_spread_bps
@@ -231,3 +221,52 @@ def select_audited_expression(
 
 def _text(value: Decimal | None) -> str | None:
     return str(value) if value is not None else None
+
+
+def _decision_metrics(plan: TradeImplementationPlan | None) -> dict[str, str] | None:
+    """Expose comparable economics without turning them into an automatic score."""
+
+    if (
+        plan is None
+        or plan.status != "ready"
+        or plan.alpha_clock is None
+        or plan.expected_net_alpha_bps is None
+        or plan.target_notional <= 0
+    ):
+        return None
+    adjusted_alpha_bps = plan.alpha_clock.time_adjusted_expected_net_alpha_bps
+    expected_alpha_dollars = plan.target_notional * adjusted_alpha_bps / Decimal(10_000)
+    stress_efficiency = (
+        expected_alpha_dollars / plan.estimated_stress_loss
+        if plan.estimated_stress_loss > 0
+        else None
+    )
+    execution_reserve = (
+        plan.execution_plan.implementation_shortfall_budget_bps
+        if plan.execution_plan is not None
+        else None
+    )
+    execution_headroom = (
+        adjusted_alpha_bps - execution_reserve
+        if execution_reserve is not None
+        else None
+    )
+    return {
+        "unreserved_expected_alpha_bps": (
+            _text(getattr(plan, "unreserved_expected_alpha_bps", None)) or "unavailable"
+        ),
+        "forecast_calibration_reserve_bps": str(
+            getattr(plan, "forecast_calibration_reserve_bps", Decimal(0))
+        ),
+        "time_adjusted_expected_net_alpha_bps": str(adjusted_alpha_bps),
+        "time_adjusted_expected_alpha_dollars": str(expected_alpha_dollars),
+        "estimated_cost_bps": str(plan.estimated_cost_bps),
+        "target_notional_dollars": str(plan.target_notional),
+        "estimated_stress_loss_dollars": str(plan.estimated_stress_loss),
+        "expected_alpha_per_stress_dollar": (
+            str(stress_efficiency) if stress_efficiency is not None else "unavailable"
+        ),
+        "execution_reserve_headroom_bps": (
+            str(execution_headroom) if execution_headroom is not None else "unavailable"
+        ),
+    }

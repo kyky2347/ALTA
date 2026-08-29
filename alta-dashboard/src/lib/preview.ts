@@ -1,0 +1,407 @@
+import type {
+  AltaEvent,
+  ControlState,
+  MvpStatus,
+  RuntimeDetail,
+} from "./types";
+
+const now = Date.now();
+const time = (minutes: number) =>
+  new Date(now - minutes * 60_000).toISOString();
+
+export const previewControl: ControlState = {
+  console: {
+    protocolVersion: 1,
+    instanceId: "synthetic-preview",
+    startedAt: time(15),
+    uptimeSeconds: 900,
+  },
+  runtime: {
+    installed: true,
+    ready: true,
+    platformActive: true,
+    endpoint: "http://127.0.0.1:8876",
+    capitalMode: "disabled",
+    host: { state: "running", processId: 48120, processAlive: true },
+    supervisor: { state: "running", childPid: 48127, childProcessAlive: true },
+  },
+  environment: {
+    docker: { ready: true, version: "preview" },
+    services: {
+      configured: true,
+      states: { postgres: "healthy", redis: "healthy" },
+    },
+  },
+  operation: null,
+  safety: {
+    environment: "shadow",
+    capitalMode: "disabled",
+    dashboardBinding: "127.0.0.1",
+  },
+};
+
+export const previewRuntime: RuntimeDetail = {
+  minds: [
+    {
+      id: "structural-flow",
+      knownAt: time(1),
+      turnCount: 14,
+      contextTokens: 18340,
+      modelProvider: "deepseek",
+      modelId: "reasoner",
+      rollingSummary:
+        "Cross-venue flow dislocation; checking persistence and borrow constraints.",
+    },
+    {
+      id: "volatility-surface",
+      knownAt: time(2),
+      turnCount: 9,
+      contextTokens: 12780,
+      modelProvider: "xai",
+      modelId: "grok",
+      rollingSummary:
+        "Term structure moved ahead of realized dispersion; seeking a falsifiable carrier.",
+    },
+    {
+      id: "fundamental-change",
+      knownAt: time(4),
+      turnCount: 11,
+      contextTokens: 15420,
+      modelProvider: "kimi",
+      modelId: "thinking",
+      rollingSummary:
+        "Revision breadth diverged from headline consensus; validating source independence.",
+    },
+  ],
+  sourceCursors: [
+    { source: "massive", cursor: "2026-08-29T07:19:00Z", knownAt: time(1) },
+    { source: "sec", cursor: "feed:28419", knownAt: time(3) },
+  ],
+  alpha: {
+    measurement: "realized_shadow_cost_adjusted",
+    closedPositions: 12,
+    openPositions: 2,
+    meanRealizedAlphaBps: "18.40",
+    cumulativeNetPnl: "418.20",
+    lastMeasuredAt: time(28),
+    alphaEvidence: {
+      posture: "insufficient_sample",
+      sampleSize: 12,
+      minimumSample: 30,
+      meanAlphaBps: "18.40",
+      confidence95LowerBps: "-41.20",
+      confidence95UpperBps: "78.00",
+    },
+    capitalGovernance: {
+      posture: "collecting",
+      capitalMultiplier: "0.50",
+      sampleSize: 12,
+      windowSize: 12,
+      recentMeanAlphaBps: "18.40",
+      maxDrawdownNavBps: "21.50",
+      evidencePosture: "insufficient_sample",
+    },
+    underwritingCalibration: {
+      posture: "exploratory_only",
+      sampleSize: 12,
+      minimumSample: 30,
+      meanForecastErrorBps: "-74.60",
+      meanAbsoluteErrorBps: "118.20",
+      directionalHitRate: "0.58",
+    },
+    forecastCalibrationGovernance: {
+      posture: "collecting",
+      expressionKind: "stock",
+      capitalMultiplier: "1",
+      sampleSize: 12,
+      windowSize: 12,
+      minimumSample: 30,
+      meanForecastErrorBps: "-74.60",
+      meanAbsoluteErrorBps: "118.20",
+      directionalHitRate: "0.58",
+      alphaReserveBps: "0",
+    },
+    pathDiagnostics: {
+      posture: "collecting",
+      measuredPositions: 12,
+      minimumSample: 30,
+      meanMaximumFavorableExcursionBps: "164.30",
+      meanMaximumAdverseExcursionBps: "-91.70",
+      meanMaximumDrawdownBps: "182.40",
+      meanExitCaptureRatio: "0.42",
+      positiveExcursionMissRate: "0.17",
+      warning:
+        "Observed excursions are sparse decision diagnostics, not intraday backtest data or an automatic exit rule.",
+    },
+    warning:
+      "Alpha is unproven: the forward Shadow sample is below the minimum.",
+  },
+  config: {
+    autonomousStatus: "waiting",
+    currentCycleId: "cycle-20260829-0717",
+    lastHeartbeatAt: time(0),
+    lastCycleResult: "completed",
+    nextCycleAt: new Date(now + 8 * 60_000).toISOString(),
+    consecutiveFailures: 0,
+    capitalMode: "disabled",
+  },
+};
+
+export const previewStatus: MvpStatus = {
+  status: "MVP_RUNNING",
+  environment: "shadow",
+  currentPipelineId: "cycle-20260829-0717",
+  eventCursor: 1842,
+  sources: [
+    { id: "massive", knownAt: time(1), posture: "healthy", freshness: "live" },
+    { id: "sec", knownAt: time(3), posture: "healthy", freshness: "current" },
+    {
+      id: "web-research",
+      knownAt: time(4),
+      posture: "bounded",
+      freshness: "current",
+    },
+  ],
+  pipeline: [
+    {
+      id: "cycle-20260829-0717",
+      knownAt: time(1),
+      eventType: "mvp.pipeline.completed",
+      detail: { status: "MVP_RUNNING" },
+    },
+  ],
+  runs: [],
+  agents: [
+    {
+      id: "structural-flow",
+      runId: "run-sf-184",
+      status: "completed",
+      knownAt: time(1),
+      modelProvider: "deepseek",
+      modelId: "reasoner",
+      latencyMs: 18320,
+      usage: { input_tokens: 8200, output_tokens: 1880 },
+    },
+    {
+      id: "disconfirming",
+      runId: "run-dc-092",
+      status: "completed",
+      knownAt: time(2),
+      modelProvider: "xai",
+      modelId: "grok",
+      latencyMs: 22110,
+      usage: { input_tokens: 6900, output_tokens: 1420 },
+    },
+    {
+      id: "committee-moderator",
+      runId: "run-cm-067",
+      status: "running",
+      knownAt: time(0),
+      modelProvider: "openai",
+      modelId: "gpt-5.6",
+      latencyMs: 8240,
+      usage: { input_tokens: 4100 },
+    },
+    {
+      id: "expression",
+      runId: "run-ex-054",
+      status: "waiting",
+      knownAt: time(0),
+      modelProvider: "kimi",
+      modelId: "thinking",
+    },
+    {
+      id: "audit",
+      runId: "run-au-051",
+      status: "waiting",
+      knownAt: time(0),
+      modelProvider: "openai",
+      modelId: "gpt-5.6",
+    },
+  ],
+  candidates: [
+    {
+      id: "cand-294",
+      title: "Index rebalance flow asymmetry",
+      knownAt: time(11),
+      alphaArchetype: "structural-flow",
+    },
+    {
+      id: "cand-293",
+      title: "Post-event volatility repricing",
+      knownAt: time(19),
+      alphaArchetype: "volatility",
+    },
+  ],
+  opportunities: [
+    {
+      id: "opp-118",
+      title: "Delayed basket pressure after constituent migration",
+      status: "under_review",
+      knownAt: time(4),
+      foundryState: "complete",
+    },
+    {
+      id: "opp-117",
+      title: "Revision breadth versus crowded consensus",
+      status: "ranked",
+      knownAt: time(31),
+      foundryState: "complete",
+    },
+    {
+      id: "opp-116",
+      title: "Short-dated skew normalization",
+      status: "expressed",
+      knownAt: time(48),
+      foundryState: "complete",
+    },
+  ],
+  ranks: [
+    {
+      id: "rank-118",
+      opportunityId: "opp-118",
+      book: "event",
+      position: 1,
+      score: "0.81",
+      knownAt: time(2),
+    },
+    {
+      id: "rank-117",
+      opportunityId: "opp-117",
+      book: "fundamental",
+      position: 2,
+      score: "0.73",
+      knownAt: time(28),
+    },
+  ],
+  expressions: [
+    {
+      id: "expr-118",
+      opportunityId: "opp-118",
+      kind: "market-neutral-basket",
+      status: "validated",
+      knownAt: time(1),
+    },
+    {
+      id: "expr-116",
+      opportunityId: "opp-116",
+      kind: "defined-risk-options",
+      status: "validated",
+      knownAt: time(42),
+    },
+  ],
+  shadowPositions: [
+    {
+      id: "pos-041",
+      expressionId: "expr-118",
+      symbol: "BASKET",
+      status: "observing",
+      quantity: 1,
+      knownAt: time(1),
+      openedAt: time(1),
+    },
+  ],
+  assessments: [
+    {
+      id: "assessment-118-a",
+      opportunityId: "opp-118",
+      assessor: "thesis",
+      verdict: "advance",
+      score: "0.84",
+      recommendation: "Advance with tighter liquidity evidence",
+      confidence: "0.72",
+      knownAt: time(3),
+    },
+    {
+      id: "assessment-118-b",
+      opportunityId: "opp-118",
+      assessor: "disconfirming",
+      verdict: "conditional",
+      score: "0.61",
+      recommendation: "Reject if impact dissipates inside two sessions",
+      confidence: "0.68",
+      knownAt: time(2),
+    },
+  ],
+  discussions: [
+    {
+      id: "discussion-118-1",
+      opportunityId: "opp-118",
+      eventType: "committee.argument.recorded",
+      knownAt: time(2),
+      detail: {
+        speaker: "thesis",
+        summary: "Persistent mechanical flow has a measurable decay profile.",
+      },
+    },
+    {
+      id: "discussion-118-2",
+      opportunityId: "opp-118",
+      eventType: "committee.challenge.recorded",
+      knownAt: time(1),
+      detail: {
+        speaker: "disconfirming",
+        summary: "Observed pressure may be ordinary closing-auction imbalance.",
+      },
+    },
+  ],
+};
+
+export const previewEvents: AltaEvent[] = [
+  {
+    cursor: 1842,
+    eventId: "evt-1842",
+    eventType: "committee.deliberation.started",
+    aggregateType: "opportunity",
+    aggregateId: "opp-118",
+    environment: "shadow",
+    knownAt: time(0),
+    payload: {
+      participants: ["thesis", "disconfirming", "moderator"],
+      stage: "evidence_conflict",
+    },
+  },
+  {
+    cursor: 1841,
+    eventId: "evt-1841",
+    eventType: "assessment.locked",
+    aggregateType: "opportunity",
+    aggregateId: "opp-118",
+    environment: "shadow",
+    knownAt: time(2),
+    payload: { assessor: "disconfirming", verdict: "conditional" },
+  },
+  {
+    cursor: 1840,
+    eventId: "evt-1840",
+    eventType: "run.completed",
+    aggregateType: "run",
+    aggregateId: "run-dc-092",
+    environment: "shadow",
+    knownAt: time(2),
+    payload: {
+      role: "disconfirming",
+      artifactKinds: ["assessment", "evidence_map"],
+    },
+  },
+  {
+    cursor: 1839,
+    eventId: "evt-1839",
+    eventType: "opportunity.completed",
+    aggregateType: "opportunity",
+    aggregateId: "opp-118",
+    environment: "shadow",
+    knownAt: time(4),
+    payload: { completeness: "complete", memberCandidates: 3 },
+  },
+  {
+    cursor: 1838,
+    eventId: "evt-1838",
+    eventType: "candidate.discovered",
+    aggregateType: "candidate",
+    aggregateId: "cand-294",
+    environment: "shadow",
+    knownAt: time(11),
+    payload: { scout: "structural-flow", archetype: "flow_dislocation" },
+  },
+];

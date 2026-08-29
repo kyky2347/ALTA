@@ -150,12 +150,18 @@ def _scaled_stress_loss(
     notional: Decimal, implementation: dict[str, Any] | None
 ) -> Decimal:
     if implementation is None:
-        return Decimal(0)
-    entry_notional = Decimal(str(implementation.get("target_notional", "0")))
-    entry_stress_loss = Decimal(str(implementation.get("estimated_stress_loss", "0")))
+        return notional
+    try:
+        entry_notional = Decimal(str(implementation.get("target_notional", "0")))
+        entry_stress_loss = Decimal(
+            str(implementation.get("estimated_stress_loss", "0"))
+        )
+    except (ArithmeticError, TypeError, ValueError):
+        return notional
     if entry_notional <= 0 or entry_stress_loss <= 0:
-        return Decimal(0)
-    return entry_stress_loss * notional / entry_notional
+        return notional
+    scaled = entry_stress_loss * notional / entry_notional
+    return min(notional, max(Decimal(0), scaled))
 
 
 def _systematic_exposures(

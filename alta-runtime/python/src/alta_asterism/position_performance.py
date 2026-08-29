@@ -1,11 +1,15 @@
 from datetime import UTC, datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from .b5_runtime import _append_event, _contract_event
 from .contracts import Environment
 from .database import Database
 from .market_data import MassiveMarketData
 from .shadow import PositionThesis
+from .trade_path_diagnostics import (
+    ExecutablePathObservation,
+    build_position_path_diagnostics,
+)
 
 
 class PositionPerformanceRecorder:
@@ -50,6 +54,7 @@ class PositionPerformanceRecorder:
         exit_commission: Decimal,
         quantity: Decimal,
     ) -> None:
+        measured_at = datetime.now(UTC)
         entry_value = entry_price * quantity
         gross_pnl = (exit_price - entry_price) * quantity
         net_pnl = gross_pnl - entry_commission - exit_commission
@@ -60,6 +65,18 @@ class PositionPerformanceRecorder:
             self.market_data.quote("etf", "SPY") if self.market_data else None
         )
         with self.database.connect() as connection:
+            position_row = connection.execute(
+                """SELECT opened_at, closed_at FROM research.shadow_position
+                WHERE id = %s AND environment = 'shadow'""",
+                (thesis.position_id,),
+            ).fetchone()
+            monitor_rows = connection.execute(
+                """SELECT known_at, payload FROM ops.event
+                WHERE aggregate_id = %s AND environment = 'shadow'
+                AND event_type = 'position.monitored'
+                ORDER BY sequence""",
+                (thesis.position_id,),
+            ).fetchall()
             row = connection.execute(
                 """SELECT payload FROM ops.event WHERE aggregate_id = %s
                 AND event_type = 'position.benchmark.open'
@@ -79,6 +96,23 @@ class PositionPerformanceRecorder:
                 if benchmark_return_bps is not None
                 else None
             )
+            opened_at = position_row[0] if position_row is not None else thesis.known_at
+            closed_at = (
+                position_row[1]
+                if position_row is not None and position_row[1] is not None
+                else measured_at
+            )
+            try:
+                path_diagnostics = build_position_path_diagnostics(
+                    entry_price=entry_price,
+                    opened_at=opened_at,
+                    observations=_path_observations(monitor_rows),
+                    exit_price=exit_price,
+                    closed_at=closed_at,
+                    net_return_bps=net_return_bps,
+                )
+            except ValueError:
+                path_diagnostics = None
             payload = {
                 "position_id": thesis.position_id,
                 "opportunity_id": thesis.binding.opportunity_id,
@@ -100,6 +134,11 @@ class PositionPerformanceRecorder:
                     item.model_dump(mode="json") for item in thesis.alpha_contributors
                 ],
                 "thesis_pillar_ids": [item.pillar_id for item in thesis.thesis_pillars],
+                "path_diagnostics": (
+                    path_diagnostics.model_dump(mode="json")
+                    if path_diagnostics is not None
+                    else None
+                ),
             }
             _append_event(
                 connection,
@@ -108,8 +147,24 @@ class PositionPerformanceRecorder:
                     aggregate_type="shadow_position",
                     aggregate_id=thesis.position_id,
                     environment=Environment.SHADOW,
-                    known_at=datetime.now(UTC),
+                    known_at=measured_at,
                     payload=payload,
                     correlation_id=thesis.binding.opportunity_id,
                 ),
             )
+
+
+def _path_observations(rows: list[tuple]) -> tuple[ExecutablePathObservation, ...]:
+    observations = []
+    for known_at, payload in rows:
+        try:
+            raw_price = payload["observation"]["quote"]["bid"]
+            observations.append(
+                ExecutablePathObservation(
+                    known_at=known_at,
+                    executable_price=Decimal(str(raw_price)),
+                )
+            )
+        except (InvalidOperation, KeyError, TypeError, ValueError):
+            continue
+    return tuple(observations)
