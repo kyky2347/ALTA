@@ -14,8 +14,10 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { entityDetailPath, getJson } from "@/lib/api";
-import { clockTime, relativeTime, titleCase, valueText } from "@/lib/display";
+import { useI18n } from "@/lib/i18n";
 import type { MvpStatus, SelectedEntity } from "@/lib/types";
+
+const DOMAIN_VALUE_FIELDS = new Set(["status", "direction", "kind", "side"]);
 
 export function DetailInspector({
   selected,
@@ -26,6 +28,7 @@ export function DetailInspector({
   status: MvpStatus | null;
   preview: boolean;
 }) {
+  const { domain, systemMessage, t } = useI18n();
   const [request, setRequest] = useState<{
     path: string;
     detail: Record<string, unknown> | null;
@@ -80,12 +83,14 @@ export function DetailInspector({
             : Braces;
 
   return (
-    <aside className="inspector" aria-label="Selected record inspector">
+    <aside className="inspector" aria-label={t("selectedRecordInspector")}>
       <div className="inspector-head">
         <div
           className="inspector-kicker"
           aria-label={
-            selected ? `${titleCase(selected.kind)} record` : "Inspector"
+            selected
+              ? t("recordLabel", { kind: domain(selected.kind) })
+              : t("inspector")
           }
         >
           <span className="inspector-icon">
@@ -101,30 +106,27 @@ export function DetailInspector({
       {!selected ? (
         <div className="inspector-empty">
           <Fingerprint />
-          <h2>Select any record</h2>
-          <p>
-            Open an opportunity, agent run, committee event, expression, or
-            shadow position to inspect its durable record.
-          </p>
+          <h2>{t("selectAnyRecord")}</h2>
+          <p>{t("selectAnyRecordDetail")}</p>
         </div>
       ) : (
         <>
           <div className="inspector-title">
             <h2>{selected.label}</h2>
-            <p>Saved system record · not private chain-of-thought</p>
+            <p>{t("savedSystemRecord")}</p>
           </div>
           <Tabs defaultValue="brief" className="inspector-tabs">
             <TabsList>
-              <TabsTrigger value="brief">Brief</TabsTrigger>
-              <TabsTrigger value="evidence">Evidence</TabsTrigger>
-              <TabsTrigger value="record">Record</TabsTrigger>
+              <TabsTrigger value="brief">{t("brief")}</TabsTrigger>
+              <TabsTrigger value="evidence">{t("evidence")}</TabsTrigger>
+              <TabsTrigger value="record">{t("record")}</TabsTrigger>
             </TabsList>
             <ScrollArea className="inspector-scroll">
               <TabsContent value="brief">
                 {loading ? (
                   <InspectorLoading />
                 ) : error ? (
-                  <InspectorError error={error} />
+                  <InspectorError error={systemMessage(error) ?? error} />
                 ) : (
                   <Brief
                     detail={detail}
@@ -143,7 +145,7 @@ export function DetailInspector({
               </TabsContent>
               <TabsContent value="record">
                 <div className="raw-label">
-                  <Braces /> Normalized JSON
+                  <Braces /> {t("normalizedJson")}
                 </div>
                 <pre className="raw-record">
                   {JSON.stringify(detail ?? selected.summary ?? {}, null, 2)}
@@ -155,7 +157,7 @@ export function DetailInspector({
       )}
       <div className="inspector-foot">
         <ShieldCheck />
-        <span>Research-only · shadow environment · capital disabled</span>
+        <span>{t("researchBoundary")}</span>
       </div>
     </aside>
   );
@@ -172,6 +174,7 @@ function Brief({
   assessments: Array<Record<string, unknown>>;
   discussions: Array<Record<string, unknown>>;
 }) {
+  const { clock, domain, relative, t, value } = useI18n();
   const leadFields = [
     "status",
     "thesis",
@@ -196,20 +199,24 @@ function Brief({
     <div className="inspector-sections">
       <section className="inspector-section">
         <h3>
-          <FileText /> Decision packet
+          <FileText /> {t("decisionPacket")}
         </h3>
         <div className="fact-list">
           {fields.length ? (
             fields.map((key) => (
               <div className="fact-row" key={key}>
-                <span>{titleCase(key)}</span>
-                <strong>{valueText(detail?.[key])}</strong>
+                <span>{domain(key)}</span>
+                <strong>
+                  {DOMAIN_VALUE_FIELDS.has(key) &&
+                  typeof detail?.[key] === "string"
+                    ? domain(detail[key])
+                    : value(detail?.[key])}
+                </strong>
               </div>
             ))
           ) : (
             <p className="muted-copy">
-              {valueText(selected.summary) ||
-                "No public brief has been saved for this record."}
+              {value(selected.summary) || t("noPublicBrief")}
             </p>
           )}
         </div>
@@ -217,23 +224,25 @@ function Brief({
       {assessments.length > 0 && (
         <section className="inspector-section">
           <h3>
-            <Bot /> Independent assessments
+            <Bot /> {t("independentAssessments")}
           </h3>
           <div className="assessment-stack">
             {assessments.map((assessment) => (
               <article className="assessment-card" key={String(assessment.id)}>
                 <div>
-                  <strong>{titleCase(String(assessment.assessor))}</strong>
-                  <Badge variant="outline">{String(assessment.verdict)}</Badge>
+                  <strong>{domain(String(assessment.assessor))}</strong>
+                  <Badge variant="outline">
+                    {domain(String(assessment.verdict))}
+                  </Badge>
                 </div>
                 <p>
-                  {String(
-                    assessment.recommendation ?? "No recommendation summary",
-                  )}
+                  {String(assessment.recommendation ?? t("noRecommendation"))}
                 </p>
                 <small>
-                  Score {String(assessment.score)} · confidence{" "}
-                  {String(assessment.confidence ?? "—")}
+                  {t("scoreConfidence", {
+                    score: String(assessment.score),
+                    confidence: String(assessment.confidence ?? "—"),
+                  })}
                 </small>
               </article>
             ))}
@@ -243,15 +252,14 @@ function Brief({
       {discussions.length > 0 && (
         <section className="inspector-section">
           <h3>
-            <Clock3 /> Committee exchange
+            <Clock3 /> {t("committeeExchange")}
           </h3>
           {discussions.map((item) => (
             <article className="discussion-item" key={String(item.id)}>
-              <span>{titleCase(String(item.eventType))}</span>
-              <p>{summaryFrom(item.detail)}</p>
+              <span>{domain(String(item.eventType))}</span>
+              <p>{summaryFrom(item.detail, t("noPublicSummary"))}</p>
               <small>
-                {clockTime(String(item.knownAt))} ·{" "}
-                {relativeTime(String(item.knownAt))}
+                {clock(String(item.knownAt))} · {relative(String(item.knownAt))}
               </small>
             </article>
           ))}
@@ -270,6 +278,7 @@ function Evidence({
   assessments: Array<Record<string, unknown>>;
   discussions: Array<Record<string, unknown>>;
 }) {
+  const { domain, t } = useI18n();
   const artifacts = Array.isArray(detail?.artifacts)
     ? (detail.artifacts as Array<Record<string, unknown>>)
     : [];
@@ -280,19 +289,19 @@ function Evidence({
     <div className="inspector-sections">
       <section className="inspector-section">
         <h3>
-          <FileKey2 /> Provenance
+          <FileKey2 /> {t("provenance")}
         </h3>
         <div className="fact-list">
           <div className="fact-row">
-            <span>Evidence references</span>
-            <strong>{evidenceIds.length || "None saved"}</strong>
+            <span>{t("evidenceReferences")}</span>
+            <strong>{evidenceIds.length || t("noneSaved")}</strong>
           </div>
           <div className="fact-row">
-            <span>Artifacts</span>
+            <span>{t("artifacts")}</span>
             <strong>{artifacts.length}</strong>
           </div>
           <div className="fact-row">
-            <span>Committee records</span>
+            <span>{t("committeeRecords")}</span>
             <strong>{assessments.length + discussions.length}</strong>
           </div>
         </div>
@@ -305,30 +314,32 @@ function Evidence({
           <div>
             <FileText />
             <strong>
-              {titleCase(String(artifact.kind ?? `Artifact ${index + 1}`))}
+              {artifact.kind
+                ? domain(String(artifact.kind))
+                : t("artifactNumber", { number: index + 1 })}
             </strong>
           </div>
-          <p>{summaryFrom(artifact.content)}</p>
+          <p>{summaryFrom(artifact.content, t("noPublicSummary"))}</p>
           <small>
+            {t("originalArtifact")} ·{" "}
             {artifact.contentHash
-              ? `Hash ${String(artifact.contentHash).slice(0, 14)}…`
-              : "Hash unavailable"}
+              ? t("hash", {
+                  hash: String(artifact.contentHash).slice(0, 14),
+                })
+              : t("hashUnavailable")}
           </small>
         </section>
       ))}
       {!artifacts.length && (
-        <div className="inspector-note">
-          No run artifact is attached to this selected record. Opportunity
-          evidence may be represented through assessments and committee events.
-        </div>
+        <div className="inspector-note">{t("noArtifact")}</div>
       )}
     </div>
   );
 }
 
-function summaryFrom(value: unknown) {
+function summaryFrom(value: unknown, fallback: string) {
   if (typeof value === "string") return value;
-  if (!value || typeof value !== "object") return "No public summary";
+  if (!value || typeof value !== "object") return fallback;
   const object = value as Record<string, unknown>;
   const summary =
     object.summary ?? object.rationale ?? object.thesis ?? object.text;
@@ -338,10 +349,11 @@ function summaryFrom(value: unknown) {
 }
 
 function InspectorLoading() {
+  const { t } = useI18n();
   return (
     <div className="inspector-state">
       <span className="loading-orbit" />
-      <p>Loading the durable record…</p>
+      <p>{t("loadingDurableRecord")}</p>
     </div>
   );
 }

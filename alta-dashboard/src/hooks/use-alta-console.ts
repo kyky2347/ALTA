@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ApiError, getJson, mutateRuntime } from "@/lib/api";
+import { ApiError, getJson, mutateRuntime, replaceCredential } from "@/lib/api";
 import {
   previewControl,
+  previewCredentials,
   previewEvents,
   previewRuntime,
   previewStatus,
@@ -10,6 +11,7 @@ import type {
   AltaEvent,
   ConsoleConnection,
   ControlState,
+  CredentialInventory,
   MvpStatus,
   RuntimeDetail,
 } from "@/lib/types";
@@ -18,7 +20,7 @@ type Bootstrap = ControlState & { csrfToken: string };
 
 const LIVE_POLL_MS = 2_500;
 const MAX_RETRY_MS = 30_000;
-const CONSOLE_PROTOCOL_VERSION = 1;
+const CONSOLE_PROTOCOL_VERSION = 2;
 
 function retryDelay(failures: number) {
   const base = Math.min(
@@ -72,6 +74,10 @@ export function useAltaConsole() {
   const [events, setEvents] = useState<AltaEvent[]>(
     preview ? previewEvents : [],
   );
+  const [credentials, setCredentials] = useState<CredentialInventory | null>(
+    preview ? previewCredentials : null,
+  );
+  const [credentialsError, setCredentialsError] = useState<string | null>(null);
   const [connection, setConnection] = useState<ConsoleConnection>({
     status: preview ? "online" : "connecting",
     message: null,
@@ -96,6 +102,7 @@ export function useAltaConsole() {
   const failures = useRef(0);
   const mounted = useRef(true);
   const hasSnapshot = useRef(preview);
+  const credentialsLoaded = useRef(preview);
 
   const performRefresh = useCallback(async () => {
     if (preview) return;
@@ -139,6 +146,21 @@ export function useAltaConsole() {
       }
       if (!mounted.current) return;
       setControl(nextControl);
+      if (!credentialsLoaded.current) {
+        try {
+          const nextCredentials = await getJson<CredentialInventory>(
+            "/control/credentials",
+            { signal: controller.signal },
+          );
+          if (!mounted.current) return;
+          setCredentials(nextCredentials);
+          setCredentialsError(null);
+          credentialsLoaded.current = true;
+        } catch (error) {
+          if (!mounted.current) return;
+          setCredentialsError(messageFor(error));
+        }
+      }
 
       if (!nextControl.runtime.ready) {
         failures.current = 0;
@@ -352,6 +374,45 @@ export function useAltaConsole() {
     [preview, queueRefresh],
   );
 
+  const refreshCredentials = useCallback(async () => {
+    if (preview) return;
+    const next = await getJson<CredentialInventory>("/control/credentials");
+    setCredentials(next);
+    setCredentialsError(null);
+    credentialsLoaded.current = true;
+  }, [preview]);
+
+  const setProviderCredential = useCallback(
+    async (slot: string, secret: string) => {
+      if (preview)
+        throw new Error(
+          "Credential controls are disabled in synthetic preview",
+        );
+      if (!csrfToken.current)
+        throw new Error("The secure console session is not ready yet");
+      try {
+        const next = await replaceCredential(slot, secret, csrfToken.current);
+        setCredentials(next);
+        setCredentialsError(null);
+        credentialsLoaded.current = true;
+      } catch (error) {
+        if (!(error instanceof ApiError) || error.code !== "mutation_forbidden")
+          throw error;
+        const bootstrap = validateControl(
+          await getJson<Bootstrap>("/control/bootstrap"),
+        );
+        csrfToken.current = bootstrap.csrfToken;
+        consoleInstance.current = bootstrap.console.instanceId;
+        setControl(bootstrap);
+        const next = await replaceCredential(slot, secret, csrfToken.current);
+        setCredentials(next);
+        setCredentialsError(null);
+        credentialsLoaded.current = true;
+      }
+    },
+    [preview],
+  );
+
   const loadOlderEvents = useCallback(async () => {
     if (preview || loadingOlder || !events.length) return;
     setLoadingOlder(true);
@@ -376,6 +437,8 @@ export function useAltaConsole() {
     control,
     status,
     runtime,
+    credentials,
+    credentialsError,
     events,
     connection,
     error:
@@ -387,6 +450,8 @@ export function useAltaConsole() {
     refreshData,
     retryNow,
     controlRuntime,
+    refreshCredentials,
+    setProviderCredential,
     loadOlderEvents,
     loadingOlder,
     historyError,

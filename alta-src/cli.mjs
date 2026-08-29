@@ -88,7 +88,7 @@ Usage:
   ./alta dashboard [install|start|stop|restart|status|open|logs|uninstall]
                                 Operate the restartable local operator console
   ./alta dashboard [--host 127.0.0.1] [--port 8877]
-                                Run a foreground console for development
+                                Prepare and run the local control plane in one command
   ./alta status                  Show storage and supervisor health
   ./alta setup                   Build the private binary and prepare local state
   ./alta build                   Rebuild the private release binary
@@ -106,8 +106,7 @@ Examples:
   ./alta env setup
   ./alta service install
   ./alta service status
-  ./alta dashboard install
-  ./alta dashboard open
+  ./alta dashboard
   ./alta credentials status
   ./alta credentials set deepseek
   ./alta env python --version

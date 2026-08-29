@@ -5,16 +5,40 @@ Shadow research runtime. It is built as static React assets and served through
 the loopback control plane in `alta-src/operator-console.mjs`.
 
 ```shell
-pnpm --dir alta-dashboard dev
-pnpm dashboard:lint
-pnpm dashboard:build
 ./alta dashboard
 ```
 
-The development server is suitable only for visual work. Operational use must
-go through `./alta dashboard`, which keeps the backend bearer token outside the
-browser and protects lifecycle mutations with a local HttpOnly session,
+That is the complete normal startup command. It performs a locked dependency
+install and production build when needed, then serves the UI on loopback. The
+first **Start ALTA** click on a new clone prepares the isolated environment,
+installs the current user's research service, and waits for backend readiness.
+The operator console keeps the backend bearer token outside the browser and
+protects lifecycle and credential mutations with a local HttpOnly session,
 same-origin validation, and CSRF.
+
+The Credentials view reports only safe provider metadata and supports
+write-only replacement while the research runtime is stopped. Secrets are
+stored outside the repository with owner-only permissions and are never read
+back into the browser. Tiger is a visible Paper-only boundary, not a credential
+form or order path in this capital-disabled build.
+
+For frontend contributors:
+
+```shell
+pnpm --dir alta-dashboard dev
+pnpm dashboard:lint
+pnpm dashboard:build
+```
+
+The Vite development server is suitable only for visual work. Operational use
+must go through `./alta dashboard`.
+
+The interface ships with complete English and Simplified Chinese operator
+copy. The language button in the global action bar persists the locale in local
+browser storage and updates document language, dates, relative time, numbers,
+domain statuses, accessibility labels, recovery states, and responsive copy.
+Saved Agent and research artifacts are deliberately shown verbatim so changing
+the display locale cannot alter the auditable record.
 
 See [the operator guide](../docs/operations/operator-console.md) for data
 semantics, controls, safety boundaries, and troubleshooting.

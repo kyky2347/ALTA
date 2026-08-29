@@ -79,11 +79,11 @@ test("operator console keeps the API token server-side and protects mutations", 
   const bootstrapPayload = await bootstrap.json();
   assert.equal(bootstrapPayload.data.safety.capitalMode, "disabled");
   assert(bootstrapPayload.data.csrfToken);
-  assert.equal(bootstrapPayload.data.console.protocolVersion, 1);
+  assert.equal(bootstrapPayload.data.console.protocolVersion, 2);
 
   const ready = await fetch(`${location.origin}/health/ready`);
   assert.deepEqual(await ready.json(), {
-    data: { ready: true, protocolVersion: 1 },
+    data: { ready: true, protocolVersion: 2 },
   });
 
   const proxy = await fetch(`${location.origin}/proxy/api/v1/mvp/status`, {
@@ -110,6 +110,181 @@ test("operator console keeps the API token server-side and protects mutations", 
   assert.deepEqual(actions, ["stop", "down"]);
 
   await operator.close();
+});
+
+test("operator console installs an unconfigured runtime during the first start", async (context) => {
+  const temporary = fs.mkdtempSync(
+    path.join(os.tmpdir(), "alta-console-first-start-"),
+  );
+  context.after(() => fs.rmSync(temporary, { recursive: true, force: true }));
+  const staticDir = path.join(temporary, "dist");
+  fs.mkdirSync(staticDir);
+  fs.writeFileSync(path.join(staticDir, "index.html"), "<h1>ALTA</h1>");
+  const tokenFile = path.join(temporary, "token");
+  fs.writeFileSync(tokenFile, "server-only-token\n", { mode: 0o600 });
+  const actions = [];
+  let installed = false;
+  let ready = false;
+  const service = {
+    stateDir: temporary,
+    tokenFile,
+    installed: () => installed,
+    runtimeEnvironment: () => ({ environment: { ALTA_FIXTURE: "1" } }),
+    assertEndpointAvailable: async () => actions.push("endpoint"),
+    install({ start }) {
+      assert.equal(start, false);
+      installed = true;
+      actions.push("install");
+    },
+    platform: {
+      start() {
+        actions.push("start");
+        ready = true;
+      },
+    },
+    waitForReadiness: async () => actions.push("ready"),
+    status: async () => ({
+      installed,
+      ready,
+      endpoint: "http://127.0.0.1:9999",
+      capitalMode: "disabled",
+    }),
+  };
+  const operator = createOperatorConsole({
+    host: "127.0.0.1",
+    port: 0,
+    staticDir,
+    service,
+    environmentFactory: (environment) => ({
+      setup: async () => {
+        assert.equal(environment.ALTA_FIXTURE, "1");
+        actions.push("setup");
+      },
+      status: async () => ({}),
+    }),
+  });
+  context.after(() => operator.server.listening && operator.close());
+  const location = await operator.listen();
+  const open = await fetch(location.openUrl, { redirect: "manual" });
+  const cookie = open.headers.get("set-cookie").split(";", 1)[0];
+  const bootstrap = await fetch(`${location.origin}/control/bootstrap`, {
+    headers: { Cookie: cookie },
+  }).then((response) => response.json());
+  const response = await fetch(`${location.origin}/control/runtime/start`, {
+    method: "POST",
+    headers: {
+      "Cookie": cookie,
+      "Origin": location.origin,
+      "X-ALTA-CSRF": bootstrap.data.csrfToken,
+    },
+  });
+  assert.equal(response.status, 202);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.deepEqual(actions, ["setup", "endpoint", "install", "start", "ready"]);
+  const state = await fetch(`${location.origin}/control/state`, {
+    headers: { Cookie: cookie },
+  }).then((value) => value.json());
+  assert.equal(state.data.operation.status, "completed");
+  assert.equal(state.data.operation.phase, "ready");
+});
+
+test("operator console exposes only safe credential metadata and accepts write-only replacement while stopped", async (context) => {
+  const temporary = fs.mkdtempSync(
+    path.join(os.tmpdir(), "alta-console-credentials-"),
+  );
+  context.after(() => fs.rmSync(temporary, { recursive: true, force: true }));
+  const staticDir = path.join(temporary, "dist");
+  fs.mkdirSync(staticDir);
+  fs.writeFileSync(path.join(staticDir, "index.html"), "<h1>ALTA</h1>");
+  const tokenFile = path.join(temporary, "token");
+  fs.writeFileSync(tokenFile, "server-only-token\n", { mode: 0o600 });
+  const secret = "sk-" + "write_only_fixture_12345678901234567890";
+  let configured = false;
+  const inventory = () => ({
+    root: temporary,
+    revision: configured ? "bbbbbbbbbbbbbbbb" : "aaaaaaaaaaaaaaaa",
+    configuredSlots: configured ? ["deepseek"] : [],
+    slots: [
+      {
+        slot: "deepseek",
+        label: "DeepSeek",
+        category: "models",
+        purpose: "Primary agent inference and research",
+        configured,
+        source: configured
+          ? "external credential file (deepseek.key)"
+          : "missing",
+        sourceKind: configured ? "external" : "missing",
+        editable: true,
+        fingerprint: configured ? "123456789abc" : null,
+      },
+    ],
+  });
+  const service = {
+    stateDir: temporary,
+    tokenFile,
+    credentialInventory: inventory,
+    replaceCredential(slot, value) {
+      assert.equal(slot, "deepseek");
+      assert.equal(value, secret);
+      configured = true;
+    },
+    runtimeEnvironment: () => ({ environment: {} }),
+    status: async () => ({
+      installed: false,
+      ready: false,
+      endpoint: "http://127.0.0.1:9999",
+      capitalMode: "disabled",
+    }),
+  };
+  const operator = createOperatorConsole({
+    host: "127.0.0.1",
+    port: 0,
+    staticDir,
+    service,
+    environmentFactory: () => ({ status: async () => ({}) }),
+  });
+  context.after(() => operator.server.listening && operator.close());
+  const location = await operator.listen();
+  const open = await fetch(location.openUrl, { redirect: "manual" });
+  const cookie = open.headers.get("set-cookie").split(";", 1)[0];
+  const bootstrap = await fetch(`${location.origin}/control/bootstrap`, {
+    headers: { Cookie: cookie },
+  }).then((response) => response.json());
+
+  const before = await fetch(`${location.origin}/control/credentials`, {
+    headers: { Cookie: cookie },
+  }).then((response) => response.json());
+  assert.equal(before.data.slots[0].configured, false);
+  assert.equal(JSON.stringify(before).includes(temporary), false);
+
+  const forbidden = await fetch(
+    `${location.origin}/control/credentials/deepseek`,
+    {
+      method: "PUT",
+      headers: { "Cookie": cookie, "Content-Type": "application/json" },
+      body: JSON.stringify({ secret }),
+    },
+  );
+  assert.equal(forbidden.status, 403);
+
+  const replaced = await fetch(
+    `${location.origin}/control/credentials/deepseek`,
+    {
+      method: "PUT",
+      headers: {
+        "Cookie": cookie,
+        "Origin": location.origin,
+        "X-ALTA-CSRF": bootstrap.data.csrfToken,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ secret }),
+    },
+  );
+  const payload = await replaced.json();
+  assert.equal(replaced.status, 200);
+  assert.equal(payload.data.slots[0].configured, true);
+  assert.equal(JSON.stringify(payload).includes(secret), false);
 });
 
 test("operator console coalesces dependency probes and rejects proxy reads while runtime is down", async (context) => {

@@ -1,6 +1,8 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { RotateCw, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { LanguageToggle } from "@/components/language-toggle";
+import { useI18n } from "@/lib/i18n";
 
 type State = { failed: boolean };
 
@@ -20,18 +22,23 @@ export class ConsoleErrorBoundary extends Component<
 
   render() {
     if (!this.state.failed) return this.props.children;
-    return (
-      <div className="full-screen-state">
-        <ShieldAlert />
-        <h1>The dashboard view could not be rendered</h1>
-        <p>
-          The research runtime was not changed. Reload the local console to
-          rebuild this browser view from durable backend state.
-        </p>
-        <Button onClick={() => window.location.reload()}>
-          <RotateCw data-icon="inline-start" /> Reload console
-        </Button>
-      </div>
-    );
+    return <ConsoleFailure />;
   }
+}
+
+function ConsoleFailure() {
+  const { t } = useI18n();
+  return (
+    <div className="full-screen-state">
+      <div className="state-language-toggle">
+        <LanguageToggle />
+      </div>
+      <ShieldAlert />
+      <h1>{t("dashboardRenderFailed")}</h1>
+      <p>{t("dashboardRenderFailedDetail")}</p>
+      <Button onClick={() => window.location.reload()}>
+        <RotateCw data-icon="inline-start" /> {t("reloadConsole")}
+      </Button>
+    </div>
+  );
 }

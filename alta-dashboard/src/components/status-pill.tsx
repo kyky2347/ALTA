@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge";
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 export function StatusPill({
@@ -8,6 +9,7 @@ export function StatusPill({
   status: string;
   live?: boolean;
 }) {
+  const { domain } = useI18n();
   const healthy = /ready|running|healthy|complete|validated|open|waiting/i.test(
     status,
   );
@@ -16,7 +18,7 @@ export function StatusPill({
     <Badge
       variant="outline"
       className={cn(
-        "h-6 gap-1.5 rounded-full border-black/8 bg-white/75 px-2 text-[10px] font-semibold tracking-[0.08em] uppercase shadow-none",
+        "status-pill h-6 gap-1.5 rounded-full border-black/8 bg-white/75 px-2 text-[10px] font-semibold tracking-[0.08em] uppercase shadow-none",
         failed && "text-rose-700",
         healthy && !failed && "text-emerald-800",
       )}
@@ -27,7 +29,7 @@ export function StatusPill({
           live && healthy && "motion-safe:animate-pulse",
         )}
       />
-      {status.replaceAll("_", " ")}
+      {domain(status)}
     </Badge>
   );
 }

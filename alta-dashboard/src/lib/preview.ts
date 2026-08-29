@@ -1,6 +1,7 @@
 import type {
   AltaEvent,
   ControlState,
+  CredentialInventory,
   MvpStatus,
   RuntimeDetail,
 } from "./types";
@@ -11,7 +12,7 @@ const time = (minutes: number) =>
 
 export const previewControl: ControlState = {
   console: {
-    protocolVersion: 1,
+    protocolVersion: 2,
     instanceId: "synthetic-preview",
     startedAt: time(15),
     uptimeSeconds: 900,
@@ -37,6 +38,38 @@ export const previewControl: ControlState = {
     environment: "shadow",
     capitalMode: "disabled",
     dashboardBinding: "127.0.0.1",
+  },
+};
+
+export const previewCredentials: CredentialInventory = {
+  revision: "synthetic-preview",
+  configuredSlots: ["deepseek", "xai", "massive", "finlight", "brave"],
+  slots: [
+    ["deepseek", "DeepSeek", "models", true, "a17c530c92ef"],
+    ["xai", "xAI / Grok", "models", true, "7d21f90d113c"],
+    ["kimi", "Kimi / Moonshot", "models", false, null],
+    ["massive", "Massive", "market_data", true, "8af39b2c031d"],
+    ["finlight", "Finlight", "news", true, "f5206ca912b7"],
+    ["brave", "Brave Search", "research", true, "3dd801cd624c"],
+    ["jina", "Jina Reader", "research", false, null],
+    ["openalex", "OpenAlex", "research", false, null],
+  ].map(([slot, label, category, configured, fingerprint]) => ({
+    slot: String(slot),
+    label: String(label),
+    category: category as CredentialInventory["slots"][number]["category"],
+    purpose: "Synthetic preview metadata",
+    configured: Boolean(configured),
+    source: configured ? `external credential file (${slot}.key)` : "missing",
+    sourceKind: configured ? "external" : "missing",
+    editable: true,
+    fingerprint: fingerprint ? String(fingerprint) : null,
+  })),
+  trading: {
+    provider: "Tiger Trade",
+    mode: "paper_only",
+    configured: false,
+    editable: false,
+    status: "capital_runtime_disabled",
   },
 };
 

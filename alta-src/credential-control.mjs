@@ -24,6 +24,49 @@ const RESOURCE_SLOTS = Object.freeze({
   openalex: "OPENALEX_API_KEY",
 });
 
+const SLOT_METADATA = Object.freeze({
+  deepseek: {
+    label: "DeepSeek",
+    category: "models",
+    purpose: "Primary agent inference and research",
+  },
+  xai: {
+    label: "xAI / Grok",
+    category: "models",
+    purpose: "Independent debate and web-aware research",
+  },
+  kimi: {
+    label: "Kimi / Moonshot",
+    category: "models",
+    purpose: "Independent analysis and long-context research",
+  },
+  massive: {
+    label: "Massive",
+    category: "market_data",
+    purpose: "US equity and option market data",
+  },
+  finlight: {
+    label: "Finlight",
+    category: "news",
+    purpose: "Normalized market news",
+  },
+  brave: {
+    label: "Brave Search",
+    category: "research",
+    purpose: "Open-web search",
+  },
+  jina: {
+    label: "Jina Reader",
+    category: "research",
+    purpose: "Readable web content extraction",
+  },
+  openalex: {
+    label: "OpenAlex",
+    category: "research",
+    purpose: "Academic and research discovery",
+  },
+});
+
 export const CREDENTIAL_SLOT_IDS = Object.freeze([
   ...Object.keys(PROVIDERS),
   ...Object.keys(RESOURCE_SLOTS),
@@ -101,6 +144,17 @@ function revision(values) {
   return hash.digest("hex").slice(0, 16);
 }
 
+function fingerprint(value) {
+  if (value === undefined) return null;
+  return createHash("sha256").update(value).digest("hex").slice(0, 12);
+}
+
+function sourceKind(source) {
+  if (source?.startsWith("environment (")) return "environment";
+  if (source?.startsWith("external credential file (")) return "external";
+  return "missing";
+}
+
 export function credentialInventory(env = process.env) {
   const root = externalCredentialRoot(env);
   const loaded = loadedValues(env);
@@ -112,8 +166,12 @@ export function credentialInventory(env = process.env) {
     ),
     slots: CREDENTIAL_SLOT_IDS.map((slot) => ({
       slot,
+      ...SLOT_METADATA[slot],
       configured: loaded.values[slot] !== undefined,
       source: loaded.sources[slot] ?? "missing",
+      sourceKind: sourceKind(loaded.sources[slot]),
+      editable: sourceKind(loaded.sources[slot]) !== "environment",
+      fingerprint: fingerprint(loaded.values[slot]),
     })),
   };
 }

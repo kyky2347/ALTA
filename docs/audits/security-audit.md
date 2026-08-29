@@ -1,6 +1,6 @@
 # ALTA publication security audit
 
-Audit date: 2026-08-28
+Audit date: 2026-08-29
 
 Target: the exact source tree and new Git history prepared for
 `https://github.com/kyky2347/ALTA`
@@ -25,9 +25,11 @@ remediation, and a complete rescan.
 
 | Check                                                 |                                             Result |
 | ----------------------------------------------------- | -------------------------------------------------: |
-| Gitleaks 8.30.1 over the exact staged tree            |                                         0 findings |
+| Gitleaks 8.30.1 over the exact publication tree       |                                         0 findings |
 | Gitleaks 8.30.1 over the complete publication history |                                         0 findings |
 | detect-secrets 1.5.0 over first-party non-test source |                                         0 findings |
+| pnpm production dependency audit                      |                           no known vulnerabilities |
+| pip-audit over the installed Opportunity OS runtime   |                           no known vulnerabilities |
 | Synthetic fixture and credential-keyword review       |                                               PASS |
 | Unrelated prior project/account identity scan         |                                         0 findings |
 | First-party owner-local absolute-path scan            |                                         0 findings |
@@ -35,8 +37,8 @@ remediation, and a complete rescan.
 | Local generated credential state                      |           present under ignored `.alta/`; 0 staged |
 | Largest tracked file                                  |                                    less than 1 MiB |
 | Clean tracked checkout and locked install             |                                               PASS |
-| Node gateway / harness tests                          |                                         141 passed |
-| Opportunity OS tests                                  |                                         243 passed |
+| Node gateway / harness tests                          |                                         159 passed |
+| Opportunity OS tests                                  |                                         264 passed |
 | Isolated capital-package tests                        |                                          25 passed |
 | Ruff lint and format checks                           |                                               PASS |
 | Prettier and Markdown checks                          |                                               PASS |
@@ -45,6 +47,8 @@ remediation, and a complete rescan.
 | ALTA-managed containers after verification            |                                                  0 |
 | Loopback service listeners after verification         |                                                  0 |
 | Research Director deployment                          | 2 unique follow-ups; 2 explore; 4/4 Runs succeeded |
+| Cold operator-console clone                           |     one command; locked install/build; protocol v2 |
+| Browser lifecycle acceptance                          |        Start → ready → safe stop; capital disabled |
 
 The clean tracked checkout produced three Candidates, three Opportunities, one
 audited expression, and one fully observed Shadow position. Replay reproduced
@@ -75,6 +79,14 @@ boundaries. Those values were reviewed as non-credentials, remain covered by
 the complete Gitleaks scan, and are never accepted as production defaults.
 Dependency lockfile hashes and attributed upstream fixtures are not interpreted
 as owner credentials.
+
+The current operator console exposes only credential configuration state,
+source kind, editability, and a short one-way fingerprint. Raw provider values
+are accepted through a bounded write-only request, cleared in the browser,
+stored atomically outside the repository with owner-only permissions, and never
+returned by the control API. Credential changes fail closed while any research
+runtime process is active. Tiger remains outside this surface and capital stays
+disabled.
 
 The publication inventory is generated from Git's exact staged index, not from
 the development directory. Ignored `.alta/`, `node_modules/`, `.venv/`, caches,

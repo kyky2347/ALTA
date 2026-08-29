@@ -6,6 +6,7 @@ import {
   CircleDot,
   Command as CommandIcon,
   History,
+  KeyRound,
   LayoutDashboard,
   PanelLeftClose,
   Radar,
@@ -34,28 +35,36 @@ import {
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import { TooltipProvider } from "@/components/ui/tooltip";
 import { DecisionLedger } from "@/components/decision-ledger";
+import { CredentialsCenter } from "@/components/credentials-center";
 import { DetailInspector } from "@/components/detail-inspector";
 import { EventTimeline } from "@/components/event-timeline";
+import { LanguageToggle } from "@/components/language-toggle";
 import { OpportunityField } from "@/components/opportunity-field";
 import { RuntimeControl } from "@/components/runtime-control";
 import { ShadowBook } from "@/components/shadow-book";
 import { StatusPill } from "@/components/status-pill";
 import { SystemOverview } from "@/components/system-overview";
 import { useAltaConsole } from "@/hooks/use-alta-console";
-import { relativeTime, titleCase } from "@/lib/display";
+import { useI18n } from "@/lib/i18n";
 import type { SelectedEntity } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-type View = "field" | "ledger" | "overview" | "agents" | "shadow";
+type View =
+  | "field"
+  | "ledger"
+  | "overview"
+  | "agents"
+  | "shadow"
+  | "credentials";
 
-const navigation: Array<{ id: View; label: string; icon: typeof Activity }> = [
-  { id: "field", label: "Live field", icon: Radar },
-  { id: "ledger", label: "Decision ledger", icon: History },
-  { id: "overview", label: "System overview", icon: LayoutDashboard },
-  { id: "agents", label: "Agent desk", icon: Bot },
-  { id: "shadow", label: "Shadow book", icon: ShieldCheck },
+const navigation: Array<{ id: View; icon: typeof Activity }> = [
+  { id: "field", icon: Radar },
+  { id: "ledger", icon: History },
+  { id: "overview", icon: LayoutDashboard },
+  { id: "agents", icon: Bot },
+  { id: "shadow", icon: ShieldCheck },
+  { id: "credentials", icon: KeyRound },
 ];
 
 function storedView(): View {
@@ -78,11 +87,14 @@ function storedRail() {
 }
 
 export default function App() {
+  const { domain, relative, systemMessage, t } = useI18n();
   const consoleState = useAltaConsole();
   const {
     control,
     status,
     runtime,
+    credentials,
+    credentialsError,
     events,
     preview,
     loading,
@@ -90,6 +102,8 @@ export default function App() {
     connection,
     retryNow,
     controlRuntime,
+    refreshCredentials,
+    setProviderCredential,
     loadOlderEvents,
     loadingOlder,
     historyError,
@@ -136,19 +150,19 @@ export default function App() {
       ...status.agents.map((item) => ({
         kind: "run" as const,
         id: item.runId,
-        label: titleCase(item.id),
+        label: domain(item.id),
         summary: item as unknown as Record<string, unknown>,
       })),
       ...status.expressions.map((item) => ({
         kind: "expression" as const,
         id: item.id,
-        label: titleCase(item.kind),
+        label: domain(item.kind),
         summary: item as unknown as Record<string, unknown>,
       })),
       ...status.shadowPositions.map((item) => ({
         kind: "position" as const,
         id: item.id,
-        label: `${item.symbol} shadow position`,
+        label: t("shadowPosition", { symbol: item.symbol }),
         summary: item as unknown as Record<string, unknown>,
       })),
       ...status.candidates.map((item) => ({
@@ -160,25 +174,34 @@ export default function App() {
       ...status.assessments.map((item) => ({
         kind: "event" as const,
         id: item.id,
-        label: `${titleCase(item.assessor)} assessment · ${item.verdict}`,
+        label: t("assessmentLabel", {
+          assessor: domain(item.assessor),
+          verdict: domain(item.verdict),
+        }),
         summary: item as unknown as Record<string, unknown>,
       })),
       ...status.discussions.map((item) => ({
         kind: "event" as const,
         id: item.id,
-        label: titleCase(item.eventType),
+        label: domain(item.eventType),
         summary: item as unknown as Record<string, unknown>,
       })),
       ...events.map((item) => ({
         kind: "event" as const,
         id: item.eventId,
-        label: titleCase(item.eventType),
+        label: domain(item.eventType),
         summary: item as unknown as Record<string, unknown>,
       })),
     ];
-  }, [events, status]);
+  }, [domain, events, status, t]);
+  const localizedSelected = useMemo(
+    () => relabelEntity(selected, domain, t),
+    [domain, selected, t],
+  );
   const activeSelected =
-    selected ?? searchable.find((item) => item.kind === "opportunity") ?? null;
+    localizedSelected ??
+    searchable.find((item) => item.kind === "opportunity") ??
+    null;
 
   async function handleAction(action: "start" | "stop" | "restart") {
     setActionError(null);
@@ -186,7 +209,9 @@ export default function App() {
       await controlRuntime(action);
     } catch (reason) {
       setActionError(
-        reason instanceof Error ? reason.message : "Control action failed",
+        systemMessage(
+          reason instanceof Error ? reason.message : t("controlFailed"),
+        ) ?? t("controlFailed"),
       );
     }
   }
@@ -198,287 +223,309 @@ export default function App() {
     return <ConnectionScreen error={connection.message} onRetry={retryNow} />;
 
   return (
-    <TooltipProvider delayDuration={300}>
-      <div className={cn("app-shell", !railOpen && "rail-collapsed")}>
-        <header className="topbar">
-          <div className="brand-lockup">
-            <span className="brand-mark" aria-hidden="true">
-              <span />
-              <span />
-              <span />
-            </span>
-            <div>
-              <strong>ALTA</strong>
-              <small>Autonomous LLM Trading Asterism</small>
-            </div>
+    <div
+      className={cn(
+        "app-shell",
+        !railOpen && "rail-collapsed",
+        view === "credentials" && "configuration-mode",
+      )}
+    >
+      <header className="topbar">
+        <div className="brand-lockup">
+          <img src="/alta-brand-logo.png" alt="" className="brand-logo" />
+          <div>
+            <strong>ALTA</strong>
+            <small>{t("productSubtitle")}</small>
           </div>
-          <div className="topbar-center">
-            {preview && (
-              <Badge variant="outline" className="preview-badge">
-                Synthetic preview
-              </Badge>
-            )}
-            <StatusPill
-              status={
-                connection.status === "online"
-                  ? control?.runtime.ready
-                    ? "runtime ready"
-                    : control?.runtime.host?.processAlive ||
-                        control?.runtime.supervisor?.childProcessAlive
-                      ? "runtime recovering"
-                      : "runtime stopped"
-                  : "console reconnecting"
-              }
-              live
-            />
-            <span className="heartbeat">
-              <CircleDot /> Heartbeat{" "}
-              {relativeTime(runtime?.config.lastHeartbeatAt)}
-            </span>
-            {control?.operation && (
-              <span
-                className={cn(
-                  "operation-progress",
-                  `is-${control.operation.status}`,
-                )}
-                role="status"
-                aria-live="polite"
-                title={control.operation.error}
-              >
-                {control.operation.status === "running" ? (
-                  <span className="loading-orbit" />
-                ) : control.operation.status === "completed" ? (
-                  <CheckCircle2 />
-                ) : (
-                  <TriangleAlert />
-                )}
-                {control.operation.status === "running"
-                  ? `${titleCase(control.operation.action)} · ${titleCase(control.operation.phase ?? "working")}`
-                  : control.operation.status === "completed"
-                    ? `${titleCase(control.operation.action)} complete`
-                    : `${titleCase(control.operation.action)} failed · retry from controls`}
-              </span>
-            )}
-          </div>
-          <div className="topbar-actions">
-            <Button
-              variant="outline"
-              size="sm"
-              className="command-button"
-              onClick={() => setCommandOpen(true)}
-            >
-              <Search data-icon="inline-start" />
-              <span>Find anything</span>
-              <kbd>⌘K</kbd>
-            </Button>
-            <RuntimeControl
-              control={control}
-              disabled={preview || connection.status !== "online"}
-              onAction={handleAction}
-            />
-          </div>
-        </header>
-
-        <nav className="side-rail" aria-label="Dashboard sections">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="rail-toggle"
-            aria-label="Toggle navigation rail"
-            onClick={() => setRailOpen((current) => !current)}
-          >
-            <PanelLeftClose />
-          </Button>
-          <div className="rail-nav">
-            {navigation.map(({ id, label, icon: Icon }) => (
-              <button
-                className={cn("rail-item", view === id && "is-active")}
-                key={id}
-                onClick={() => setView(id)}
-              >
-                <Icon />
-                <span>{label}</span>
-              </button>
-            ))}
-          </div>
-          <div className="rail-safety">
-            <ShieldCheck />
-            <div>
-              <strong>Research only</strong>
-              <span>Shadow environment</span>
-              <span>Capital disabled</span>
-            </div>
-          </div>
-        </nav>
-
-        <main className="workspace">
-          <ConnectionBanner
-            connection={connection}
-            runtimeReady={Boolean(control?.runtime.ready)}
-            onRetry={retryNow}
+        </div>
+        <div className="topbar-center">
+          {preview && (
+            <Badge variant="outline" className="preview-badge">
+              {t("syntheticPreview")}
+            </Badge>
+          )}
+          <StatusPill
+            status={
+              connection.status === "online"
+                ? control?.runtime.ready
+                  ? "runtime ready"
+                  : control?.runtime.host?.processAlive ||
+                      control?.runtime.supervisor?.childProcessAlive
+                    ? "runtime recovering"
+                    : "runtime stopped"
+                : "console reconnecting"
+            }
+            live
           />
-          {actionError && (
-            <Alert variant="destructive" className="console-alert">
-              <TriangleAlert />
-              <AlertTitle>Lifecycle action was not accepted</AlertTitle>
-              <AlertDescription>{actionError}</AlertDescription>
-              <AlertAction>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setActionError(null)}
-                >
-                  Dismiss
-                </Button>
-              </AlertAction>
-            </Alert>
+          <span className="heartbeat">
+            <CircleDot />
+            {t("heartbeat", {
+              time: relative(runtime?.config.lastHeartbeatAt),
+            })}
+          </span>
+          {control?.operation && (
+            <span
+              className={cn(
+                "operation-progress",
+                `is-${control.operation.status}`,
+              )}
+              role="status"
+              aria-live="polite"
+              title={control.operation.error}
+            >
+              {control.operation.status === "running" ? (
+                <span className="loading-orbit" />
+              ) : control.operation.status === "completed" ? (
+                <CheckCircle2 />
+              ) : (
+                <TriangleAlert />
+              )}
+              {control.operation.status === "running"
+                ? t("operationRunning", {
+                    action: domain(control.operation.action),
+                    phase: domain(control.operation.phase ?? t("working")),
+                  })
+                : control.operation.status === "completed"
+                  ? t("operationComplete", {
+                      action: domain(control.operation.action),
+                    })
+                  : t("operationFailed", {
+                      action: domain(control.operation.action),
+                    })}
+            </span>
           )}
-          {historyError && view === "ledger" && (
-            <Alert className="console-alert">
-              <History />
-              <AlertTitle>Older history is temporarily unavailable</AlertTitle>
-              <AlertDescription>
-                {historyError} Live synchronization continues independently.
-              </AlertDescription>
-            </Alert>
-          )}
-          <div className="workspace-heading">
-            <div>
-              <h1>
-                {view === "field"
-                  ? "The firm, in motion"
-                  : view === "ledger"
-                    ? "Every decision leaves a trail"
-                    : view === "overview"
-                      ? "Operating posture"
-                      : view === "agents"
-                        ? "Specialized minds"
-                        : "Audited shadow expressions"}
-              </h1>
-            </div>
-            <div className="workspace-context">
-              <span>{status?.environment ?? "shadow"}</span>
-              <Separator orientation="vertical" />
-              <span>{status?.currentPipelineId ?? "No active cycle"}</span>
-              <Separator orientation="vertical" />
-              <span>
-                {runtime?.config.nextCycleAt
-                  ? `Next cycle ${relativeTime(runtime.config.nextCycleAt)}`
-                  : "Schedule unavailable"}
-              </span>
-            </div>
+        </div>
+        <div className="topbar-actions">
+          <Button
+            variant="outline"
+            size="sm"
+            className="command-button"
+            aria-label={t("findAnything")}
+            onClick={() => setCommandOpen(true)}
+          >
+            <Search data-icon="inline-start" />
+            <span>{t("findAnything")}</span>
+            <kbd>⌘K</kbd>
+          </Button>
+          <LanguageToggle />
+          <RuntimeControl
+            control={control}
+            disabled={preview || connection.status !== "online"}
+            onAction={handleAction}
+          />
+        </div>
+      </header>
+
+      <nav className="side-rail" aria-label={t("dashboardSections")}>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="rail-toggle"
+          aria-label={t("toggleNavigation")}
+          onClick={() => setRailOpen((current) => !current)}
+        >
+          <PanelLeftClose />
+        </Button>
+        <div className="rail-nav">
+          {navigation.map(({ id, icon: Icon }) => (
+            <button
+              className={cn("rail-item", view === id && "is-active")}
+              key={id}
+              onClick={() => setView(id)}
+            >
+              <Icon />
+              <span>{viewNavigationLabel(id, t)}</span>
+            </button>
+          ))}
+        </div>
+        <div className="rail-safety">
+          <ShieldCheck />
+          <div>
+            <strong>{t("researchOnly")}</strong>
+            <span>{t("shadowEnvironment")}</span>
+            <span>{t("capitalDisabled")}</span>
           </div>
+        </div>
+      </nav>
 
-          {!status ? (
-            <StoppedState
-              installed={control?.runtime.installed ?? false}
-              active={Boolean(
+      <main className="workspace">
+        <ConnectionBanner
+          connection={connection}
+          runtimeReady={Boolean(control?.runtime.ready)}
+          onRetry={retryNow}
+        />
+        {actionError && (
+          <Alert variant="destructive" className="console-alert">
+            <TriangleAlert />
+            <AlertTitle>{t("lifecycleRejected")}</AlertTitle>
+            <AlertDescription>{systemMessage(actionError)}</AlertDescription>
+            <AlertAction>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setActionError(null)}
+              >
+                {t("dismiss")}
+              </Button>
+            </AlertAction>
+          </Alert>
+        )}
+        {historyError && view === "ledger" && (
+          <Alert className="console-alert">
+            <History />
+            <AlertTitle>{t("olderHistoryUnavailable")}</AlertTitle>
+            <AlertDescription>
+              {systemMessage(historyError)} {t("liveSyncContinues")}
+            </AlertDescription>
+          </Alert>
+        )}
+        <div className="workspace-heading">
+          <div>
+            <h1>{viewHeading(view, t)}</h1>
+          </div>
+          <div className="workspace-context">
+            <span>{domain(status?.environment ?? "shadow")}</span>
+            <Separator orientation="vertical" />
+            <span>{status?.currentPipelineId ?? t("noActiveCycle")}</span>
+            <Separator orientation="vertical" />
+            <span>
+              {runtime?.config.nextCycleAt
+                ? t("nextCycle", {
+                    time: relative(runtime.config.nextCycleAt),
+                  })
+                : t("scheduleUnavailable")}
+            </span>
+          </div>
+        </div>
+
+        {view === "credentials" ? (
+          <CredentialsCenter
+            inventory={credentials}
+            error={credentialsError}
+            runtimeActive={Boolean(
+              control?.runtime.ready ||
                 control?.runtime.host?.processAlive ||
-                  control?.runtime.supervisor?.childProcessAlive,
-              )}
-              disabled={connection.status !== "online"}
-              onStart={() => void handleAction("start")}
-            />
-          ) : (
-            <>
-              {view === "field" && (
-                <OpportunityField
-                  status={status}
-                  runtime={runtime}
-                  selected={activeSelected}
-                  onSelect={setSelected}
-                />
-              )}
-              {view === "ledger" && (
-                <DecisionLedger
-                  events={events}
-                  status={status}
-                  selected={activeSelected}
-                  onSelect={setSelected}
-                  onLoadOlder={loadOlderEvents}
-                  loadingOlder={loadingOlder}
-                  hasOlder={preview ? false : hasOlder}
-                />
-              )}
-              {view === "overview" && (
-                <SystemOverview
-                  status={status}
-                  runtime={runtime}
-                  onSelect={setSelected}
-                />
-              )}
-              {view === "agents" && (
-                <AgentDesk
-                  status={status}
-                  runtime={runtime}
-                  onSelect={setSelected}
-                />
-              )}
-              {view === "shadow" && (
-                <ShadowBook
-                  status={status}
-                  runtime={runtime}
-                  onSelect={setSelected}
-                />
-              )}
-              <EventTimeline events={events} onSelect={setSelected} />
-            </>
-          )}
-        </main>
+                control?.runtime.supervisor?.childProcessAlive ||
+                control?.operation?.status === "running",
+            )}
+            preview={preview}
+            onRefresh={refreshCredentials}
+            onSave={setProviderCredential}
+          />
+        ) : !status ? (
+          <StoppedState
+            installed={control?.runtime.installed ?? false}
+            active={Boolean(
+              control?.runtime.host?.processAlive ||
+                control?.runtime.supervisor?.childProcessAlive,
+            )}
+            disabled={connection.status !== "online"}
+            onStart={() => void handleAction("start")}
+          />
+        ) : (
+          <>
+            {view === "field" && (
+              <OpportunityField
+                status={status}
+                runtime={runtime}
+                selected={activeSelected}
+                onSelect={setSelected}
+              />
+            )}
+            {view === "ledger" && (
+              <DecisionLedger
+                events={events}
+                status={status}
+                selected={activeSelected}
+                onSelect={setSelected}
+                onLoadOlder={loadOlderEvents}
+                loadingOlder={loadingOlder}
+                hasOlder={preview ? false : hasOlder}
+              />
+            )}
+            {view === "overview" && (
+              <SystemOverview
+                status={status}
+                runtime={runtime}
+                onSelect={setSelected}
+              />
+            )}
+            {view === "agents" && (
+              <AgentDesk
+                status={status}
+                runtime={runtime}
+                onSelect={setSelected}
+              />
+            )}
+            {view === "shadow" && (
+              <ShadowBook
+                status={status}
+                runtime={runtime}
+                onSelect={setSelected}
+              />
+            )}
+            <EventTimeline events={events} onSelect={setSelected} />
+          </>
+        )}
+      </main>
 
+      {view !== "credentials" && (
         <DetailInspector
           selected={activeSelected}
           status={status}
           preview={preview}
         />
+      )}
 
-        <Dialog open={commandOpen} onOpenChange={setCommandOpen}>
-          <DialogContent className="command-dialog">
-            <DialogTitle className="sr-only">Find any ALTA record</DialogTitle>
-            <Command>
-              <CommandInput placeholder="Search opportunities, agents, expressions, positions…" />
-              <CommandList>
-                <CommandEmpty>No matching durable record.</CommandEmpty>
-                <CommandGroup heading="Records">
-                  {searchable.map((entity) => (
-                    <CommandItem
-                      key={`${entity.kind}-${entity.id}`}
-                      value={`${entity.label} ${entity.id}`}
-                      onSelect={() => {
-                        setSelected(entity);
-                        setCommandOpen(false);
-                      }}
-                    >
-                      <CommandIcon />
-                      <span>{entity.label}</span>
-                      <small>{entity.kind}</small>
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-              </CommandList>
-            </Command>
-          </DialogContent>
-        </Dialog>
-      </div>
-    </TooltipProvider>
+      <Dialog open={commandOpen} onOpenChange={setCommandOpen}>
+        <DialogContent className="command-dialog">
+          <DialogTitle className="sr-only">{t("findAnyRecord")}</DialogTitle>
+          <Command>
+            <CommandInput placeholder={t("searchRecords")} />
+            <CommandList aria-label={t("suggestions")}>
+              <CommandEmpty>{t("noMatchingRecord")}</CommandEmpty>
+              <CommandGroup heading={t("records")}>
+                {searchable.map((entity) => (
+                  <CommandItem
+                    key={`${entity.kind}-${entity.id}`}
+                    value={`${entity.label} ${entity.id}`}
+                    onSelect={() => {
+                      setSelected(entity);
+                      setCommandOpen(false);
+                    }}
+                  >
+                    <CommandIcon />
+                    <span>{entity.label}</span>
+                    <small>{domain(entity.kind)}</small>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }
 
 function LoadingScreen() {
+  const { t } = useI18n();
   return (
     <div className="full-screen-state">
-      <span className="brand-mark is-large">
-        <span />
-        <span />
-        <span />
-      </span>
+      <div className="state-language-toggle">
+        <LanguageToggle />
+      </div>
+      <div className="loading-brand">
+        <img src="/alta-brand-logo.png" alt="" />
+        <strong>ALTA</strong>
+      </div>
       <div className="loading-skeletons" aria-hidden="true">
         <Skeleton />
         <Skeleton />
         <Skeleton />
       </div>
-      <h1>Opening the operator console</h1>
-      <p>Establishing a local, authenticated view of the research runtime.</p>
+      <h1>{t("openingConsole")}</h1>
+      <p>{t("openingConsoleDetail")}</p>
     </div>
   );
 }
@@ -491,33 +538,32 @@ function ConnectionScreen({
   state?: ReturnType<typeof useAltaConsole>["connection"]["status"];
   onRetry?: () => void;
 }) {
+  const { systemMessage, t } = useI18n();
   const protectedLaunch = state === "unauthorized";
   const incompatible = state === "incompatible";
   return (
     <div className="full-screen-state">
+      <div className="state-language-toggle">
+        <LanguageToggle />
+      </div>
       {protectedLaunch || incompatible ? <ShieldCheck /> : <WifiOff />}
       <h1>
         {protectedLaunch
-          ? "This console needs its secure launch URL"
+          ? t("secureLaunchRequired")
           : incompatible
-            ? "Dashboard update required"
-            : "Reconnecting to the local operator service"}
+            ? t("dashboardUpdateRequired")
+            : t("reconnectingLocalService")}
       </h1>
       <p>
         {protectedLaunch
-          ? "Run ./alta dashboard and open the one-time local URL printed in the terminal."
-          : (error ??
-            "The page will recover automatically when the local service is available.")}
+          ? t("secureLaunchHelp")
+          : (systemMessage(error) ?? t("automaticRecovery"))}
       </p>
       {protectedLaunch || incompatible ? (
-        <code>
-          {incompatible
-            ? "pnpm dashboard:build && ./alta dashboard"
-            : "./alta dashboard"}
-        </code>
+        <code>{incompatible ? "./alta dashboard" : "./alta dashboard"}</code>
       ) : (
         <Button onClick={onRetry}>
-          <RefreshCw data-icon="inline-start" /> Retry now
+          <RefreshCw data-icon="inline-start" /> {t("retryNow")}
         </Button>
       )}
     </div>
@@ -533,6 +579,7 @@ function ConnectionBanner({
   runtimeReady: boolean;
   onRetry: () => void;
 }) {
+  const { relative, systemMessage, t } = useI18n();
   if (connection.status === "online" && !connection.stale) return null;
   const stoppedSnapshot = connection.status === "online" && !runtimeReady;
   return (
@@ -540,21 +587,26 @@ function ConnectionBanner({
       {stoppedSnapshot ? <ShieldCheck /> : <WifiOff />}
       <AlertTitle>
         {stoppedSnapshot
-          ? "Runtime stopped · saved browser snapshot"
+          ? t("runtimeStoppedSnapshot")
           : connection.status === "connecting"
-            ? "Reconnecting"
-            : "Live synchronization is degraded"}
+            ? t("reconnecting")
+            : t("liveSyncDegraded")}
       </AlertTitle>
       <AlertDescription>
-        {connection.message ?? "ALTA is restoring the live connection."}
+        {systemMessage(connection.message) ?? t("restoringConnection")}
         {connection.lastSuccessfulAt && (
-          <> Last synchronized {relativeTime(connection.lastSuccessfulAt)}.</>
+          <>
+            {" "}
+            {t("lastSynchronized", {
+              time: relative(connection.lastSuccessfulAt),
+            })}
+          </>
         )}
       </AlertDescription>
       {!stoppedSnapshot && (
         <AlertAction>
           <Button variant="outline" size="sm" onClick={onRetry}>
-            <RefreshCw data-icon="inline-start" /> Retry
+            <RefreshCw data-icon="inline-start" /> {t("retry")}
           </Button>
         </AlertAction>
       )}
@@ -572,29 +624,22 @@ function StoppedState({
   disabled: boolean;
   onStart: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <section className="stopped-state">
       <span>
         <Activity />
       </span>
-      <h2>
-        {active
-          ? "The research runtime is recovering."
-          : "The operator shell is ready."}
-      </h2>
+      <h2>{active ? t("runtimeRecoveringTitle") : t("operatorShellReady")}</h2>
       <p>
         {active
-          ? "ALTA is bootstrapping dependencies or restoring readiness. Controls remain locked until this transition settles."
+          ? t("runtimeRecoveringDetail")
           : installed
-            ? "Start the installed service to resume autonomous discovery, committee review, audited expression, and shadow observation."
-            : "Install the ALTA service from the terminal before starting it from this console."}
+            ? t("runtimeInstalledDetail")
+            : t("runtimeInstallDetail")}
       </p>
-      <Button
-        size="lg"
-        disabled={!installed || active || disabled}
-        onClick={onStart}
-      >
-        {active ? "Restoring readiness…" : "Start research runtime"}
+      <Button size="lg" disabled={active || disabled} onClick={onStart}>
+        {active ? t("restoringReadiness") : t("startResearchRuntime")}
       </Button>
     </section>
   );
@@ -609,6 +654,7 @@ function AgentDesk({
   runtime: ReturnType<typeof useAltaConsole>["runtime"];
   onSelect: (entity: SelectedEntity) => void;
 }) {
+  const { domain, number, t } = useI18n();
   return (
     <section className="desk-grid">
       {status.agents.map((agent) => {
@@ -621,7 +667,7 @@ function AgentDesk({
               onSelect({
                 kind: "run",
                 id: agent.runId,
-                label: titleCase(agent.id),
+                label: domain(agent.id),
                 summary: agent as unknown as Record<string, unknown>,
               })
             }
@@ -632,22 +678,20 @@ function AgentDesk({
               </span>
               <StatusPill status={agent.status} live />
             </div>
-            <h2>{titleCase(agent.id)}</h2>
-            <p>
-              {mind?.rollingSummary ??
-                "No durable rolling summary is available for this agent role."}
-            </p>
+            <h2>{domain(agent.id)}</h2>
+            <p>{mind?.rollingSummary ?? t("noRollingSummary")}</p>
             <div className="desk-facts">
               <span>
-                Model
+                {t("model")}
                 <strong>{agent.modelId ?? agent.modelProvider ?? "—"}</strong>
               </span>
               <span>
-                Turns<strong>{mind?.turnCount ?? "—"}</strong>
+                {t("turns")}
+                <strong>{mind?.turnCount ?? "—"}</strong>
               </span>
               <span>
-                Context
-                <strong>{mind?.contextTokens?.toLocaleString() ?? "—"}</strong>
+                {t("context")}
+                <strong>{number(mind?.contextTokens)}</strong>
               </span>
             </div>
           </button>
@@ -655,4 +699,51 @@ function AgentDesk({
       })}
     </section>
   );
+}
+
+function viewNavigationLabel(view: View, t: ReturnType<typeof useI18n>["t"]) {
+  if (view === "field") return t("liveField");
+  if (view === "ledger") return t("decisionLedger");
+  if (view === "overview") return t("systemOverview");
+  if (view === "agents") return t("agentDesk");
+  if (view === "shadow") return t("shadowBook");
+  return t("credentials");
+}
+
+function viewHeading(view: View, t: ReturnType<typeof useI18n>["t"]) {
+  if (view === "field") return t("firmInMotion");
+  if (view === "ledger") return t("everyDecisionTrail");
+  if (view === "overview") return t("operatingPosture");
+  if (view === "agents") return t("specializedMinds");
+  if (view === "shadow") return t("auditedShadowExpressions");
+  return t("secureProviderConfiguration");
+}
+
+function relabelEntity(
+  entity: SelectedEntity | null,
+  domain: ReturnType<typeof useI18n>["domain"],
+  t: ReturnType<typeof useI18n>["t"],
+) {
+  if (!entity) return null;
+  const summary = entity.summary ?? {};
+  if (entity.kind === "opportunity")
+    return { ...entity, label: String(summary.title ?? entity.label) };
+  if (entity.kind === "run")
+    return {
+      ...entity,
+      label: domain(String(summary.id ?? summary.role ?? entity.label)),
+    };
+  if (entity.kind === "expression")
+    return { ...entity, label: domain(String(summary.kind ?? entity.label)) };
+  if (entity.kind === "position")
+    return {
+      ...entity,
+      label: t("shadowPosition", {
+        symbol: String(summary.symbol ?? entity.label.split(" ")[0]),
+      }),
+    };
+  const eventType = summary.eventType;
+  return typeof eventType === "string"
+    ? { ...entity, label: domain(eventType) }
+    : entity;
 }

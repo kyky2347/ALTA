@@ -8,7 +8,25 @@ doing and how it reached the present state.
 It is research infrastructure. It is not an order-management system, a broker
 terminal, an Alpha claim, or a way to expose private model chain-of-thought.
 
-## Build and open
+## Open with one command
+
+```shell
+./alta dashboard
+```
+
+This is the normal path on both an existing workspace and a fresh clone. It
+performs a frozen-lockfile frontend install/build only when output is missing or
+stale, binds to `127.0.0.1:8877`, and prints a one-time launch URL. Opening the
+URL creates an HttpOnly, `SameSite=Strict` local session and redirects to a
+clean address. Keep the command running; `Control-C` stops only the control
+plane and does not implicitly stop an autonomous research service.
+
+Node.js 22+ with Corepack, `uv`, and a running Docker Compose-compatible engine
+remain host prerequisites. The command never installs those system
+dependencies silently.
+
+An optional managed console can instead start after user login and recover
+through the host service manager:
 
 ```shell
 corepack pnpm install --frozen-lockfile
@@ -17,13 +35,10 @@ pnpm dashboard:build
 ./alta dashboard open
 ```
 
-By default the managed console binds to `127.0.0.1:8877`. It starts after user
-login and the host service manager restarts it after an unexpected exit. The
-`open` command prints a one-time launch URL. Opening it creates an HttpOnly,
-`SameSite=Strict` local session and redirects to a clean URL. The launch URL is
-stored only in an owner-only atomic host-state file, is never printed by the
-background process or written to its logs, and is removed from that file after
-it is claimed.
+The managed `open` command prints its one-time launch URL. That URL is stored
+only in an owner-only atomic host-state file, is never printed by the background
+process or written to its logs, and is removed from that file after it is
+claimed.
 
 Use the managed lifecycle commands for routine operation:
 
@@ -39,11 +54,7 @@ An already authorized browser reconnects after a managed-process restart. If a
 new browser needs access after the one-time link was claimed, restart the
 dashboard and run `./alta dashboard open` for a fresh link.
 
-Running `./alta dashboard` without an action is a foreground development mode.
-Keep that terminal process alive while using it. Alternate loopback ports are
-supported only by this foreground mode:
-
-Alternate loopback ports are supported:
+Alternate loopback ports are supported by foreground mode:
 
 ```shell
 ./alta dashboard --host 127.0.0.1 --port 8890
@@ -70,6 +81,11 @@ Non-loopback bindings are rejected.
   missed positive paths using only prices captured while positions were open.
   It is explicitly separated from brokerage, cannot auto-tune exits, and never
   labels Shadow evidence as proven performance.
+- **Credentials** — Safe configuration state for every supported external
+  token slot, grouped by model, market data, news, and research. Secret values
+  are write-only and replacement is available only while the complete research
+  runtime is stopped. Tiger appears only as a locked Paper boundary because the
+  capital-disabled research build does not accept broker credentials.
 - **Inspector** — Opportunity packets, independent assessments, committee
   arguments, frozen Run inputs, tool provenance, artifacts, implementation
   plans, hashes, and normalized JSON records.
@@ -79,6 +95,15 @@ Non-loopback bindings are rejected.
 Use `Command-K` (or `Control-K`) to search across loaded Candidates,
 Opportunities, Agent Runs, assessments, committee exchanges, expressions,
 Shadow positions, and events.
+
+Use the language button in the global action bar to switch the entire operator
+shell between English and Simplified Chinese. The preference is stored only in
+local browser storage and survives reloads. Static copy, dates, relative time,
+numbers, status codes, accessibility labels, controls, failures, and empty
+states follow the selected locale. Durable Opportunity titles, Agent summaries,
+committee arguments, recommendations, and artifacts remain in their original
+saved language; the console does not mutate or invent a translated audit
+record.
 
 ## Data flow, freshness, and recovery
 
@@ -118,6 +143,15 @@ available. Upstream response size, request time, migration time, Compose
 startup, Compose shutdown, service verification, and log reads are bounded so a
 wedged dependency cannot occupy a control operation indefinitely.
 
+Credential inventory is deliberately separate from Python API polling, so a
+new clone can be configured while the backend and containers are stopped. It
+returns provider label, purpose, configured state, source kind, editability, and
+a short one-way fingerprint—never a raw value or filesystem path. A replacement
+is bounded to 8 KiB, validated for its selected provider, atomically written to
+the external owner-only credential directory, and rolled back if verification
+fails. Environment-provided values are locked instead of silently shadowed. The
+browser password field is cleared after either success or failure.
+
 If the autonomous service is stopped, the console shows a truthful offline
 state instead of stale research data. A synthetic layout preview exists only at
 `?preview=1`, is visibly labeled, and disables all controls; it is intended for
@@ -127,9 +161,13 @@ responsive visual QA, not operations.
 
 The control surface can:
 
-- start an already installed Shadow research service;
+- prepare the locked local environment and install the current user's research
+  service on the first Start from a fresh clone;
+- start an installed Shadow research service and wait for real readiness;
 - restart it and wait for readiness; and
-- safely stop the service, supervisor, PostgreSQL, and Redis.
+- safely stop the service, supervisor, PostgreSQL, and Redis; and
+- inspect and replace supported external provider tokens while the complete
+  research runtime is stopped.
 
 Every mutation requires the HttpOnly session, exact same origin, and a per-run
 CSRF token. Only one lifecycle operation may run at a time. Operation status and
@@ -137,8 +175,9 @@ failure text are visible without exposing credentials.
 
 The control surface cannot:
 
-- install, uninstall, or reconfigure the host service;
-- read or change API keys;
+- reveal a stored API key, accept repository-local secrets, or replace an
+  environment-supplied value;
+- install Node, `uv`, Docker, or operating-system prerequisites;
 - enable Tiger Paper or any other broker;
 - submit, cancel, or replace an order;
 - enable capital or a live environment; or
@@ -177,17 +216,18 @@ external alert delivery, restore drills, and independent monitoring.
 
 ## Troubleshooting
 
-| Symptom                       | Check                                                                                                                         |
-| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `console_unauthorized`        | Run `./alta dashboard restart`, then claim the URL from `./alta dashboard open`.                                              |
-| Dashboard update required     | Run `pnpm dashboard:build`, `./alta dashboard restart`, and reload the page.                                                  |
-| Start is disabled             | Run `./alta service status`; the service must already be installed.                                                           |
-| Runtime stays stopped         | Check the persisted operation phase, then `./alta service logs`.                                                              |
-| Runtime is live but not ready | Inspect heartbeat and dependency posture; do not force a research cycle.                                                      |
-| No events appear              | Verify `/health/ready`, PostgreSQL health, and the current event cursor. An idle system may validly emit no new opportunity.  |
-| Port is in use                | Stop the conflicting process; use foreground mode with `--port` only for development.                                         |
-| Console says reconnecting     | Wait for automatic backoff or use **Retry**; controls stay locked until the control channel recovers.                         |
-| Power was interrupted         | After login, check both `./alta dashboard status` and `./alta service status`; inspect their separate logs if either is down. |
+| Symptom                       | Check                                                                                                                          |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `console_unauthorized`        | Run `./alta dashboard restart`, then claim the URL from `./alta dashboard open`.                                               |
+| Dashboard update required     | Stop the foreground console, run `./alta dashboard` again, and reload the page.                                                |
+| First Start fails             | Verify Node/Corepack, `uv`, Docker Compose, and free loopback ports, then retry; the operation reports its exact failed phase. |
+| Credential cannot be changed  | Safely stop ALTA first; an environment-supplied value must be unset outside the browser.                                       |
+| Runtime stays stopped         | Check the persisted operation phase, then `./alta service logs`.                                                               |
+| Runtime is live but not ready | Inspect heartbeat and dependency posture; do not force a research cycle.                                                       |
+| No events appear              | Verify `/health/ready`, PostgreSQL health, and the current event cursor. An idle system may validly emit no new opportunity.   |
+| Port is in use                | Stop the conflicting process; use foreground mode with `--port` only for development.                                          |
+| Console says reconnecting     | Wait for automatic backoff or use **Retry**; controls stay locked until the control channel recovers.                          |
+| Power was interrupted         | After login, check both `./alta dashboard status` and `./alta service status`; inspect their separate logs if either is down.  |
 
 Use `./alta dashboard stop` to stop the managed console. In foreground mode,
 use `Control-C`. Neither action implicitly stops an already running autonomous

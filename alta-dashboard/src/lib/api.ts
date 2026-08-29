@@ -126,6 +126,26 @@ export function mutateRuntime(
   );
 }
 
+export function replaceCredential(
+  slot: string,
+  secret: string,
+  csrfToken: string,
+  options: { signal?: AbortSignal; timeoutMs?: number } = {},
+) {
+  return requestJson<import("@/lib/types").CredentialInventory>(
+    `/control/credentials/${encodeURIComponent(slot)}`,
+    {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "X-ALTA-CSRF": csrfToken,
+      },
+      body: JSON.stringify({ secret }),
+    },
+    options,
+  );
+}
+
 export function entityDetailPath(kind: string, id: string) {
   if (kind === "opportunity")
     return `/proxy/api/v1/opportunities/${encodeURIComponent(id)}`;

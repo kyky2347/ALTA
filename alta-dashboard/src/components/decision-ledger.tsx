@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { StatusPill } from "@/components/status-pill";
-import { clockTime, relativeTime, titleCase } from "@/lib/display";
+import { useI18n } from "@/lib/i18n";
 import type { AltaEvent, MvpStatus, SelectedEntity } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -31,7 +31,11 @@ function iconFor(event: AltaEvent) {
   return CircleDot;
 }
 
-function entityFor(event: AltaEvent, status: MvpStatus): SelectedEntity {
+function entityFor(
+  event: AltaEvent,
+  status: MvpStatus,
+  domain: (value: string) => string,
+): SelectedEntity {
   const opportunity = status.opportunities.find(
     (item) => item.id === event.aggregateId,
   );
@@ -59,7 +63,7 @@ function entityFor(event: AltaEvent, status: MvpStatus): SelectedEntity {
   return {
     kind: "event",
     id: event.eventId,
-    label: titleCase(event.eventType),
+    label: domain(event.eventType),
     summary: event as unknown as Record<string, unknown>,
   };
 }
@@ -81,6 +85,7 @@ export function DecisionLedger({
   loadingOlder: boolean;
   hasOlder: boolean;
 }) {
+  const { clock, domain, relative, t } = useI18n();
   const [query, setQuery] = useState("");
   const [family, setFamily] = useState("all");
   const [scope, setScope] = useState("all");
@@ -123,10 +128,10 @@ export function DecisionLedger({
   return (
     <section className="ledger-shell" aria-labelledby="ledger-title">
       <div className="ledger-heading">
-        <h2 id="ledger-title">Chronological decision ledger</h2>
+        <h2 id="ledger-title">{t("chronologicalLedger")}</h2>
         <div className="ledger-meta">
           <CalendarClock />
-          <span>{events.length} loaded events</span>
+          <span>{t("loadedEvents", { count: events.length })}</span>
           <StatusPill status="append only" />
         </div>
       </div>
@@ -134,32 +139,32 @@ export function DecisionLedger({
         <Input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Filter by event, role, cycle, opportunity, status…"
-          aria-label="Filter loaded decision events"
+          placeholder={t("ledgerFilterPlaceholder")}
+          aria-label={t("filterLoadedEvents")}
         />
         <select
           value={family}
           onChange={(event) => setFamily(event.target.value)}
-          aria-label="Filter by event family"
+          aria-label={t("filterEventFamily")}
         >
-          <option value="all">All event families</option>
+          <option value="all">{t("allEventFamilies")}</option>
           {families.map((value) => (
             <option value={value} key={value}>
-              {titleCase(value)}
+              {domain(value)}
             </option>
           ))}
         </select>
         <select
           value={scope}
           onChange={(event) => setScope(event.target.value)}
-          aria-label="Filter by current decision scope"
+          aria-label={t("filterDecisionScope")}
         >
-          <option value="all">All loaded scopes</option>
+          <option value="all">{t("allLoadedScopes")}</option>
           {status.currentPipelineId && (
-            <option value="cycle">Current cycle</option>
+            <option value="cycle">{t("currentCycle")}</option>
           )}
           {currentOpportunity && (
-            <option value="opportunity">Leading opportunity</option>
+            <option value="opportunity">{t("leadingOpportunity")}</option>
           )}
         </select>
         <Button
@@ -168,17 +173,17 @@ export function DecisionLedger({
           onClick={() => void onLoadOlder()}
         >
           {loadingOlder
-            ? "Loading…"
+            ? t("loading")
             : hasOlder
-              ? "Load 100 older"
-              : "History start reached"}
+              ? t("loadOlder")
+              : t("historyStartReached")}
         </Button>
       </div>
       <ScrollArea className="ledger-scroll">
         <div className="ledger-list">
           {filtered.map((event) => {
             const Icon = iconFor(event);
-            const target = entityFor(event, status);
+            const target = entityFor(event, status, domain);
             return (
               <button
                 className={cn(
@@ -189,8 +194,8 @@ export function DecisionLedger({
                 onClick={() => onSelect(target)}
               >
                 <time dateTime={event.knownAt}>
-                  <strong>{clockTime(event.knownAt)}</strong>
-                  <span>{relativeTime(event.knownAt)}</span>
+                  <strong>{clock(event.knownAt)}</strong>
+                  <span>{relative(event.knownAt)}</span>
                 </time>
                 <span className="ledger-rail">
                   <span className="ledger-icon">
@@ -198,13 +203,17 @@ export function DecisionLedger({
                   </span>
                 </span>
                 <span className="ledger-copy">
-                  <strong>{titleCase(event.eventType)}</strong>
+                  <strong>{domain(event.eventType)}</strong>
                   <small>
-                    {titleCase(event.aggregateType)} · {event.aggregateId}
+                    {domain(event.aggregateType)} · {event.aggregateId}
                   </small>
                 </span>
                 <span className="ledger-payload">
-                  {summarize(event.payload)}
+                  {summarize(
+                    event.payload,
+                    domain,
+                    t("recordedWithoutSummary"),
+                  )}
                 </span>
                 <span className="ledger-cursor">#{event.cursor}</span>
               </button>
@@ -214,15 +223,9 @@ export function DecisionLedger({
             <div className="ledger-empty">
               <CalendarClock />
               <h3>
-                {events.length
-                  ? "No matching events"
-                  : "No recorded events yet"}
+                {events.length ? t("noMatchingEvents") : t("noRecordedEvents")}
               </h3>
-              <p>
-                {events.length
-                  ? "Clear or broaden the loaded-history filters."
-                  : "The ledger will fill as the autonomous pipeline emits durable events."}
-              </p>
+              <p>{events.length ? t("broadenFilters") : t("ledgerWillFill")}</p>
             </div>
           )}
         </div>
@@ -231,16 +234,18 @@ export function DecisionLedger({
   );
 }
 
-function summarize(payload: Record<string, unknown>) {
+function summarize(
+  payload: Record<string, unknown>,
+  domain: (value: string) => string,
+  emptyLabel: string,
+) {
   const candidate =
     payload.summary ??
     payload.status ??
     payload.verdict ??
     payload.stage ??
     payload.role;
-  if (typeof candidate === "string") return candidate;
+  if (typeof candidate === "string") return domain(candidate);
   const keys = Object.keys(payload).slice(0, 3);
-  return keys.length
-    ? keys.map(titleCase).join(" · ")
-    : "Recorded without public summary";
+  return keys.length ? keys.map(domain).join(" · ") : emptyLabel;
 }

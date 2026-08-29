@@ -37,7 +37,7 @@ Shadow 平仓样本后，持续高估才会被转换成只向下的 Alpha 储备
 自动优化退出。缺少可信风险票据的历史或畸形持仓按当前全额名义价值计入压力损失，不再获得有利的
 零风险假设。
 
-[架构](docs/architecture/overview.md) · [快速开始](#快速开始确定性研究-fixture) ·
+[架构](docs/architecture/overview.md) · [快速开始](#快速开始一条命令启动) ·
 [实时操作台](docs/operations/operator-console.md) ·
 [运行指南](docs/operations/autonomous-shadow.md) ·
 [研究范围](docs/research-scope.md) · [English](README.md)
@@ -128,6 +128,10 @@ _这是明确标注的 Synthetic Preview，不含经纪账户、真实资金、�
 
 [![ALTA 合成前向证据界面中的校准与生命周期诊断](docs/assets/alta-forward-evidence.png)](docs/assets/alta-forward-evidence.png)
 
+[![ALTA 合成凭据中心中的只写 Provider 激活](docs/assets/alta-credential-center.png)](docs/assets/alta-credential-center.png)
+
+_凭据中心截图同样只使用合成状态，不包含真实 Provider 状态、指纹、Token、账户标识或经纪数据。_
+
 _前向证据与经纪账户边界分离；看板展示样本成熟度、不确定性、预测误差、资金姿态和观察到的
 生命周期质量，但不会把 Shadow 结果表述为已证明的 Alpha。_
 
@@ -178,15 +182,29 @@ runtime 命令分派拆成了职责单一且有测试覆盖的单元；组合构
 `MVP_IDLE` 安全结束，没有表达、持仓、capital 进程、Paper 事件或订单。这是运行与保守决策的
 证据，不是盈利 Alpha 的证据。
 
-## 快速开始：确定性研究 Fixture
+## 快速开始：一条命令启动
 
-前置条件：macOS 或 Linux、Node.js 22+、pnpm 10.33+、`uv`，以及为 PostgreSQL 和
+前置条件：macOS 或 Linux、Node.js 22+ 和 Corepack、`uv`，以及为 PostgreSQL 和
 Redis 提供运行环境的 OrbStack 或 Docker Desktop。
 
 ```shell
-cd /ALTA/源码目录的绝对路径
+git clone https://github.com/kyky2347/ALTA.git
+cd ALTA
+./alta dashboard
+```
+
+这条命令会在首次运行或前端源码更新后自动按锁文件安装依赖、构建前端，并打印一次性 loopback
+访问地址。打开地址后，可先在 **Credentials / 凭据** 页面配置可选 Provider，再点击
+**Start ALTA / 启动 ALTA**。全新 clone 中，这个按钮会准备隔离的 Python 环境、启动
+PostgreSQL 与 Redis、执行迁移、安装当前用户的宿主服务，并等待后端真正达到 ready。无需另外部署
+前端或手工安装研究服务，但宿主机仍需先具备上述基础依赖；ALTA 不会静默安装 Node、`uv`、Docker
+或系统服务管理器。
+
+### 确定性研究 Fixture
+
+```shell
 corepack pnpm install --frozen-lockfile
-./alta env setup
+./alta env setup --dev
 ./alta env python -m alta_asterism demo
 ./alta env python -m alta_asterism replay
 ./alta env python -m alta_asterism soak
@@ -652,19 +670,29 @@ LaunchAgent 或 Linux systemd-user unit。宿主服务负责重启后恢复 Post
 Opportunity、Agent Run、表达或事件，会显示系统真正保存的输入、证据、评估、交接、模型路由、
 工具来源和审计产物；界面不会伪称展示模型私有思维链。
 
+操作台外壳完整支持英文和简体中文。全局操作区的语言按钮可以即时切换，选择会在刷新后保留；
+日期、数字、状态、控制、错误、空状态和移动端布局都会随语言变化。Agent 和研究产物仍按数据库中
+保存的原始语言展示，不会为了界面翻译而悄悄改写审计记录。
+
 ```shell
-corepack pnpm install --frozen-lockfile
-pnpm dashboard:build
-./alta dashboard install
-./alta dashboard open
+./alta dashboard
 ```
 
-受管操作台会在登录后启动，并在异常退出后自动恢复；只有显式执行 `open` 才会打印一次性 loopback
-地址。该地址不会进入服务日志，并会在使用后从 owner-only 宿主状态中删除。浏览器只获得 HttpOnly
-本机会话，看不到后端 Bearer token；启停操作还受同源与 CSRF 校验保护。“安全停止”会停止 Shadow
-服务、PostgreSQL 和 Redis，但保留本地操作台以便再次启动。它不能安装研究服务、调用 Tiger 模拟盘、
-提交订单或启用资本。可用 `./alta dashboard status|logs|stop|uninstall` 管理操作台；不带 action 的
-`./alta dashboard` 仍是前台开发模式。完整说明见
+该命令在前台运行 loopback 控制平面；`Control-C` 只结束操作台，不会暗中停止已经运行的研究服务。
+新 clone 或 UI 文件更新时会自动按冻结锁文件完成前端构建。打印的地址建立 HttpOnly 本机会话，浏览器
+永远看不到 Opportunity API Bearer token；启动、重启、安全停止和凭据替换都要求精确同源与 CSRF。
+
+**凭据**页面按用途列出全部受支持的外部 Token 槽位：DeepSeek、xAI/Grok、Kimi、Massive、
+Finlight、Brave、Jina 和 OpenAlex。页面只展示是否配置、来源类型及短的一向 SHA-256 指纹；原始
+Secret 只写、提交后立即清空、原子写入仓库外 owner-only 目录，并且永不回传浏览器。环境变量提供的
+凭据只显示锁定元数据，不能被文件覆盖。只有研究 runtime 完全停止后才允许更换，避免同一周期混用
+两套 Provider 状态。OpenAI 继续使用官方 Codex 登录流程，而不是 API Key 输入框。
+
+全新 clone 上第一次点击 **启动 ALTA** 会自动准备隔离环境并安装用户级研究服务；后续启动幂等且
+必须等到 readiness。**安全停止**会停止研究服务、PostgreSQL 和 Redis，同时保留前台操作台供再次
+启动。控制面仍然只管理 Shadow 研究：Tiger 只作为 Paper-only 安全边界显示；当前 capital-disabled
+构建不接受券商凭据、不连接 Tiger、不提交订单，也不提供订单 API。若需要登录后自动恢复操作台本身，
+仍可选用 `./alta dashboard install|open|status|logs|stop|uninstall`。完整说明见
 [操作台指南](docs/operations/operator-console.md)。
 
 操作台现在会把慢请求合并为单个在途刷新并设置超时；短暂断网采用带抖动的有界指数退避，网络恢复

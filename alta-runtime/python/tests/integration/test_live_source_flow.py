@@ -18,6 +18,10 @@ from alta_asterism.agentic_deliberation import PrivateAssessmentPayload
 from alta_asterism.agentic_roles import StructuredRoleRunner
 from alta_asterism.autonomous import AutonomousOwnerBusy, AutonomousRunner
 from alta_asterism.contracts import Event, Settings
+from alta_asterism.context_budget import (
+    MAX_FROZEN_SCOUT_INPUT_BYTES,
+    canonical_json_bytes,
+)
 from alta_asterism.live_source_flow import DatabaseSourceFlow, IngestingSourceFlow
 from alta_asterism.mind_worker import ModelTurn, ScoutDeadlineExceeded
 from alta_asterism.mvp_fixture import MvpFixture
@@ -309,6 +313,65 @@ def test_database_source_flow_freezes_prior_trader_mind_experience_as_non_eviden
     )
     with pytest.raises(ValueError, match="does not match PostgreSQL"):
         ScoutRepository(database).validate_frozen_input(tampered)
+
+
+def test_database_source_flow_sheds_accumulated_context_to_preserve_live_wake(
+    live_database: str,
+) -> None:
+    """A long-lived database must not make the next autonomous wake impossible."""
+
+    database = Database(live_database)
+    database.upgrade()
+    wake_at = datetime(2026, 8, 25, 15, tzinfo=UTC)
+    with database.connect() as connection:
+        for index in range(12):
+            raw_id = f"raw_context_pressure_{index:02d}"
+            content_hash = hashlib.sha256(raw_id.encode()).hexdigest()
+            connection.execute(
+                """INSERT INTO research.raw
+                (id, environment, version, known_at, source, source_key,
+                 content_hash, body)
+                VALUES (%s,'shadow',1,%s,'finlight',%s,%s,%s)""",
+                (
+                    raw_id,
+                    wake_at - timedelta(minutes=index + 1),
+                    raw_id,
+                    content_hash,
+                    Jsonb({"title": f"{index:02d} " + "e" * 470}),
+                ),
+            )
+        for index, scout in enumerate(SCOUTS, start=1):
+            connection.execute(
+                """INSERT INTO research.mind_state
+                (id, environment, version, known_at, scout_id, turn_count,
+                 context_tokens, started_at, rolling_summary, model_provider,
+                 model_id, prompt_version, tool_catalog_version)
+                VALUES (%s,'shadow',%s,%s,%s,%s,100,%s,%s,'deepseek',
+                        'deepseek-v4-flash','alpha-trader-v2',
+                        'alta-active-research-v2')""",
+                (
+                    f"mind_context_pressure_{index}",
+                    index,
+                    wake_at - timedelta(minutes=20),
+                    scout.scout_id,
+                    index,
+                    wake_at - timedelta(hours=1),
+                    "m" * 1_200,
+                ),
+            )
+
+    frozen, _ = DatabaseSourceFlow(
+        database,
+        ("SPY", "AAPL"),
+        max_evidence=12,
+    ).schedule_and_wake("cycle_context_pressure_001", wake_at, {})
+
+    encoded = canonical_json_bytes(frozen.model_dump(mode="json"))
+    assert len(encoded) <= MAX_FROZEN_SCOUT_INPUT_BYTES
+    assert frozen.evidence
+    assert len(frozen.evidence) == 12
+    assert frozen.trader_mind_memories == ()
+    ScoutRepository(database).validate_frozen_input(frozen)
 
 
 def test_frozen_mind_memory_remains_valid_after_the_current_mind_evolves(

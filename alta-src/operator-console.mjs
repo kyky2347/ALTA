@@ -12,7 +12,8 @@ const ENVIRONMENT_CACHE_MS = 7_500;
 const RUNTIME_CACHE_MS = 1_000;
 const UPSTREAM_TIMEOUT_MS = 15_000;
 const MAX_UPSTREAM_BODY_BYTES = 16 * 1024 * 1024;
-export const OPERATOR_PROTOCOL_VERSION = 1;
+const MAX_CREDENTIAL_BODY_BYTES = 8 * 1024;
+export const OPERATOR_PROTOCOL_VERSION = 2;
 
 function processIsAlive(pid) {
   if (!Number.isInteger(pid) || pid <= 0) return false;
@@ -65,6 +66,42 @@ function safeError(error) {
     .slice(0, 300);
 }
 
+async function readJsonBody(request, maximumBytes = MAX_CREDENTIAL_BODY_BYTES) {
+  if (!String(request.headers["content-type"] ?? "").startsWith(
+    "application/json",
+  ))
+    throw Object.assign(new Error("A JSON request body is required"), {
+      statusCode: 415,
+      code: "json_required",
+    });
+  const declared = Number(request.headers["content-length"]);
+  if (Number.isFinite(declared) && declared > maximumBytes)
+    throw Object.assign(new Error("The credential request is too large"), {
+      statusCode: 413,
+      code: "credential_request_too_large",
+    });
+  const chunks = [];
+  let length = 0;
+  for await (const chunk of request) {
+    const buffer = Buffer.from(chunk);
+    length += buffer.length;
+    if (length > maximumBytes)
+      throw Object.assign(new Error("The credential request is too large"), {
+        statusCode: 413,
+        code: "credential_request_too_large",
+      });
+    chunks.push(buffer);
+  }
+  try {
+    return JSON.parse(Buffer.concat(chunks, length).toString("utf8"));
+  } catch {
+    throw Object.assign(new Error("The JSON request body is invalid"), {
+      statusCode: 400,
+      code: "invalid_json",
+    });
+  }
+}
+
 function contentType(file) {
   return (
     {
@@ -72,6 +109,7 @@ function contentType(file) {
       ".html": "text/html; charset=utf-8",
       ".js": "text/javascript; charset=utf-8",
       ".json": JSON_TYPE,
+      ".png": "image/png",
       ".svg": "image/svg+xml",
       ".woff2": "font/woff2",
     }[path.extname(file).toLowerCase()] ?? "application/octet-stream"
@@ -288,6 +326,22 @@ export function createOperatorConsole({
     };
   }
 
+  function publicCredentialInventory() {
+    const inventory = service.credentialInventory();
+    return {
+      revision: inventory.revision,
+      configuredSlots: inventory.configuredSlots,
+      slots: inventory.slots,
+      trading: {
+        provider: "Tiger Trade",
+        mode: "paper_only",
+        configured: false,
+        editable: false,
+        status: "capital_runtime_disabled",
+      },
+    };
+  }
+
   async function runOperation(action, lease) {
     writeOperation({
       ...operation,
@@ -338,8 +392,16 @@ export function createOperatorConsole({
       }
       writeOperation({ ...operation, phase: `${action}_requested` });
       if (action === "start") {
-        if (!service.installed())
-          throw new Error("Install the ALTA service before starting it");
+        if (!service.installed()) {
+          const { environment } = service.runtimeEnvironment();
+          writeOperation({ ...operation, phase: "preparing_environment" });
+          await environmentFactory(environment).setup();
+          environmentCache = null;
+          writeOperation({ ...operation, phase: "installing_service" });
+          await service.assertEndpointAvailable();
+          service.install({ start: false });
+        }
+        writeOperation({ ...operation, phase: "starting_service" });
         service.platform.start();
         writeOperation({ ...operation, phase: "waiting_for_readiness" });
         await service.waitForReadiness();
@@ -540,6 +602,75 @@ export function createOperatorConsole({
         json(response, 200, { data: await state() });
         return;
       }
+      if (
+        request.method === "GET" &&
+        url.pathname === "/control/credentials"
+      ) {
+        json(response, 200, { data: publicCredentialInventory() });
+        return;
+      }
+      const credentialSlot = url.pathname.match(
+        /^\/control\/credentials\/([a-z0-9-]+)$/,
+      )?.[1];
+      if (request.method === "PUT" && credentialSlot) {
+        if (!permittedMutation(request)) {
+          json(response, 403, { error: { code: "mutation_forbidden" } });
+          return;
+        }
+        if (operation?.status === "running") {
+          json(response, 409, { error: { code: "operation_in_progress" } });
+          return;
+        }
+        const runtime = await runtimeStatus({ fresh: true });
+        if (
+          runtime.ready ||
+          runtime.host?.processAlive ||
+          runtime.supervisor?.childProcessAlive
+        ) {
+          json(response, 409, {
+            error: {
+              code: "runtime_must_be_stopped",
+              message:
+                "Stop the research runtime before changing provider credentials.",
+            },
+          });
+          return;
+        }
+        const body = await readJsonBody(request);
+        if (
+          !body ||
+          typeof body !== "object" ||
+          Array.isArray(body) ||
+          typeof body.secret !== "string" ||
+          Object.keys(body).some((key) => key !== "secret")
+        ) {
+          json(response, 400, {
+            error: {
+              code: "invalid_credential_request",
+              message: "Provide exactly one write-only secret value.",
+            },
+          });
+          return;
+        }
+        try {
+          service.replaceCredential(credentialSlot, body.secret);
+          runtimeCache = null;
+          json(response, 200, { data: publicCredentialInventory() });
+        } catch (error) {
+          const environmentLocked = /supplied by .*environment variable/.test(
+            String(error?.message ?? ""),
+          );
+          json(response, environmentLocked ? 409 : 400, {
+            error: {
+              code: environmentLocked
+                ? "credential_environment_locked"
+                : "credential_rejected",
+              message: safeError(error),
+            },
+          });
+        }
+        return;
+      }
       const action = url.pathname.match(
         /^\/control\/runtime\/(start|stop|restart)$/,
       )?.[1];
@@ -570,8 +701,11 @@ export function createOperatorConsole({
         response.destroy();
         return;
       }
-      json(response, 502, {
-        error: { code: "console_failure", message: safeError(error) },
+      json(response, error?.statusCode ?? 502, {
+        error: {
+          code: error?.code ?? "console_failure",
+          message: safeError(error),
+        },
       });
     }
   });

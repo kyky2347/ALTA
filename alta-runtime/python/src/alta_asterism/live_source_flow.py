@@ -4,6 +4,8 @@ from datetime import datetime, timedelta
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
+from pydantic import ValidationError
+
 from .alpha_feedback import AlphaFeedbackProjector
 from .b5_runtime import _append_event, _contract_event
 from .contracts import Environment
@@ -275,44 +277,83 @@ class DatabaseSourceFlow:
             for row in rows
         )
         posture = "available" if snapshots else "unavailable"
-        return (
-            FrozenScoutInput(
-                wake_id=cycle_id,
-                environment=self.environment,
-                known_at=wake_at,
-                universe=self.universe,
-                evidence=snapshots,
-                prior_opportunities=prior_opportunities,
-                opportunity_drive=build_opportunity_drive(
-                    cycle_id=cycle_id,
-                    idle_streak=idle_streak,
-                    research_queue=build_research_queue(
-                        wake_at=wake_at,
-                        opportunities=tuple(
-                            ResearchQueueInput(
-                                opportunity_id=item.opportunity_id,
-                                status=item.status,
-                                known_at=item.known_at,
-                                horizon_days=item.horizon_days,
-                                research_questions=item.research_questions,
-                            )
-                            for item in prior_opportunities
-                        ),
+        scout_ids = tuple(item.scout_id for item in SCOUTS)
+        evidence = snapshots
+        prior = prior_opportunities
+        memories = trader_mind_memories
+        feedback = alpha_feedback
+        incentives = build_research_incentives(feedback, scout_ids=scout_ids)
+        agenda = market_research_agenda
+        mandate = portfolio_research_mandate
+        while True:
+            drive = build_opportunity_drive(
+                cycle_id=cycle_id,
+                idle_streak=idle_streak,
+                research_queue=build_research_queue(
+                    wake_at=wake_at,
+                    opportunities=tuple(
+                        ResearchQueueInput(
+                            opportunity_id=item.opportunity_id,
+                            status=item.status,
+                            known_at=item.known_at,
+                            horizon_days=item.horizon_days,
+                            research_questions=item.research_questions,
+                        )
+                        for item in prior
                     ),
-                    scout_ids=tuple(item.scout_id for item in SCOUTS),
                 ),
-                market_research_agenda=market_research_agenda,
-                trader_mind_memories=trader_mind_memories,
-                alpha_feedback=alpha_feedback,
-                research_incentives=build_research_incentives(
-                    alpha_feedback,
-                    scout_ids=tuple(item.scout_id for item in SCOUTS),
+                scout_ids=scout_ids,
+            )
+            try:
+                frozen = FrozenScoutInput(
+                    wake_id=cycle_id,
+                    environment=self.environment,
+                    known_at=wake_at,
+                    universe=self.universe,
+                    evidence=evidence,
+                    prior_opportunities=prior,
+                    opportunity_drive=drive,
+                    market_research_agenda=agenda,
+                    trader_mind_memories=memories,
+                    alpha_feedback=feedback,
+                    research_incentives=incentives,
+                    portfolio_research_mandate=mandate,
+                    expectation_posture=posture,
+                )
+                return frozen, postures
+            except ValidationError as error:
+                if "frozen input exceeds the hard byte budget" not in str(error):
+                    raise
+
+            # Preserve the freshest evidence and prioritized follow-up questions.
+            # Lower-priority process context is shed deterministically until the
+            # immutable hand-off fits its contract, instead of failing the cycle.
+            priority_ids = set(drive.priority_opportunity_ids)
+            removable_prior = next(
+                (
+                    index
+                    for index in range(len(prior) - 1, -1, -1)
+                    if prior[index].opportunity_id not in priority_ids
                 ),
-                portfolio_research_mandate=portfolio_research_mandate,
-                expectation_posture=posture,
-            ),
-            postures,
-        )
+                None,
+            )
+            if removable_prior is not None:
+                prior = prior[:removable_prior] + prior[removable_prior + 1 :]
+            elif memories:
+                memories = ()
+            elif feedback or incentives:
+                feedback = ()
+                incentives = ()
+            elif mandate is not None:
+                mandate = None
+            elif agenda is not None:
+                agenda = None
+            elif evidence:
+                evidence = evidence[:-1]
+            elif prior:
+                prior = prior[:-1]
+            else:
+                raise ValueError("live frozen input cannot fit its hard byte budget")
 
     def _trader_mind_memories(
         self, connection, wake_at: datetime

@@ -60,6 +60,31 @@ export type ControlState = {
   };
 };
 
+export type CredentialSlot = {
+  slot: string;
+  label: string;
+  category: "models" | "market_data" | "news" | "research";
+  purpose: string;
+  configured: boolean;
+  source: string;
+  sourceKind: "environment" | "external" | "missing";
+  editable: boolean;
+  fingerprint: string | null;
+};
+
+export type CredentialInventory = {
+  revision: string;
+  configuredSlots: string[];
+  slots: CredentialSlot[];
+  trading: {
+    provider: "Tiger Trade";
+    mode: "paper_only";
+    configured: false;
+    editable: false;
+    status: "capital_runtime_disabled";
+  };
+};
+
 export type AgentRun = {
   id: string;
   runId: string;

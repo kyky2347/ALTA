@@ -45,6 +45,14 @@ owner-only credential boundary at process start. The generated dashboard bearer
 token remains in ignored mode-0600 `.alta/secrets/` state and is never printed by
 `status`.
 
+The loopback credential center is a write-only convenience layer over the same
+external boundary. It returns only configured state, provider purpose, source
+kind, editability, and a truncated one-way fingerprint. Exact-origin CSRF and
+the local HttpOnly session protect replacement; requests are size-bounded,
+provider-validated, atomically written, and refused whenever the research
+runtime is active. Environment-supplied values cannot be shadowed from the UI.
+Broker credentials are not accepted by this surface.
+
 ## Enforced capability boundaries
 
 - Supported environments are `replay`, `shadow`, and `paper`; there is no live

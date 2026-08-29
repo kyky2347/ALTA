@@ -1,6 +1,7 @@
 import path from "node:path";
 import process from "node:process";
 import { createOperatorConsole } from "./operator-console.mjs";
+import { prepareDashboard } from "./dashboard-build.mjs";
 
 const MANAGED_ACTIONS = new Set([
   "install",
@@ -103,6 +104,9 @@ export async function dashboardCommand(args, dependencies) {
     return managedCommand(action, rest, dependencies.dashboardService);
 
   const options = parseOptions(args);
+  await (dependencies.prepareDashboard ?? prepareDashboard)({
+    rootDir: dependencies.rootDir,
+  });
   const consoleServer = createOperatorConsole({
     ...options,
     staticDir: path.join(dependencies.rootDir, "alta-dashboard", "dist"),

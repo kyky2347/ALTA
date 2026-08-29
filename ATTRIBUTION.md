@@ -78,12 +78,24 @@ capital package has its own `pyproject.toml` and lockfile.
 
 ### Node.js and Rust
 
-The ALTA gateway uses Node.js standard-library APIs. Prettier is the only direct
-root development dependency and is locked in `pnpm-lock.yaml`.
+The ALTA gateway uses Node.js standard-library APIs. The operator console uses
+locked package dependencies rather than copied application code: React and
+Radix UI under MIT, Lucide icons under ISC, Tailwind CSS under MIT, and the
+Fontsource-packaged Geist font under SIL Open Font License 1.1. shadcn's
+MIT-licensed registry tool generated the local composition primitives that ALTA
+maintains in `alta-dashboard/src/components/ui/`. Prettier, Oxlint, TypeScript,
+Vite, and the remaining frontend build tools are development dependencies.
+Exact versions, integrity hashes, and transitive packages are recorded in
+`pnpm-lock.yaml`; their own package license files remain installed with the
+packages.
 
 Rust package versions, sources, and checksums for the Codex substrate are
 recorded in `vendor/openai-codex/codex-rs/Cargo.lock`. ALTA does not relicense
 third-party crates as ALTA-authored code.
+
+The raster displayed in the operator product lockup was supplied directly by
+the ALTA project owner for this repository. It was copied byte-for-byte into the
+frontend asset boundary and was not sourced from any compared GitHub project.
 
 ### Containers
 

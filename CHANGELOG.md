@@ -6,6 +6,30 @@ semantic versioning while the project remains experimental.
 
 ## [Unreleased]
 
+### Added
+
+- Complete English and Simplified Chinese localization for the local operator
+  console, including persistent one-click switching, locale-aware dates and
+  numbers, domain-status labels, controls, errors, empty states, replay, and
+  responsive mobile layouts. Saved Agent and research artifacts remain visible
+  in their original language so the audit record is never rewritten.
+- A write-only provider credential center for model, market-data, news, and
+  research tokens. It exposes safe configuration metadata only, locks changes
+  while the runtime is active, and keeps Tiger behind the disabled-capital
+  Paper boundary.
+- One-command foreground console preparation: `./alta dashboard` now installs
+  frozen frontend dependencies and rebuilds stale assets automatically. A first
+  Start from the UI prepares and installs the user-level research service.
+- The supplied brand artwork is included byte-for-byte in the operator shell,
+  with responsive containment and an explicit ALTA product lockup.
+
+### Fixed
+
+- Long-lived databases can no longer abort a new autonomous cycle when combined
+  Evidence, Opportunity memory, Trader Mind memory, feedback, and book context
+  exceed the 16 KiB immutable Scout hand-off. The hard budget remains enforced;
+  lower-priority process context is shed deterministically and replayably.
+
 ## [0.26.0] - 2026-08-29
 
 ### Added

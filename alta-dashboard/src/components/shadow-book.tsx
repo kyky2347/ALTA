@@ -5,7 +5,7 @@ import {
   Waypoints,
 } from "lucide-react";
 import { StatusPill } from "@/components/status-pill";
-import { relativeTime, titleCase } from "@/lib/display";
+import { useI18n } from "@/lib/i18n";
 import type { MvpStatus, RuntimeDetail, SelectedEntity } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -14,26 +14,40 @@ function finiteValue(value: string | number | null | undefined) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function bps(value: string | number | null | undefined) {
+type FormatNumber = (
+  value?: number,
+  options?: Intl.NumberFormatOptions,
+) => string;
+
+function bps(
+  value: string | number | null | undefined,
+  formatNumber: FormatNumber,
+) {
   const parsed = finiteValue(value);
   if (parsed === null) return "—";
-  return `${parsed > 0 ? "+" : ""}${parsed.toLocaleString(undefined, {
+  return `${parsed > 0 ? "+" : ""}${formatNumber(parsed, {
     maximumFractionDigits: 1,
   })} bps`;
 }
 
-function magnitudeBps(value: string | number | null | undefined) {
+function magnitudeBps(
+  value: string | number | null | undefined,
+  formatNumber: FormatNumber,
+) {
   const parsed = finiteValue(value);
   if (parsed === null) return "—";
-  return `${parsed.toLocaleString(undefined, {
+  return `${formatNumber(parsed, {
     maximumFractionDigits: 1,
   })} bps`;
 }
 
-function rate(value: string | number | null | undefined) {
+function rate(
+  value: string | number | null | undefined,
+  formatNumber: FormatNumber,
+) {
   const parsed = finiteValue(value);
   if (parsed === null) return "—";
-  return `${(parsed * 100).toLocaleString(undefined, {
+  return `${formatNumber(parsed * 100, {
     maximumFractionDigits: 1,
   })}%`;
 }
@@ -47,6 +61,13 @@ export function ShadowBook({
   runtime: RuntimeDetail | null;
   onSelect: (entity: SelectedEntity) => void;
 }) {
+  const {
+    domain,
+    number: formatNumber,
+    relative,
+    systemMessage,
+    t,
+  } = useI18n();
   const alpha = runtime?.alpha;
   const evidence = alpha?.alphaEvidence;
   const calibration = alpha?.forecastCalibrationGovernance;
@@ -75,88 +96,87 @@ export function ShadowBook({
   const interval =
     evidence?.confidence95LowerBps != null &&
     evidence?.confidence95UpperBps != null
-      ? `${bps(evidence.confidence95LowerBps)} to ${bps(
+      ? `${bps(evidence.confidence95LowerBps, formatNumber)} – ${bps(
           evidence.confidence95UpperBps,
+          formatNumber,
         )}`
-      : "Awaiting enough independent closes";
+      : t("awaitingIndependentCloses");
 
   return (
     <section className="shadow-book">
       <div className="shadow-warning">
         <ShieldCheck />
         <div>
-          <strong>Observation, not brokerage</strong>
-          <p>
-            Every row is a research shadow position. This dashboard exposes no
-            capital or live-order path.
-          </p>
+          <strong>{t("observationNotBrokerage")}</strong>
+          <p>{t("observationNotBrokerageDetail")}</p>
         </div>
       </div>
       <div className="alpha-evidence">
         <header className="alpha-evidence-head">
           <div>
-            <h2>Forward Alpha evidence</h2>
-            <p>
-              Cost-adjusted Shadow outcomes relative to SPY, measured from
-              entry-frozen decisions. This is an evidence ledger, not a
-              performance claim.
-            </p>
+            <h2>{t("forwardAlphaEvidence")}</h2>
+            <p>{t("forwardAlphaDetail")}</p>
           </div>
           <span className={cn("alpha-posture", postureTone)}>
             <CircleDot />
-            {titleCase(posture)}
+            {domain(posture)}
           </span>
         </header>
         <div className="alpha-evidence-grid">
           <div className="alpha-measure is-sample">
-            <span>Comparable closes</span>
+            <span>{t("comparableCloses")}</span>
             <strong>
-              {sampleSize.toLocaleString()}
-              <small> / {minimumSample} minimum</small>
+              {formatNumber(sampleSize)}
+              <small> / {t("minimum", { count: minimumSample })}</small>
             </strong>
             <p>
               {sampleSize < minimumSample
-                ? `${minimumSample - sampleSize} more before calibration can affect forecasts.`
-                : "Minimum calibration sample reached; rolling evidence now governs forecasts."}
+                ? t("moreBeforeCalibration", {
+                    count: minimumSample - sampleSize,
+                  })
+                : t("calibrationReached")}
             </p>
           </div>
           <div className="alpha-measure">
-            <span>Mean realized Alpha</span>
-            <strong>{bps(alpha?.meanRealizedAlphaBps)}</strong>
+            <span>{t("meanRealizedAlpha")}</span>
+            <strong>{bps(alpha?.meanRealizedAlphaBps, formatNumber)}</strong>
             <p>{interval}</p>
           </div>
           <div className="alpha-measure">
-            <span>Forecast MAE</span>
-            <strong>{magnitudeBps(calibration?.meanAbsoluteErrorBps)}</strong>
-            <p>Absolute error on comparable direct-stock forecasts.</p>
+            <span>{t("forecastMae")}</span>
+            <strong>
+              {magnitudeBps(calibration?.meanAbsoluteErrorBps, formatNumber)}
+            </strong>
+            <p>{t("forecastMaeDetail")}</p>
           </div>
           <div className="alpha-measure">
-            <span>Directional hit rate</span>
-            <strong>{rate(calibration?.directionalHitRate)}</strong>
-            <p>Descriptive only; zero forecasts and outcomes are excluded.</p>
+            <span>{t("directionalHitRate")}</span>
+            <strong>
+              {rate(calibration?.directionalHitRate, formatNumber)}
+            </strong>
+            <p>{t("directionalHitDetail")}</p>
           </div>
           <div className="alpha-measure">
-            <span>Forecast reserve</span>
-            <strong>{magnitudeBps(calibration?.alphaReserveBps)}</strong>
+            <span>{t("forecastReserve")}</span>
+            <strong>
+              {magnitudeBps(calibration?.alphaReserveBps, formatNumber)}
+            </strong>
             <p>
               {calibration?.posture === "collecting"
-                ? "Inactive while the sample is immature."
-                : "Deducted from new expected Alpha before costs."}
+                ? t("forecastReserveInactive")
+                : t("forecastReserveActive")}
             </p>
           </div>
           <div className="alpha-measure">
-            <span>Capital posture</span>
+            <span>{t("capitalPosture")}</span>
             <strong>
               {effectiveCapital === null
                 ? "—"
-                : `${effectiveCapital.toLocaleString(undefined, {
+                : `${formatNumber(effectiveCapital, {
                     maximumFractionDigits: 2,
                   })}×`}
             </strong>
-            <p>
-              The tightest forward-evidence multiplier; it can never add
-              leverage.
-            </p>
+            <p>{t("capitalPostureDetail")}</p>
           </div>
         </div>
         <section
@@ -165,55 +185,60 @@ export function ShadowBook({
         >
           <header>
             <div>
-              <h3 id="path-quality-title">Observed lifecycle quality</h3>
-              <p>
-                Executable exit observations separate opportunity quality from
-                path risk and exit capture. They never create an automatic exit.
-              </p>
+              <h3 id="path-quality-title">{t("observedLifecycleQuality")}</h3>
+              <p>{t("observedLifecycleDetail")}</p>
             </div>
             <span>
-              {(path?.measuredPositions ?? 0).toLocaleString()} measured
+              {t("measured", {
+                count: formatNumber(path?.measuredPositions ?? 0),
+              })}
             </span>
           </header>
           <div className="path-diagnostics-grid">
             <div>
-              <span>Mean favorable excursion</span>
+              <span>{t("meanFavorableExcursion")}</span>
               <strong>
-                {magnitudeBps(path?.meanMaximumFavorableExcursionBps)}
+                {magnitudeBps(
+                  path?.meanMaximumFavorableExcursionBps,
+                  formatNumber,
+                )}
               </strong>
             </div>
             <div>
-              <span>Mean adverse excursion</span>
-              <strong>{bps(path?.meanMaximumAdverseExcursionBps)}</strong>
+              <span>{t("meanAdverseExcursion")}</span>
+              <strong>
+                {bps(path?.meanMaximumAdverseExcursionBps, formatNumber)}
+              </strong>
             </div>
             <div>
-              <span>Mean exit capture</span>
-              <strong>{rate(path?.meanExitCaptureRatio)}</strong>
+              <span>{t("meanExitCapture")}</span>
+              <strong>{rate(path?.meanExitCaptureRatio, formatNumber)}</strong>
             </div>
             <div>
-              <span>Positive path missed</span>
-              <strong>{rate(path?.positiveExcursionMissRate)}</strong>
+              <span>{t("positivePathMissed")}</span>
+              <strong>
+                {rate(path?.positiveExcursionMissRate, formatNumber)}
+              </strong>
             </div>
           </div>
         </section>
         <footer className="alpha-evidence-foot">
           <ChartNoAxesCombined />
-          <span>
-            {alpha?.warning ??
-              "No closed, benchmarked Shadow sample is available yet."}
-          </span>
+          <span>{systemMessage(alpha?.warning) ?? t("noClosedSample")}</span>
           <small>
-            Last measured {relativeTime(alpha?.lastMeasuredAt ?? undefined)}
+            {t("lastMeasured", {
+              time: relative(alpha?.lastMeasuredAt ?? undefined),
+            })}
           </small>
         </footer>
       </div>
       <div className="shadow-table">
         <div className="shadow-row is-head">
-          <span>Instrument</span>
-          <span>Status</span>
-          <span>Quantity</span>
-          <span>Opened</span>
-          <span>Expression</span>
+          <span>{t("instrument")}</span>
+          <span>{t("status")}</span>
+          <span>{t("quantity")}</span>
+          <span>{t("opened")}</span>
+          <span>{t("expression")}</span>
         </div>
         {status.shadowPositions.map((position) => (
           <button
@@ -223,7 +248,7 @@ export function ShadowBook({
               onSelect({
                 kind: "position",
                 id: position.id,
-                label: `${position.symbol} shadow position`,
+                label: t("shadowPosition", { symbol: position.symbol }),
                 summary: position as unknown as Record<string, unknown>,
               })
             }
@@ -231,14 +256,14 @@ export function ShadowBook({
             <strong>{position.symbol}</strong>
             <StatusPill status={position.status} />
             <span>{position.quantity ?? "—"}</span>
-            <span>{relativeTime(position.openedAt)}</span>
+            <span>{relative(position.openedAt)}</span>
             <span>{position.expressionId}</span>
           </button>
         ))}
         {!status.shadowPositions.length && (
           <div className="shadow-empty">
             <Waypoints />
-            <p>No shadow positions are open or recently closed.</p>
+            <p>{t("noShadowPositions")}</p>
           </div>
         )}
       </div>

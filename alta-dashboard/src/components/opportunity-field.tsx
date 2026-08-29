@@ -11,7 +11,7 @@ import {
 import { useState } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { StatusPill } from "@/components/status-pill";
-import { compactNumber, relativeTime, titleCase } from "@/lib/display";
+import { useI18n } from "@/lib/i18n";
 import type { MvpStatus, RuntimeDetail, SelectedEntity } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -26,6 +26,7 @@ export function OpportunityField({
   selected: SelectedEntity | null;
   onSelect: (entity: SelectedEntity) => void;
 }) {
+  const { domain, number, relative, t } = useI18n();
   const [mobileStage, setMobileStage] = useState<
     "discovery" | "foundry" | "committee" | "action"
   >("foundry");
@@ -55,19 +56,19 @@ export function OpportunityField({
   return (
     <section className="field-shell" aria-labelledby="field-title">
       <div className="field-heading">
-        <h2 id="field-title">Live opportunity flow</h2>
+        <h2 id="field-title">{t("liveOpportunityFlow")}</h2>
         <div className="field-heading-meta">
           <StatusPill
             status={runtime?.config.autonomousStatus ?? status.status}
             live
           />
-          <span>{status.currentPipelineId ?? "No active cycle"}</span>
+          <span>{status.currentPipelineId ?? t("noActiveCycle")}</span>
         </div>
       </div>
 
       <div
         className="mobile-stage-selector"
-        aria-label="Opportunity flow stage"
+        aria-label={t("opportunityFlowStage")}
       >
         {(["discovery", "foundry", "committee", "action"] as const).map(
           (stage) => (
@@ -76,7 +77,13 @@ export function OpportunityField({
               key={stage}
               onClick={() => setMobileStage(stage)}
             >
-              {stage === "action" ? "Audit" : titleCase(stage)}
+              {stage === "action"
+                ? t("audit")
+                : stage === "discovery"
+                  ? t("discovery")
+                  : stage === "foundry"
+                    ? t("foundry")
+                    : t("committee")}
             </button>
           ),
         )}
@@ -91,7 +98,7 @@ export function OpportunityField({
         >
           <StageLabel
             icon={FileSearch2}
-            label="Discovery"
+            label={t("discovery")}
             count={status.candidates.length}
           />
           <ScrollArea className="stage-scroll">
@@ -103,15 +110,15 @@ export function OpportunityField({
                     <strong>{candidate.title}</strong>
                     <p>
                       {candidate.alphaArchetype
-                        ? titleCase(candidate.alphaArchetype)
-                        : "Unclassified"}{" "}
-                      · {relativeTime(candidate.knownAt)}
+                        ? domain(candidate.alphaArchetype)
+                        : t("unclassified")}{" "}
+                      · {relative(candidate.knownAt)}
                     </p>
                   </div>
                 </article>
               ))}
               {!status.candidates.length && (
-                <EmptyStage label="No candidates yet" />
+                <EmptyStage label={t("noCandidates")} />
               )}
             </div>
           </ScrollArea>
@@ -132,7 +139,7 @@ export function OpportunityField({
         >
           <StageLabel
             icon={Sparkles}
-            label="Foundry"
+            label={t("foundry")}
             count={status.opportunities.length}
           />
           <div className="stage-stack">
@@ -162,15 +169,15 @@ export function OpportunityField({
                 <div className="opportunity-card-bottom">
                   <span>
                     {opportunity.foundryState
-                      ? titleCase(opportunity.foundryState)
-                      : "Building"}
+                      ? domain(opportunity.foundryState)
+                      : t("building")}
                   </span>
-                  <span>{relativeTime(opportunity.knownAt)}</span>
+                  <span>{relative(opportunity.knownAt)}</span>
                 </div>
               </button>
             ))}
             {!status.opportunities.length && (
-              <EmptyStage label="Foundry is waiting for candidates" />
+              <EmptyStage label={t("foundryWaiting")} />
             )}
           </div>
         </div>
@@ -190,7 +197,7 @@ export function OpportunityField({
             mobileStage === "committee" && "is-mobile-active",
           )}
         >
-          <StageLabel icon={Bot} label="Committee" count={agents.length} />
+          <StageLabel icon={Bot} label={t("committee")} count={agents.length} />
           <div className="agent-matrix">
             {agents.map((agent) => (
               <button
@@ -203,7 +210,7 @@ export function OpportunityField({
                   onSelect({
                     kind: "run",
                     id: agent.runId,
-                    label: titleCase(agent.id),
+                    label: domain(agent.id),
                     summary: agent as unknown as Record<string, unknown>,
                   })
                 }
@@ -212,10 +219,10 @@ export function OpportunityField({
                   <Bot />
                 </span>
                 <span className="agent-copy">
-                  <strong>{titleCase(agent.id)}</strong>
+                  <strong>{domain(agent.id)}</strong>
                   <small>
-                    {agent.modelId ?? agent.modelProvider ?? "Model pending"} ·{" "}
-                    {agent.runId}
+                    {agent.modelId ?? agent.modelProvider ?? t("modelPending")}{" "}
+                    · {agent.runId}
                   </small>
                 </span>
                 <span
@@ -223,7 +230,7 @@ export function OpportunityField({
                     "agent-state",
                     agent.status === "running" && "is-running",
                   )}
-                  aria-label={agent.status}
+                  aria-label={domain(agent.status)}
                 />
               </button>
             ))}
@@ -236,40 +243,41 @@ export function OpportunityField({
                   onSelect({
                     kind: "event",
                     id: item.id,
-                    label: titleCase(item.eventType),
+                    label: domain(item.eventType),
                     summary: item as unknown as Record<string, unknown>,
                   })
                 }
               >
                 <span>
-                  {titleCase(String(item.detail.speaker ?? "committee"))}
+                  {domain(String(item.detail.speaker ?? "committee"))}
                 </span>
                 <strong>
-                  {String(item.detail.summary ?? titleCase(item.eventType))}
+                  {String(item.detail.summary ?? domain(item.eventType))}
                 </strong>
                 <small>
-                  {item.id} · {relativeTime(item.knownAt)}
+                  {item.id} · {relative(item.knownAt)}
                 </small>
               </button>
             ))}
           </div>
           <div className="committee-brief">
             <div>
-              <span>Assessments</span>
+              <span>{t("assessments")}</span>
               <strong>{assessments.length}</strong>
             </div>
             <div>
-              <span>Arguments</span>
+              <span>{t("arguments")}</span>
               <strong>{discussion.length}</strong>
             </div>
             <div>
-              <span>Context</span>
+              <span>{t("context")}</span>
               <strong>
-                {compactNumber(
+                {number(
                   runtime?.minds.reduce(
                     (sum, mind) => sum + (mind.contextTokens ?? 0),
                     0,
                   ),
+                  { notation: "compact", maximumFractionDigits: 1 },
                 )}
               </strong>
             </div>
@@ -291,7 +299,7 @@ export function OpportunityField({
         >
           <StageLabel
             icon={ShieldCheck}
-            label="Expression & audit"
+            label={t("expressionAudit")}
             count={status.expressions.length}
           />
           {expression ? (
@@ -304,7 +312,7 @@ export function OpportunityField({
                 onSelect({
                   kind: "expression",
                   id: expression.id,
-                  label: titleCase(expression.kind),
+                  label: domain(expression.kind),
                   summary: expression as unknown as Record<string, unknown>,
                 })
               }
@@ -313,19 +321,19 @@ export function OpportunityField({
                 <Waypoints />
               </span>
               <div>
-                <small>Selected carrier</small>
-                <strong>{titleCase(expression.kind)}</strong>
-                <p>{titleCase(expression.status)}</p>
+                <small>{t("selectedCarrier")}</small>
+                <strong>{domain(expression.kind)}</strong>
+                <p>{domain(expression.status)}</p>
               </div>
             </button>
           ) : (
-            <EmptyStage label="No expression selected" />
+            <EmptyStage label={t("noExpression")} />
           )}
           <div className="audit-line">
             <ShieldCheck />
-            <span>Audit boundary</span>
+            <span>{t("auditBoundary")}</span>
             <strong>
-              {expression?.status ? titleCase(expression.status) : "Waiting"}
+              {expression?.status ? domain(expression.status) : t("waiting")}
             </strong>
           </div>
           {position ? (
@@ -335,14 +343,14 @@ export function OpportunityField({
                 onSelect({
                   kind: "position",
                   id: position.id,
-                  label: `${position.symbol} shadow position`,
+                  label: t("shadowPosition", { symbol: position.symbol }),
                   summary: position as unknown as Record<string, unknown>,
                 })
               }
             >
               <CheckCircle2 />
               <span>
-                <small>Shadow observation</small>
+                <small>{t("shadowObservation")}</small>
                 <strong>{position.symbol}</strong>
               </span>
               <StatusPill status={position.status} />
@@ -351,8 +359,8 @@ export function OpportunityField({
             <div className="position-line is-empty">
               <CircleDot />
               <span>
-                <small>Shadow observation</small>
-                <strong>No position</strong>
+                <small>{t("shadowObservation")}</small>
+                <strong>{t("noPosition")}</strong>
               </span>
             </div>
           )}
@@ -361,15 +369,12 @@ export function OpportunityField({
 
       <div className="field-footnote">
         <span>
-          <span className="legend-dot is-live" /> Active or recently updated
+          <span className="legend-dot is-live" /> {t("activeRecentlyUpdated")}
         </span>
         <span>
-          <span className="legend-dot" /> Waiting or historical
+          <span className="legend-dot" /> {t("waitingHistorical")}
         </span>
-        <span className="field-truth">
-          Private chain-of-thought is not exposed; saved artifacts and handoffs
-          are.
-        </span>
+        <span className="field-truth">{t("savedArtifactsTruth")}</span>
       </div>
     </section>
   );
@@ -404,10 +409,14 @@ function StageArrow({
   knownAt?: string;
   active: boolean;
 }) {
+  const { locale, relative, t } = useI18n();
+  const time = knownAt
+    ? `${locale === "zh-CN" ? "，" : ", "}${relative(knownAt)}`
+    : "";
   return (
     <div
       className={cn("stage-arrow", active && "is-active")}
-      aria-label={`Handoff from ${source} to ${target}${knownAt ? `, ${relativeTime(knownAt)}` : ""}`}
+      aria-label={t("handoffLabel", { source, target, time })}
     >
       <span />
       <em title={`${source} → ${target}`}>

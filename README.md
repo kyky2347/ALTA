@@ -113,6 +113,11 @@ _Forward evidence is kept separate from brokerage. The console labels sample
 maturity, uncertainty, forecast error, capital posture, and observed lifecycle
 quality without presenting Shadow results as proven Alpha._
 
+[![Synthetic ALTA credential center showing write-only provider activation](docs/assets/alta-credential-center.png)](docs/assets/alta-credential-center.png)
+
+_Synthetic credential-center preview. It contains no real provider state,
+fingerprints, tokens, account identifiers, or brokerage data._
+
 ## How ALTA works
 
 ```mermaid
@@ -254,6 +259,21 @@ an LLM, market-data provider, news service, or broker.
 ```shell
 git clone https://github.com/kyky2347/ALTA.git
 cd ALTA
+./alta dashboard
+```
+
+That single command performs a locked frontend install/build when needed and
+prints a one-time loopback URL. Open it, add any optional provider credentials
+in **Credentials**, then press **Start ALTA**. On a fresh clone, that button
+prepares the isolated Python environment, starts PostgreSQL and Redis, runs
+migrations, installs the current user's host service, and waits for genuine
+backend readiness. No separate frontend deployment or manual service install is
+required. The host still needs the prerequisites listed above; ALTA does not
+silently install Node, `uv`, Docker, or an operating-system service manager.
+
+For contributor verification:
+
+```shell
 corepack pnpm install --frozen-lockfile
 ./alta env setup --dev
 
@@ -335,25 +355,46 @@ Selecting any durable object opens its saved evidence, assessments, hand-offs,
 model route, tool provenance, artifacts, and audit state. The console never
 claims to expose a model's private chain-of-thought.
 
+The complete operator shell is available in English and Simplified Chinese.
+Use the language button in the global action bar to switch instantly; the
+choice survives reloads, and dates, numbers, statuses, controls, errors, empty
+states, and mobile layouts follow the selected locale. Durable Agent and
+research artifacts remain in their saved source language rather than being
+silently rewritten for display.
+
 ```shell
-corepack pnpm install --frozen-lockfile
-pnpm dashboard:build
-./alta dashboard install
-./alta dashboard open
+./alta dashboard
 ```
 
-The managed console starts after login and is restarted after an unexpected
-failure. `open` prints its one-time loopback URL only on explicit request; the
-URL is never written to service logs and is erased from owner-only host state
-after use. The browser receives an HttpOnly console session, never the
-Opportunity API bearer token. Start, restart, and safe-stop controls require
-same-origin CSRF validation. Safe stop also stops PostgreSQL and Redis while
-leaving the local console available for a later restart. These controls manage
-only the Shadow research runtime; they cannot install the service, reach Tiger
-Paper, submit an order, or enable capital. Use `./alta dashboard status|logs`,
-`./alta dashboard stop`, and `./alta dashboard uninstall` for lifecycle work.
-Running `./alta dashboard` without an action remains a foreground development
-mode. See the [operator-console guide](docs/operations/operator-console.md).
+The command remains in the foreground and owns only the loopback control plane;
+`Control-C` ends the console without silently stopping an already-running
+research service. It automatically performs a frozen-lockfile frontend build
+when the checkout is new or UI sources changed. The printed URL creates an
+HttpOnly local session; the browser never receives the Opportunity API bearer
+token. Start, restart, safe-stop, and credential replacement require exact
+same-origin CSRF validation.
+
+The **Credentials** view lists every supported external token slot—DeepSeek,
+xAI/Grok, Kimi, Massive, Finlight, Brave, Jina, and OpenAlex—by provider and
+purpose. It exposes only configuration state, source type, and a short one-way
+fingerprint. Raw secrets are write-only, cleared after submission, atomically
+stored outside the repository under owner-only permissions, and never returned
+to the browser. Environment-supplied credentials are visible as locked metadata
+and cannot be shadowed. Replacements are allowed only while the research
+runtime is fully stopped, preventing one cycle from mixing provider state.
+OpenAI continues to use the official Codex authentication flow rather than an
+API-key field.
+
+On a fresh clone, **Start ALTA** prepares the isolated environment and installs
+the user-level research service before starting it; subsequent starts are
+idempotent and wait for readiness. **Stop safely** stops the service,
+PostgreSQL, and Redis while leaving the foreground console available. The
+control plane remains Shadow research only: Tiger is displayed as a Paper-only
+boundary, but this capital-disabled build does not accept broker credentials,
+reach Tiger, submit an order, or expose an order API. An optional separately
+managed console service remains available through `./alta dashboard
+install|open|status|logs|stop|uninstall`. See the
+[operator-console guide](docs/operations/operator-console.md).
 
 The console is designed for imperfect operating conditions: refreshes are
 single-flight and time-bounded, transient failures recover with capped backoff,

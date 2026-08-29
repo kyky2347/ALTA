@@ -6,7 +6,10 @@ import { randomBytes } from "node:crypto";
 import { acquireLease } from "./storage.mjs";
 import { atomicWrite } from "./durable-file.mjs";
 import { loadResourceCredentials } from "./resource-credentials.mjs";
-import { credentialInventory } from "./credential-control.mjs";
+import {
+  credentialInventory,
+  replaceCredential,
+} from "./credential-control.mjs";
 import {
   HostServicePlatform,
   launchdDefinition,
@@ -243,6 +246,19 @@ export class OpportunityService {
       credentialRevision: credentials.revision,
       credentialSlots: credentials.configuredSlots,
     };
+  }
+
+  credentialInventory() {
+    const configured = this.ensureConfiguration();
+    return credentialInventory({ ...this.sourceEnv, ...configured });
+  }
+
+  replaceCredential(slot, secret) {
+    const configured = this.ensureConfiguration();
+    return replaceCredential(slot, secret, {
+      ...this.sourceEnv,
+      ...configured,
+    });
   }
 
   definition() {

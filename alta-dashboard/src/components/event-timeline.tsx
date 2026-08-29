@@ -6,7 +6,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { clockTime, titleCase } from "@/lib/display";
+import { useI18n } from "@/lib/i18n";
 import type { AltaEvent, SelectedEntity } from "@/lib/types";
 
 export function EventTimeline({
@@ -16,6 +16,7 @@ export function EventTimeline({
   events: AltaEvent[];
   onSelect: (entity: SelectedEntity) => void;
 }) {
+  const { clock, domain, t } = useI18n();
   const items = useMemo(
     () => [...events].sort((a, b) => a.cursor - b.cursor),
     [events],
@@ -59,27 +60,27 @@ export function EventTimeline({
     onSelect({
       kind: "event",
       id: event.eventId,
-      label: titleCase(event.eventType),
+      label: domain(event.eventType),
       summary: event as unknown as Record<string, unknown>,
     });
   }
 
   return (
-    <section className="timeline" aria-label="Recent event replay">
+    <section className="timeline" aria-label={t("recentEventReplay")}>
       <div className="timeline-label">
         <Rewind />
-        <span>Replay ribbon</span>
-        <small>{items.length} loaded durable events</small>
+        <span>{t("replayRibbon")}</span>
+        <small>{t("loadedDurableEvents", { count: items.length })}</small>
       </div>
       <div className="timeline-player">
         <div className="timeline-readout">
           <strong>
-            {active ? titleCase(active.eventType) : "Waiting for events"}
+            {active ? domain(active.eventType) : t("waitingForEvents")}
           </strong>
           <span>
             {active
-              ? `${clockTime(active.knownAt)} · #${active.cursor}`
-              : "No replay range"}
+              ? `${clock(active.knownAt)} · #${active.cursor}`
+              : t("noReplayRange")}
           </span>
         </div>
         <input
@@ -89,18 +90,18 @@ export function EventTimeline({
           value={activeIndex}
           disabled={!items.length}
           onChange={(event) => selectAt(Number(event.target.value))}
-          aria-label="Replay loaded decision history"
+          aria-label={t("replayLoadedHistory")}
         />
         <div className="timeline-scale">
-          <span>{clockTime(items[0]?.knownAt)}</span>
+          <span>{clock(items[0]?.knownAt)}</span>
           <span className="timeline-playhead">
-            {playCursor === null ? "LIVE" : "REPLAY"}
+            {playCursor === null ? t("live") : t("replayMode")}
           </span>
-          <span>{clockTime(items.at(-1)?.knownAt)}</span>
+          <span>{clock(items.at(-1)?.knownAt)}</span>
         </div>
         {!items.length && (
           <div className="timeline-waiting">
-            <Clock3 /> Waiting for the first event
+            <Clock3 /> {t("waitingFirstEvent")}
           </div>
         )}
       </div>
@@ -111,7 +112,7 @@ export function EventTimeline({
               variant="outline"
               size="icon-sm"
               disabled={!items.length}
-              aria-label={playing ? "Pause replay" : "Play replay"}
+              aria-label={playing ? t("pauseReplay") : t("playReplay")}
               onClick={() => {
                 if (!playing && playCursor === null)
                   setPlayCursor(items[0]?.cursor ?? null);
@@ -122,7 +123,7 @@ export function EventTimeline({
             </Button>
           </TooltipTrigger>
           <TooltipContent>
-            {playing ? "Pause replay" : "Play loaded history"}
+            {playing ? t("pauseReplay") : t("playLoadedHistory")}
           </TooltipContent>
         </Tooltip>
         <Button
@@ -137,7 +138,7 @@ export function EventTimeline({
             setPlayCursor(null);
           }}
         >
-          <Radio data-icon="inline-start" /> Live now
+          <Radio data-icon="inline-start" /> {t("liveNow")}
         </Button>
       </div>
     </section>

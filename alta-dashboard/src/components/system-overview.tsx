@@ -8,7 +8,7 @@ import {
   Waypoints,
 } from "lucide-react";
 import { StatusPill } from "@/components/status-pill";
-import { relativeTime, titleCase } from "@/lib/display";
+import { useI18n } from "@/lib/i18n";
 import type { MvpStatus, RuntimeDetail, SelectedEntity } from "@/lib/types";
 
 export function SystemOverview({
@@ -20,74 +20,73 @@ export function SystemOverview({
   runtime: RuntimeDetail | null;
   onSelect: (entity: SelectedEntity) => void;
 }) {
+  const { domain, relative, t } = useI18n();
   return (
     <section className="overview-grid">
       <OverviewBlock
         icon={FileSearch2}
-        label="Candidates"
+        label={t("candidates")}
         value={status.candidates.length}
-        detail="Recent foundry inputs"
+        detail={t("recentFoundryInputs")}
       />
       <OverviewBlock
         icon={Radar}
-        label="Opportunities"
+        label={t("opportunities")}
         value={status.opportunities.length}
-        detail="Deduplicated theses"
+        detail={t("deduplicatedTheses")}
       />
       <OverviewBlock
         icon={Bot}
-        label="Agent roles"
+        label={t("agentRoles")}
         value={status.agents.length}
-        detail={`${runtime?.minds.length ?? 0} persistent minds`}
+        detail={t("persistentMinds", { count: runtime?.minds.length ?? 0 })}
       />
       <OverviewBlock
         icon={Waypoints}
-        label="Expressions"
+        label={t("expressions")}
         value={status.expressions.length}
-        detail="Audited carriers"
+        detail={t("auditedCarriers")}
       />
       <OverviewBlock
         icon={ShieldCheck}
-        label="Shadow positions"
+        label={t("shadowPositions")}
         value={status.shadowPositions.length}
-        detail="Capital disabled"
+        detail={t("capitalDisabled")}
       />
       <OverviewBlock
         icon={Database}
-        label="Event cursor"
+        label={t("eventCursor")}
         value={status.eventCursor}
-        detail="Append-only ledger"
+        detail={t("appendOnlyLedger")}
       />
       <div className="overview-wide">
         <div className="overview-wide-head">
           <span>
-            <Activity /> Source posture
+            <Activity /> {t("sourcePosture")}
           </span>
           <StatusPill status={status.sources.length ? "observed" : "waiting"} />
         </div>
         <div className="source-list">
           {status.sources.slice(0, 5).map((source) => (
             <div key={source.id}>
-              <strong>{titleCase(source.id)}</strong>
+              <strong>{domain(source.id)}</strong>
               <span>
-                {titleCase(
-                  String(source.posture ?? source.status ?? "recorded"),
-                )}
+                {domain(String(source.posture ?? source.status ?? "recorded"))}
               </span>
-              <small>{relativeTime(source.knownAt)}</small>
+              <small>{relative(source.knownAt)}</small>
             </div>
           ))}
-          {!status.sources.length && (
-            <p>No source posture has been recorded.</p>
-          )}
+          {!status.sources.length && <p>{t("noSourcePosture")}</p>}
         </div>
       </div>
       <div className="overview-wide">
         <div className="overview-wide-head">
           <span>
-            <Bot /> Trader minds
+            <Bot /> {t("traderMinds")}
           </span>
-          <StatusPill status={`${runtime?.minds.length ?? 0} minds`} />
+          <StatusPill
+            status={t("minds", { count: runtime?.minds.length ?? 0 })}
+          />
         </div>
         <div className="mind-list">
           {runtime?.minds.slice(0, 4).map((mind) => (
@@ -97,15 +96,15 @@ export function SystemOverview({
                 onSelect({
                   kind: "event",
                   id: mind.id,
-                  label: titleCase(mind.id),
+                  label: domain(mind.id),
                   summary: mind as unknown as Record<string, unknown>,
                 })
               }
             >
-              <strong>{titleCase(mind.id)}</strong>
-              <span>{mind.rollingSummary ?? "No rolling summary saved"}</span>
+              <strong>{domain(mind.id)}</strong>
+              <span>{mind.rollingSummary ?? t("noRollingSummarySaved")}</span>
               <small>
-                {mind.modelId ?? mind.modelProvider ?? "Model pending"}
+                {mind.modelId ?? mind.modelProvider ?? t("modelPending")}
               </small>
             </button>
           ))}
@@ -126,6 +125,7 @@ function OverviewBlock({
   value: number;
   detail: string;
 }) {
+  const { number } = useI18n();
   return (
     <article className="overview-block">
       <span>
@@ -133,7 +133,7 @@ function OverviewBlock({
       </span>
       <div>
         <small>{label}</small>
-        <strong>{value.toLocaleString()}</strong>
+        <strong>{number(value)}</strong>
         <p>{detail}</p>
       </div>
     </article>

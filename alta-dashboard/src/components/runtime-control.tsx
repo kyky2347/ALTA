@@ -17,6 +17,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import type { ControlState } from "@/lib/types";
+import { useI18n } from "@/lib/i18n";
 
 type Action = "start" | "stop" | "restart";
 
@@ -29,6 +30,7 @@ export function RuntimeControl({
   disabled?: boolean;
   onAction: (action: Action) => Promise<void>;
 }) {
+  const { t } = useI18n();
   const [pending, setPending] = useState<Action | null>(null);
   const [confirm, setConfirm] = useState<Action | null>(null);
   const running = Boolean(
@@ -50,22 +52,20 @@ export function RuntimeControl({
 
   return (
     <>
-      <div className="runtime-control" aria-label="Research runtime controls">
+      <div className="runtime-control" aria-label={t("runtimeControls")}>
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
               size="sm"
               disabled={disabled || running || busy}
-              aria-label="Start research runtime"
+              aria-label={t("startRuntimeAria")}
               onClick={() => void execute("start")}
             >
               <Play data-icon="inline-start" />
-              <span className="runtime-action-label">Start</span>
+              <span className="runtime-action-label">{t("start")}</span>
             </Button>
           </TooltipTrigger>
-          <TooltipContent>
-            Start the installed shadow-research service
-          </TooltipContent>
+          <TooltipContent>{t("startRuntimeTip")}</TooltipContent>
         </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -73,7 +73,7 @@ export function RuntimeControl({
               size="icon-sm"
               variant="ghost"
               disabled={disabled || !running || busy}
-              aria-label="Restart research runtime"
+              aria-label={t("restartRuntimeAria")}
               onClick={() => setConfirm("restart")}
             >
               <RotateCw
@@ -81,17 +81,17 @@ export function RuntimeControl({
               />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Restart the research service</TooltipContent>
+          <TooltipContent>{t("restartRuntimeTip")}</TooltipContent>
         </Tooltip>
         <Button
           size="sm"
           variant="destructive"
           disabled={disabled || !running || busy}
-          aria-label="Stop research runtime"
+          aria-label={t("stopRuntimeAria")}
           onClick={() => setConfirm("stop")}
         >
           <CirclePause data-icon="inline-start" />
-          <span className="runtime-action-label">Stop</span>
+          <span className="runtime-action-label">{t("stop")}</span>
         </Button>
       </div>
       <AlertDialog
@@ -102,19 +102,19 @@ export function RuntimeControl({
           <AlertDialogHeader>
             <AlertDialogTitle>
               {confirm === "stop"
-                ? "Stop the research runtime?"
-                : "Restart the research runtime?"}
+                ? t("stopRuntimeConfirm")
+                : t("restartRuntimeConfirm")}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {confirm === "stop"
-                ? "ALTA will stop its agent service, supervisor, PostgreSQL, and Redis. The local dashboard shell remains available so you can start it again."
-                : "The autonomous service will restart and wait for readiness. No capital or broker path is available from this console."}
+                ? t("stopRuntimeDetail")
+                : t("restartRuntimeDetail")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
             <AlertDialogAction onClick={() => confirm && void execute(confirm)}>
-              {confirm === "stop" ? "Stop safely" : "Restart"}
+              {confirm === "stop" ? t("stopSafely") : t("restart")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
