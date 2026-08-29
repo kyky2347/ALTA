@@ -358,7 +358,6 @@ export class RuntimeEnvironment {
           controller.abort(new Error("Managed Python exceeded its deadline"));
         }, timeoutMs)
       : null;
-    timeout?.unref?.();
     try {
       const result = await this.passthroughRunner(this.files.python, args, {
         cwd: this.rootDir,

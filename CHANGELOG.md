@@ -44,6 +44,9 @@ semantic versioning while the project remains experimental.
 
 ### Changed
 
+- Managed Python execution deadlines now keep the wrapper event loop alive until
+  the child exits or the explicit timeout fires, giving Linux and macOS the same
+  hard-deadline behavior.
 - Legacy or malformed open positions without a trustworthy implementation-risk
   ticket now consume their full current notional as stress loss instead of
   receiving a favorable zero-risk assumption.
