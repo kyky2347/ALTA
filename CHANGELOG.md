@@ -47,6 +47,9 @@ semantic versioning while the project remains experimental.
 
 ### Fixed
 
+- CI Actions now use Node 24-compatible, immutable official release SHAs, so
+  publication checks no longer depend on GitHub's temporary Node 20 fallback.
+
 - A stopped runtime can no longer leave the workspace context labeled as an
   active cycle. The console now identifies retained data as a saved snapshot,
   while preserving the original durable record statuses for audit.
