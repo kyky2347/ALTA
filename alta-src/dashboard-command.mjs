@@ -2,6 +2,7 @@ import path from "node:path";
 import process from "node:process";
 import { createOperatorConsole } from "./operator-console.mjs";
 import { prepareDashboard } from "./dashboard-build.mjs";
+import { openDefaultBrowser } from "./browser-launcher.mjs";
 
 const MANAGED_ACTIONS = new Set([
   "install",
@@ -15,13 +16,20 @@ const MANAGED_ACTIONS = new Set([
   "run",
 ]);
 
-function parseOptions(args) {
-  const options = { host: "127.0.0.1", port: 8877 };
+export function parseDashboardOptions(args) {
+  const options = {
+    host: "127.0.0.1",
+    port: 8877,
+    portExplicit: false,
+    openBrowser: true,
+  };
   for (let index = 0; index < args.length; index += 1) {
     const value = args[index];
     if (value === "--host" && args[index + 1]) options.host = args[++index];
-    else if (value === "--port" && args[index + 1])
+    else if (value === "--port" && args[index + 1]) {
       options.port = Number(args[++index]);
+      options.portExplicit = true;
+    } else if (value === "--no-open") options.openBrowser = false;
     else throw new Error(`Unknown dashboard option ${value}`);
   }
   if (
@@ -33,6 +41,44 @@ function parseOptions(args) {
   if (!["127.0.0.1", "localhost", "::1"].includes(options.host))
     throw new Error("The operator dashboard must bind to a loopback address");
   return options;
+}
+
+function createConsole(options, dependencies) {
+  return (dependencies.consoleFactory ?? createOperatorConsole)({
+    host: options.host,
+    port: options.port,
+    staticDir: path.join(dependencies.rootDir, "alta-dashboard", "dist"),
+    service: dependencies.service,
+    environmentFactory: dependencies.environmentFactory,
+  });
+}
+
+async function listenConsole(options, dependencies) {
+  let consoleServer = createConsole(options, dependencies);
+  try {
+    return { consoleServer, location: await consoleServer.listen() };
+  } catch (error) {
+    await consoleServer.close().catch(() => {});
+    if (error?.code !== "EADDRINUSE" || options.portExplicit) throw error;
+    console.log(
+      `Dashboard port ${options.port} is occupied; selecting a free loopback port…`,
+    );
+    consoleServer = createConsole({ ...options, port: 0 }, dependencies);
+    return { consoleServer, location: await consoleServer.listen() };
+  }
+}
+
+async function openOrExplain(url, opener = openDefaultBrowser) {
+  try {
+    await opener(url);
+    console.log("  browser: opened automatically");
+    return true;
+  } catch (error) {
+    console.log("  browser: automatic opening was unavailable");
+    console.log(`  open manually: ${url}`);
+    console.log(`  reason: ${error.message}`);
+    return false;
+  }
 }
 
 function printStatus(status) {
@@ -53,7 +99,7 @@ function printStatus(status) {
   );
 }
 
-async function managedCommand(action, options, dashboard) {
+async function managedCommand(action, options, dashboard, opener) {
   if (options.length)
     throw new Error(`dashboard ${action} does not accept arguments`);
   if (action === "run") return dashboard.run();
@@ -87,7 +133,7 @@ async function managedCommand(action, options, dashboard) {
     await dashboard.stop();
     dashboard.platform.uninstall();
   } else if (action === "status") return printStatus(await dashboard.status());
-  else if (action === "open") return console.log(dashboard.openUrl());
+  else if (action === "open") return openOrExplain(dashboard.openUrl(), opener);
   else if (action === "logs") {
     for (const [name, lines] of Object.entries(dashboard.tailLogs())) {
       console.log(`\n${name}:`);
@@ -101,26 +147,39 @@ async function managedCommand(action, options, dashboard) {
 export async function dashboardCommand(args, dependencies) {
   const [action, ...rest] = args;
   if (MANAGED_ACTIONS.has(action))
-    return managedCommand(action, rest, dependencies.dashboardService);
+    return managedCommand(
+      action,
+      rest,
+      dependencies.dashboardService,
+      dependencies.openBrowser ?? openDefaultBrowser,
+    );
 
-  const options = parseOptions(args);
+  const options = parseDashboardOptions(args);
   await (dependencies.prepareDashboard ?? prepareDashboard)({
     rootDir: dependencies.rootDir,
   });
-  const consoleServer = createOperatorConsole({
-    ...options,
-    staticDir: path.join(dependencies.rootDir, "alta-dashboard", "dist"),
-    service: dependencies.service,
-    environmentFactory: dependencies.environmentFactory,
-  });
-  const location = await consoleServer.listen();
+  const { consoleServer, location } = await listenConsole(
+    options,
+    dependencies,
+  );
   console.log("ALTA operator dashboard");
-  console.log(`  open: ${location.openUrl}`);
+  console.log(`  endpoint: ${location.origin}`);
   console.log("  safety: loopback-only, shadow research, capital disabled");
+  if (options.openBrowser)
+    await openOrExplain(
+      location.openUrl,
+      dependencies.openBrowser ?? openDefaultBrowser,
+    );
+  else console.log(`  open manually: ${location.openUrl}`);
   const stop = async () => {
     await consoleServer.close();
   };
   process.once("SIGINT", stop);
   process.once("SIGTERM", stop);
-  await new Promise((resolve) => consoleServer.server.once("close", resolve));
+  try {
+    await new Promise((resolve) => consoleServer.server.once("close", resolve));
+  } finally {
+    process.removeListener("SIGINT", stop);
+    process.removeListener("SIGTERM", stop);
+  }
 }

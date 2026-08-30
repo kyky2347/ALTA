@@ -28,7 +28,8 @@ contracts without introducing external state or variable data.
 
 - macOS or Linux;
 - Node.js 22 or newer;
-- Corepack and pnpm 10.33 or compatible lockfile support;
+- npm; dashboard startup uses Corepack when available and otherwise bootstraps
+  the lockfile's pinned pnpm version;
 - `uv`;
 - OrbStack or Docker Desktop for PostgreSQL and Redis;
 - Rust only when rebuilding the pinned Codex harness.

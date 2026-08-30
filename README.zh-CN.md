@@ -184,18 +184,26 @@ runtime 命令分派拆成了职责单一且有测试覆盖的单元；组合构
 
 ## 快速开始：一条命令启动
 
-前置条件：macOS 或 Linux、Node.js 22+ 和 Corepack、`uv`，以及为 PostgreSQL 和
+前置条件：macOS 或 Linux、带 npm 的 Node.js 22+（有 Corepack 时优先使用）、`uv`，以及为 PostgreSQL 和
 Redis 提供运行环境的 OrbStack 或 Docker Desktop。
 
+首次下载时，可以在任意目录直接粘贴这一整行：
+
 ```shell
-git clone https://github.com/kyky2347/ALTA.git
-cd ALTA
-./alta dashboard
+git clone https://github.com/kyky2347/ALTA.git ALTA && npm --loglevel=error --prefix ALTA run dashboard
 ```
 
-这条命令会在首次运行或前端源码更新后自动按锁文件安装依赖、构建前端，并打印一次性 loopback
-访问地址。打开地址后，可先在 **Credentials / 凭据** 页面配置可选 Provider，再点击
-**Start ALTA / 启动 ALTA**。全新 clone 中，这个按钮会准备隔离的 Python 环境、启动
+已有项目时，不论终端当前在哪个目录，都可以使用带路径的单行命令：
+
+```shell
+npm --loglevel=error --prefix "/你的绝对路径/ALTA" run dashboard
+```
+
+若终端已经在仓库根目录，简写仍是 `./alta dashboard`。命令会在首次运行或前端源码更新后自动按
+锁文件安装依赖、构建前端，在默认端口被占用时选择空闲 loopback 端口，并主动打开系统默认浏览器；
+只有无桌面浏览器的环境才会打印需要手工打开的准确地址。打开后可先在 **Credentials / 凭据**
+页面配置可选 Provider，再点击 **Start ALTA / 启动 ALTA**。全新 clone 中，这个按钮会准备隔离
+的 Python 环境、启动
 PostgreSQL 与 Redis、执行迁移、安装当前用户的宿主服务，并等待后端真正达到 ready。无需另外部署
 前端或手工安装研究服务，但宿主机仍需先具备上述基础依赖；ALTA 不会静默安装 Node、`uv`、Docker
 或系统服务管理器。
@@ -674,13 +682,10 @@ Opportunity、Agent Run、表达或事件，会显示系统真正保存的输入
 日期、数字、状态、控制、错误、空状态和移动端布局都会随语言变化。Agent 和研究产物仍按数据库中
 保存的原始语言展示，不会为了界面翻译而悄悄改写审计记录。
 
-```shell
-./alta dashboard
-```
-
-该命令在前台运行 loopback 控制平面；`Control-C` 只结束操作台，不会暗中停止已经运行的研究服务。
-新 clone 或 UI 文件更新时会自动按冻结锁文件完成前端构建。打印的地址建立 HttpOnly 本机会话，浏览器
-永远看不到 Opportunity API Bearer token；启动、重启、安全停止和凭据替换都要求精确同源与 CSRF。
+操作台命令在前台运行 loopback 控制平面；`Control-C` 只结束操作台，不会暗中停止已经运行的研究服务。
+新 clone 或 UI 文件更新时会自动按冻结锁文件完成前端构建。一次性浏览器交接建立 HttpOnly 本机会话，
+浏览器永远看不到 Opportunity API Bearer token；仅无界面或自动化环境需要传入 `--no-open`。启动、
+重启、安全停止和凭据替换都要求精确同源与 CSRF。
 
 **凭据**页面按用途列出全部受支持的外部 Token 槽位：DeepSeek、xAI/Grok、Kimi、Massive、
 Finlight、Brave、Jina 和 OpenAlex。页面只展示是否配置、来源类型及短的一向 SHA-256 指纹；原始

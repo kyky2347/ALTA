@@ -51,6 +51,30 @@ function streamingRunner(command, args, options = {}) {
   });
 }
 
+async function runPnpm(runner, args, options) {
+  try {
+    return await runner("corepack", ["pnpm", ...args], options);
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+  console.log(
+    "Corepack is unavailable; bootstrapping the locked pnpm version with npm…",
+  );
+  try {
+    return await runner(
+      "npm",
+      ["exec", "--yes", "--package=pnpm@10.33.0", "--", "pnpm", ...args],
+      options,
+    );
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+    throw new Error(
+      "Node.js 22+ with npm is required to prepare the dashboard automatically",
+      { cause: error },
+    );
+  }
+}
+
 export async function prepareDashboard({
   rootDir,
   runner = streamingRunner,
@@ -63,15 +87,14 @@ export async function prepareDashboard({
   try {
     if (!dashboardBuildRequired(rootDir)) return { built: false };
     console.log("Preparing the ALTA operator dashboard (first run or update)…");
-    await runner("corepack", ["pnpm", "install", "--frozen-lockfile"], {
+    await runPnpm(runner, ["install", "--frozen-lockfile"], {
       cwd: rootDir,
       env,
     });
-    await runner(
-      "corepack",
-      ["pnpm", "--dir", "alta-dashboard", "build"],
-      { cwd: rootDir, env },
-    );
+    await runPnpm(runner, ["--dir", "alta-dashboard", "build"], {
+      cwd: rootDir,
+      env,
+    });
     return { built: true };
   } finally {
     lease.release();

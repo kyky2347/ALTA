@@ -16,14 +16,31 @@ terminal, an Alpha claim, or a way to expose private model chain-of-thought.
 
 This is the normal path on both an existing workspace and a fresh clone. It
 performs a frozen-lockfile frontend install/build only when output is missing or
-stale, binds to `127.0.0.1:8877`, and prints a one-time launch URL. Opening the
-URL creates an HttpOnly, `SameSite=Strict` local session and redirects to a
-clean address. Keep the command running; `Control-C` stops only the control
-plane and does not implicitly stop an autonomous research service.
+stale, binds to `127.0.0.1:8877`, and opens its one-time launch URL in the
+default browser. If that port is occupied and no explicit `--port` was supplied,
+it selects a free loopback port. The hand-off creates an HttpOnly,
+`SameSite=Strict` local session and redirects to a clean address. Keep the
+command running; `Control-C` stops only the control plane and does not
+implicitly stop an autonomous research service.
 
-Node.js 22+ with Corepack, `uv`, and a running Docker Compose-compatible engine
+`./alta` is a file in the repository, so a shell can resolve that short form
+only from the repository root. From any other directory, use the portable
+path-qualified command:
+
+```shell
+npm --loglevel=error --prefix "/absolute/path/to/ALTA" run dashboard
+```
+
+For a new checkout and first launch, one line is sufficient:
+
+```shell
+git clone https://github.com/kyky2347/ALTA.git ALTA && npm --loglevel=error --prefix ALTA run dashboard
+```
+
+Node.js 22+ with npm, `uv`, and a running Docker Compose-compatible engine
 remain host prerequisites. The command never installs those system
-dependencies silently.
+dependencies silently. It uses Corepack when present and otherwise bootstraps
+the lockfile's pinned pnpm version through npm.
 
 An optional managed console can instead start after user login and recover
 through the host service manager:
@@ -35,7 +52,8 @@ pnpm dashboard:build
 ./alta dashboard open
 ```
 
-The managed `open` command prints its one-time launch URL. That URL is stored
+The managed `open` command opens its one-time launch URL in the default browser
+(or prints it when no graphical launcher exists). That URL is stored
 only in an owner-only atomic host-state file, is never printed by the background
 process or written to its logs, and is removed from that file after it is
 claimed.
@@ -60,7 +78,8 @@ Alternate loopback ports are supported by foreground mode:
 ./alta dashboard --host 127.0.0.1 --port 8890
 ```
 
-Non-loopback bindings are rejected.
+Non-loopback bindings are rejected. Use `--no-open` only for headless or
+automated operation.
 
 ## What each view shows
 
@@ -216,18 +235,18 @@ external alert delivery, restore drills, and independent monitoring.
 
 ## Troubleshooting
 
-| Symptom                       | Check                                                                                                                          |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `console_unauthorized`        | Run `./alta dashboard restart`, then claim the URL from `./alta dashboard open`.                                               |
-| Dashboard update required     | Stop the foreground console, run `./alta dashboard` again, and reload the page.                                                |
-| First Start fails             | Verify Node/Corepack, `uv`, Docker Compose, and free loopback ports, then retry; the operation reports its exact failed phase. |
-| Credential cannot be changed  | Safely stop ALTA first; an environment-supplied value must be unset outside the browser.                                       |
-| Runtime stays stopped         | Check the persisted operation phase, then `./alta service logs`.                                                               |
-| Runtime is live but not ready | Inspect heartbeat and dependency posture; do not force a research cycle.                                                       |
-| No events appear              | Verify `/health/ready`, PostgreSQL health, and the current event cursor. An idle system may validly emit no new opportunity.   |
-| Port is in use                | Stop the conflicting process; use foreground mode with `--port` only for development.                                          |
-| Console says reconnecting     | Wait for automatic backoff or use **Retry**; controls stay locked until the control channel recovers.                          |
-| Power was interrupted         | After login, check both `./alta dashboard status` and `./alta service status`; inspect their separate logs if either is down.  |
+| Symptom                       | Check                                                                                                                         |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `console_unauthorized`        | Run `./alta dashboard restart`, then claim the URL from `./alta dashboard open`.                                              |
+| Dashboard update required     | Stop the foreground console, run `./alta dashboard` again, and reload the page.                                               |
+| First Start fails             | Verify Node/npm, `uv`, Docker Compose, and free loopback ports, then retry; the operation reports its exact failed phase.     |
+| Credential cannot be changed  | Safely stop ALTA first; an environment-supplied value must be unset outside the browser.                                      |
+| Runtime stays stopped         | Check the persisted operation phase, then `./alta service logs`.                                                              |
+| Runtime is live but not ready | Inspect heartbeat and dependency posture; do not force a research cycle.                                                      |
+| No events appear              | Verify `/health/ready`, PostgreSQL health, and the current event cursor. An idle system may validly emit no new opportunity.  |
+| Port is in use                | Stop the conflicting process; use foreground mode with `--port` only for development.                                         |
+| Console says reconnecting     | Wait for automatic backoff or use **Retry**; controls stay locked until the control channel recovers.                         |
+| Power was interrupted         | After login, check both `./alta dashboard status` and `./alta service status`; inspect their separate logs if either is down. |
 
 Use `./alta dashboard stop` to stop the managed console. In foreground mode,
 use `Control-C`. Neither action implicitly stops an already running autonomous

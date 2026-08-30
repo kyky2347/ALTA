@@ -87,8 +87,8 @@ Usage:
                                 Operate the unattended 24x7 Opportunity service
   ./alta dashboard [install|start|stop|restart|status|open|logs|uninstall]
                                 Operate the restartable local operator console
-  ./alta dashboard [--host 127.0.0.1] [--port 8877]
-                                Prepare and run the local control plane in one command
+  ./alta dashboard [--host 127.0.0.1] [--port 8877] [--no-open]
+                                Prepare, run, and open the local control plane
   ./alta status                  Show storage and supervisor health
   ./alta setup                   Build the private binary and prepare local state
   ./alta build                   Rebuild the private release binary

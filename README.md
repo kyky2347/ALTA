@@ -251,21 +251,31 @@ an LLM, market-data provider, news service, or broker.
 ### Prerequisites
 
 - macOS or Linux;
-- Node.js 22+ and Corepack;
+- Node.js 22+ with npm (Corepack is used when available);
 - `uv`;
 - Docker Desktop, OrbStack, or another Docker Compose-compatible runtime; and
 - Rust only when rebuilding the project-local Codex harness.
 
+For a first checkout, paste one command from any directory:
+
 ```shell
-git clone https://github.com/kyky2347/ALTA.git
-cd ALTA
-./alta dashboard
+git clone https://github.com/kyky2347/ALTA.git ALTA && npm --loglevel=error --prefix ALTA run dashboard
 ```
 
-That single command performs a locked frontend install/build when needed and
-prints a one-time loopback URL. Open it, add any optional provider credentials
-in **Credentials**, then press **Start ALTA**. On a fresh clone, that button
-prepares the isolated Python environment, starts PostgreSQL and Redis, runs
+For an existing checkout, the path-qualified form also works from any directory
+and cannot be confused with a missing `./alta` in the current directory:
+
+```shell
+npm --loglevel=error --prefix "/absolute/path/to/ALTA" run dashboard
+```
+
+From the repository root, the shorter equivalent is `./alta dashboard`.
+The command performs a locked frontend install/build when needed, binds to an
+available loopback port, and opens the default browser automatically. If the
+host has no graphical browser, it prints the exact manual URL instead. Add any
+optional provider credentials in **Credentials**, then press **Start ALTA**. On
+a fresh clone, that button prepares the isolated Python environment, starts
+PostgreSQL and Redis, runs
 migrations, installs the current user's host service, and waits for genuine
 backend readiness. No separate frontend deployment or manual service install is
 required. The host still needs the prerequisites listed above; ALTA does not
@@ -362,17 +372,14 @@ states, and mobile layouts follow the selected locale. Durable Agent and
 research artifacts remain in their saved source language rather than being
 silently rewritten for display.
 
-```shell
-./alta dashboard
-```
-
-The command remains in the foreground and owns only the loopback control plane;
+The dashboard command remains in the foreground and owns only the loopback control plane;
 `Control-C` ends the console without silently stopping an already-running
 research service. It automatically performs a frozen-lockfile frontend build
-when the checkout is new or UI sources changed. The printed URL creates an
-HttpOnly local session; the browser never receives the Opportunity API bearer
-token. Start, restart, safe-stop, and credential replacement require exact
-same-origin CSRF validation.
+when the checkout is new or UI sources changed. Its one-time browser hand-off
+creates an HttpOnly local session; the browser never receives the Opportunity
+API bearer token. Pass `--no-open` only for headless or automated use. Start,
+restart, safe-stop, and credential replacement require exact same-origin CSRF
+validation.
 
 The **Credentials** view lists every supported external token slot—DeepSeek,
 xAI/Grok, Kimi, Massive, Finlight, Brave, Jina, and OpenAlex—by provider and

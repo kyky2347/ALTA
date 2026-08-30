@@ -64,3 +64,37 @@ test("dashboard preparation is a no-op when the built UI is current", async (t) 
     { built: false },
   );
 });
+
+test("dashboard preparation falls back to pinned pnpm through npm", async (t) => {
+  const rootDir = fixture(t);
+  const calls = [];
+  const runner = async (command, args) => {
+    calls.push({ command, args });
+    if (command === "corepack") {
+      const error = new Error("not found");
+      error.code = "ENOENT";
+      throw error;
+    }
+    if (args.at(-1) === "build") {
+      const dist = path.join(rootDir, "alta-dashboard", "dist");
+      fs.mkdirSync(dist, { recursive: true });
+      fs.writeFileSync(path.join(dist, "index.html"), "built\n");
+    }
+  };
+
+  assert.deepEqual(await prepareDashboard({ rootDir, runner }), {
+    built: true,
+  });
+  assert.deepEqual(
+    calls.map(({ command }) => command),
+    ["corepack", "npm", "corepack", "npm"],
+  );
+  assert.deepEqual(calls[1].args.slice(0, 6), [
+    "exec",
+    "--yes",
+    "--package=pnpm@10.33.0",
+    "--",
+    "pnpm",
+    "install",
+  ]);
+});

@@ -9,7 +9,10 @@ the loopback control plane in `alta-src/operator-console.mjs`.
 ```
 
 That is the complete normal startup command. It performs a locked dependency
-install and production build when needed, then serves the UI on loopback. The
+install and production build when needed, serves the UI on loopback, and opens
+the default browser automatically. From outside the repository, use
+`npm --loglevel=error --prefix "/absolute/path/to/ALTA" run dashboard`; this
+avoids depending on the shell's current directory. The
 first **Start ALTA** click on a new clone prepares the isolated environment,
 installs the current user's research service, and waits for backend readiness.
 The operator console keeps the backend bearer token outside the browser and
