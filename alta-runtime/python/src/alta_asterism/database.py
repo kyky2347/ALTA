@@ -13,6 +13,7 @@ from .alpha_feedback import AlphaFeedbackProjector
 from .alpha_reporting import (
     alpha_capital_governance as load_alpha_capital_governance,
     alpha_summary as build_alpha_summary,
+    execution_cost_governance as load_execution_cost_governance,
     forecast_calibration_governance as load_forecast_calibration_governance,
 )
 from .contracts import Event
@@ -21,10 +22,14 @@ from .forecast_calibration import (
     ForecastCalibrationGovernance,
     ForecastCalibrationPolicy,
 )
+from .execution_quality import ExecutionCostGovernance, ExecutionCostPolicy
 from .investment_thesis import pillar_research_question
+from .implementation import PortfolioRiskPolicy
 from .migrations import CURRENT_TABLES, LATEST_REVISION, MIGRATIONS
 from .research_agenda import build_open_research_questions
 from .research_diligence import ResearchDiligence, strongest_diligence
+from .research_attention import ResearchAttentionProjector
+from .trader_mind import SCOUTS
 
 
 OPPORTUNITY_DETAIL_KEYS = (
@@ -622,7 +627,12 @@ class Database:
             ],
         }
 
-    def runtime_detail(self, environment: str) -> dict[str, Any]:
+    def runtime_detail(
+        self,
+        environment: str,
+        portfolio_policy: PortfolioRiskPolicy | None = None,
+        universe: tuple[str, ...] | None = None,
+    ) -> dict[str, Any]:
         with self.connect() as connection:
             minds = connection.execute(
                 """SELECT scout_id, version, known_at, thread_id, turn_count,
@@ -664,12 +674,25 @@ class Database:
                 }
                 for row in cursors
             ],
-            "alpha": self.alpha_summary(environment),
+            "alpha": self.alpha_summary(environment, portfolio_policy),
             "alphaFeedback": AlphaFeedbackProjector(self).public_summary(environment),
+            "researchAttention": (
+                ResearchAttentionProjector(self).public_summary(
+                    environment,
+                    universe,
+                    tuple(item.scout_id for item in SCOUTS),
+                )
+                if universe
+                else None
+            ),
         }
 
-    def alpha_summary(self, environment: str) -> dict[str, Any]:
-        return build_alpha_summary(self, environment)
+    def alpha_summary(
+        self,
+        environment: str,
+        portfolio_policy: PortfolioRiskPolicy | None = None,
+    ) -> dict[str, Any]:
+        return build_alpha_summary(self, environment, portfolio_policy)
 
     def alpha_capital_governance(
         self,
@@ -696,6 +719,22 @@ class Database:
         policy: ForecastCalibrationPolicy | None = None,
     ) -> ForecastCalibrationGovernance:
         return load_forecast_calibration_governance(
+            self,
+            environment,
+            source_portfolio_policy_version=source_portfolio_policy_version,
+            expression_kind=expression_kind,
+            policy=policy,
+        )
+
+    def execution_cost_governance(
+        self,
+        environment: str,
+        *,
+        source_portfolio_policy_version: str,
+        expression_kind: str,
+        policy: ExecutionCostPolicy | None = None,
+    ) -> ExecutionCostGovernance:
+        return load_execution_cost_governance(
             self,
             environment,
             source_portfolio_policy_version=source_portfolio_policy_version,

@@ -57,6 +57,7 @@ def test_settings_redact_runtime_urls_and_default_to_replay() -> None:
             "trade_loss_budget_bps": "25",
             "max_position_nav_bps": "100",
             "max_gross_nav_bps": "800",
+            "max_underlying_nav_bps": "150",
             "equity_stress_floor_bps": "2500",
             "max_exit_days": 2,
             "adv_participation_bps": "500",
@@ -112,6 +113,28 @@ def test_settings_redact_runtime_urls_and_default_to_replay() -> None:
     assert "redis-secret" not in repr(settings)
 
 
+def test_settings_accept_the_complete_gateway_credential_inventory() -> None:
+    settings = Settings(
+        DATABASE_URL="postgresql://fixture.invalid/alta",
+        REDIS_URL="redis://fixture.invalid/0",
+        ALTA_CREDENTIAL_SLOTS=(
+            "deepseek,xai,kimi,massive,finlight,finnhub,brave,jina,openalex"
+        ),
+    )
+
+    assert settings.credential_slots == (
+        "deepseek",
+        "xai",
+        "kimi",
+        "massive",
+        "finlight",
+        "finnhub",
+        "brave",
+        "jina",
+        "openalex",
+    )
+
+
 def test_agent_deadline_is_bounded_and_configurable() -> None:
     baseline = {
         "DATABASE_URL": "postgresql://fixture.invalid/alta",
@@ -146,8 +169,11 @@ def test_shadow_portfolio_limits_are_internally_consistent() -> None:
 
     assert settings.shadow_reference_nav == 1_000_000
     assert settings.shadow_trade_loss_budget_bps == 25
+    assert settings.shadow_max_underlying_nav_bps == 150
     with pytest.raises(ValidationError, match="position NAV limit"):
         Settings(**baseline, ALTA_SHADOW_MAX_POSITION_NAV_BPS=900)
+    with pytest.raises(ValidationError, match="underlying NAV limit"):
+        Settings(**baseline, ALTA_SHADOW_MAX_UNDERLYING_NAV_BPS=50)
     with pytest.raises(ValidationError, match="cannot exceed the NAV position limit"):
         Settings(**baseline, ALTA_SHADOW_REFERENCE_NAV=100_000)
 

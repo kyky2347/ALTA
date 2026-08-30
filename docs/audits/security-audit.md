@@ -1,6 +1,6 @@
 # ALTA publication security audit
 
-Audit date: 2026-08-29
+Audit date: 2026-08-30
 
 Target: the exact source tree and new Git history prepared for
 `https://github.com/kyky2347/ALTA`
@@ -23,32 +23,33 @@ remediation, and a complete rescan.
 
 ## Publication checks
 
-| Check                                                 |                                             Result |
-| ----------------------------------------------------- | -------------------------------------------------: |
-| Gitleaks 8.30.1 over the exact publication tree       |                                         0 findings |
-| Gitleaks 8.30.1 over the complete publication history |                                         0 findings |
-| detect-secrets 1.5.0 over first-party non-test source |                                         0 findings |
-| pnpm production dependency audit                      |                           no known vulnerabilities |
-| pip-audit over the installed Opportunity OS runtime   |                           no known vulnerabilities |
-| Synthetic fixture and credential-keyword review       |                                               PASS |
-| Unrelated prior project/account identity scan         |                                         0 findings |
-| First-party owner-local absolute-path scan            |                                         0 findings |
-| `.env.example` non-empty credential placeholders      |                                                  0 |
-| Local generated credential state                      |           present under ignored `.alta/`; 0 staged |
-| Largest tracked file                                  |                                    less than 1 MiB |
-| Clean tracked checkout and locked install             |                                               PASS |
-| Node gateway / harness tests                          |                                         159 passed |
-| Opportunity OS tests                                  |                                         264 passed |
-| Isolated capital-package tests                        |                                          25 passed |
-| Ruff lint and format checks                           |                                               PASS |
-| Prettier and Markdown checks                          |                                               PASS |
-| Deterministic demo / replay                           |                                   exact hash match |
-| Accelerated 14-cycle soak                             |                 PASS; 0 failures; 0 manual repairs |
-| ALTA-managed containers after verification            |                                                  0 |
-| Loopback service listeners after verification         |                                                  0 |
-| Research Director deployment                          | 2 unique follow-ups; 2 explore; 4/4 Runs succeeded |
-| Cold operator-console clone                           |     one command; locked install/build; protocol v2 |
-| Browser lifecycle acceptance                          |        Start → ready → safe stop; capital disabled |
+| Check                                                 |                                                       Result |
+| ----------------------------------------------------- | -----------------------------------------------------------: |
+| Gitleaks 8.30.1 over the exact publication tree       |                                                   0 findings |
+| Gitleaks 8.30.1 over the complete publication history |                                                   0 findings |
+| detect-secrets 1.5.0 over first-party non-test source | 0 credential values; 2 reviewed keyword-only false positives |
+| pnpm production dependency audit                      |                                     no known vulnerabilities |
+| pip-audit over the installed Opportunity OS runtime   |                                     no known vulnerabilities |
+| Synthetic fixture and credential-keyword review       |                                                         PASS |
+| Unrelated prior project/account identity scan         |                                                   0 findings |
+| First-party owner-local absolute-path scan            |                                                   0 findings |
+| `.env.example` non-empty credential placeholders      |                                                            0 |
+| Local generated credential state                      |                     present under ignored `.alta/`; 0 staged |
+| Largest tracked file                                  |                                              less than 1 MiB |
+| Clean tracked checkout and locked install             |                                                         PASS |
+| Node gateway / harness tests                          |                                                   168 passed |
+| Opportunity OS tests                                  |                                                   284 passed |
+| Isolated capital-package tests                        |                                                    25 passed |
+| Ruff lint and format checks                           |                                                         PASS |
+| Prettier and Markdown checks                          |                                                         PASS |
+| Browser offline/reconnect and safe-stop state         |                                                         PASS |
+| Deterministic demo / replay                           |                                             exact hash match |
+| Accelerated 14-cycle soak                             |                           PASS; 0 failures; 0 manual repairs |
+| ALTA-managed containers after verification            |                                                            0 |
+| Loopback service listeners after verification         |                                                            0 |
+| Research Director deployment                          |           2 unique follow-ups; 2 explore; 4/4 Runs succeeded |
+| Cold operator-console clone                           |               one command; locked install/build; protocol v2 |
+| Browser lifecycle acceptance                          |                  Start → ready → safe stop; capital disabled |
 
 The clean tracked checkout produced three Candidates, three Opportunities, one
 audited expression, and one fully observed Shadow position. Replay reproduced
@@ -64,6 +65,21 @@ successful Trader Minds. The cycle ended `MVP_IDLE`; capital remained disabled,
 no broker path or order was used, and the service, listener, PostgreSQL, and
 Redis were stopped. This is an orchestration acceptance, not an Alpha claim.
 
+A bounded 2026-08-29 EDT smoke also verified the authenticated v8 portfolio
+risk envelope, responsive bilingual console, autonomous idle completion, and
+zero consecutive failures with capital disabled. It exposed and fixed a
+durable-role byte-accounting mismatch between compact application JSON and
+PostgreSQL `jsonb::text`. The dashboard, service, data stores, and loopback
+listeners were verified stopped afterward.
+
+A later same-day bounded smoke verified the authenticated execution-quality
+and carrier-specific cost-governance contracts against the live local service.
+The bilingual console rendered the new TCA surface without horizontal overflow
+at 1440, 768, and 390 CSS pixels, produced no browser-console errors, and kept
+mobile control and inspector-tab heights at 44 pixels. Capital remained
+disabled. The dashboard, Agent scheduler, service, PostgreSQL, Redis, and both
+loopback listeners were verified stopped afterward.
+
 ## Scan interpretation
 
 The full-tree Gitleaks scan uses the repository's default rules plus narrowly
@@ -77,6 +93,10 @@ and documentation. Tests contain intentionally obvious values such as
 `fixture-secret` and `synthetic-private-key` to verify redaction and privilege
 boundaries. Those values were reviewed as non-credentials, remain covered by
 the complete Gitleaks scan, and are never accepted as production defaults.
+The current first-party scan reports two `Secret Keyword` hits: the translated
+label stating that a secret is never returned to the browser, and the server's
+write-only `body.secret` schema check. Neither location contains a credential
+value; both are required descriptions of the credential boundary.
 Dependency lockfile hashes and attributed upstream fixtures are not interpreted
 as owner credentials.
 

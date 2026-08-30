@@ -15,7 +15,7 @@ const MAX_TOOL_ERROR_BYTES = 900;
 const TRUNCATION_NOTICE =
   "\n...[ALTA truncated this result; narrow the request or fetch sources individually]";
 const SERVER_INSTRUCTIONS =
-  "Use file read for bounded workspace pages; social search, news search, finance data, and academic search for public evidence; and general search/research or archive/feed/sitemap for broader discovery. TradingView navigation only builds display links: never pass its URLs to fetch, batch-fetch, crawl, research, sitemap, feed, social-read, or archive tools. Prefer primary sources. All tools are read-only and bounded.";
+  "Use file read for bounded workspace pages; social search, news search, finance data (including authenticated Finnhub company intelligence when configured), and academic search for public evidence; and general search/research or archive/feed/sitemap for broader discovery. Work in stages: locate an anomaly, inspect the strongest source, verify it through an orthogonal channel, check price or expectations, and test the best rival explanation. TradingView navigation only builds display links: never pass its URLs to fetch, batch-fetch, crawl, research, sitemap, feed, social-read, or archive tools. Prefer primary sources. All tools are read-only and bounded.";
 
 function response(id, result) {
   return { jsonrpc: "2.0", id, result };

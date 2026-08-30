@@ -66,6 +66,9 @@ export type CredentialSlot = {
   category: "models" | "market_data" | "news" | "research";
   purpose: string;
   configured: boolean;
+  operational: boolean;
+  credentialRequirement: "required" | "optional";
+  availableWithoutCredential?: boolean;
   source: string;
   sourceKind: "environment" | "external" | "missing";
   editable: boolean;
@@ -76,12 +79,22 @@ export type CredentialInventory = {
   revision: string;
   configuredSlots: string[];
   slots: CredentialSlot[];
+  providerNetwork: Array<{
+    category: string;
+    providers: string[];
+  }>;
   trading: {
     provider: "Tiger Trade";
     mode: "paper_only";
-    configured: false;
+    configured: boolean;
     editable: false;
-    status: "capital_runtime_disabled";
+    source: string;
+    sourceKind: "environment" | "external" | "missing";
+    fingerprint: string | null;
+    status:
+      | "configured_external_capital_disabled"
+      | "not_configured_capital_disabled"
+      | "invalid_external_config";
   };
 };
 
@@ -239,6 +252,61 @@ export type PathDiagnosticsSummary = {
   warning?: string;
 };
 
+export type ExecutionQualitySummary = {
+  posture?: string;
+  measuredPositions?: number;
+  minimumSample?: number;
+  meanEstimatedCostBps?: string | null;
+  meanRealizedCostBps?: string | null;
+  meanCostSurpriseBps?: string | null;
+  withinBudgetRate?: string | null;
+  openFillRate?: string | null;
+  openFills?: number;
+  openNoFills?: number;
+  exitFills?: number;
+  exitNoFills?: number;
+  warning?: string;
+};
+
+export type ExecutionCostGovernanceSummary = {
+  policyVersion?: string;
+  sourcePortfolioPolicyVersion?: string;
+  expressionKind?: string;
+  posture?: string;
+  sampleSize?: number;
+  windowSize?: number;
+  minimumSample?: number;
+  meanEstimatedCostBps?: string | null;
+  meanRealizedCostBps?: string | null;
+  meanCostSurpriseBps?: string | null;
+  meanAbsoluteSurpriseBps?: string | null;
+  withinBudgetRate?: string | null;
+  alphaReserveBps?: string;
+  observedThrough?: string | null;
+  reasonCodes?: string[];
+};
+
+export type PortfolioRiskSummary = {
+  policyVersion?: string;
+  posture?: string;
+  knownOpenPositions?: number;
+  referenceNav?: string;
+  grossNotional?: string;
+  grossNavBps?: string;
+  grossLimitNavBps?: string;
+  aggregateStressLoss?: string;
+  stressNavBps?: string;
+  stressLimitNavBps?: string;
+  underlyingLimitNavBps?: string;
+  underlyingBuckets?: Array<{
+    underlyingKey: string;
+    openPositions: number;
+    grossNotional: string;
+    grossNavBps: string;
+    estimatedStressLoss: string;
+  }>;
+};
+
 export type AlphaSummary = {
   measurement?: string;
   closedPositions?: number;
@@ -253,7 +321,36 @@ export type AlphaSummary = {
   underwritingCalibration?: UnderwritingCalibrationSummary;
   forecastCalibrationGovernance?: ForecastCalibrationGovernanceSummary;
   pathDiagnostics?: PathDiagnosticsSummary;
+  executionQuality?: ExecutionQualitySummary;
+  executionCostGovernance?: Partial<
+    Record<"stock" | "etf" | "option", ExecutionCostGovernanceSummary>
+  >;
+  portfolioRisk?: PortfolioRiskSummary | null;
   warning?: string;
+};
+
+export type ResearchAttentionSummary = {
+  version: string;
+  knownAt: string;
+  observedThrough?: string | null;
+  maximumWindow: number;
+  minimumSample: number;
+  concentrationThreshold: string;
+  sampleSize: number;
+  uniqueEntities: number;
+  topEntity?: string | null;
+  topEntityShare?: string | null;
+  concentrationHhi?: string | null;
+  effectiveBreadth?: string | null;
+  posture: "insufficient_sample" | "balanced" | "concentrated";
+  continuationScoutId?: string | null;
+  assignments: Array<{
+    scoutId: string;
+    mode: "unconstrained" | "continue_lead" | "expand_coverage";
+    deprioritizedEntities: string[];
+    directive: string;
+  }>;
+  warning: string;
 };
 
 export type RuntimeDetail = {
@@ -268,6 +365,7 @@ export type RuntimeDetail = {
   }>;
   sourceCursors: Array<{ source: string; cursor: string; knownAt: string }>;
   alpha?: AlphaSummary;
+  researchAttention?: ResearchAttentionSummary | null;
   config: Record<string, unknown> & {
     autonomousStatus?: string;
     currentCycleId?: string;

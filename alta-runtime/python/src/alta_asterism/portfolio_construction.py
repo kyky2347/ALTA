@@ -10,11 +10,12 @@ from .alpha_isolation import (
 from .alpha_lifecycle import AlphaClock, build_alpha_clock
 from .database import Database
 from .execution_planning import build_execution_plan
+from .execution_quality import ExecutionCostGovernance
 from .forecast_calibration import ForecastCalibrationGovernance
 from .implementation import PortfolioRiskPolicy, PortfolioState, TradeImplementationPlan
 from .market_data import MarketInstrument
 from .opportunity_identity import normalize_catalyst_bucket
-from .portfolio_state import load_portfolio_state
+from .portfolio_state import load_portfolio_state, normalize_underlying_key
 from .underwriting import (
     ScenarioUnderwriting,
     consensus_decision,
@@ -73,6 +74,20 @@ class PortfolioConstructor:
             expression_kind=expression_kind,
         )
 
+    def load_execution_cost_governance(
+        self, expression_kind: str
+    ) -> ExecutionCostGovernance:
+        if self.database is None:
+            return ExecutionCostGovernance.unscoped(
+                self.policy.version,
+                expression_kind,
+            )
+        return self.database.execution_cost_governance(
+            "shadow",
+            source_portfolio_policy_version=self.policy.version,
+            expression_kind=expression_kind,
+        )
+
     def plan(
         self,
         instrument: MarketInstrument,
@@ -92,6 +107,7 @@ class PortfolioConstructor:
         research_quality_score: Decimal | None = None,
         alpha_capital_governance: AlphaCapitalGovernance | None = None,
         forecast_calibration_governance: (ForecastCalibrationGovernance | None) = None,
+        execution_cost_governance: ExecutionCostGovernance | None = None,
         catalyst_key: str | None = None,
     ) -> TradeImplementationPlan:
         state = state or self.load_state()
@@ -100,6 +116,10 @@ class PortfolioConstructor:
         forecast_calibration = (
             forecast_calibration_governance
             or self.load_forecast_calibration(instrument.kind)
+        )
+        execution_governance = (
+            execution_cost_governance
+            or self.load_execution_cost_governance(instrument.kind)
         )
         isolation = alpha_isolation or legacy_alpha_isolation()
         isolation_multiplier = (
@@ -120,7 +140,9 @@ class PortfolioConstructor:
         portfolio_stress_limit = policy.dollars(policy.max_portfolio_stress_nav_bps)
         alpha_source_limit = policy.dollars(policy.max_alpha_source_nav_bps)
         catalyst_limit = policy.dollars(policy.max_catalyst_nav_bps)
+        underlying_limit = policy.dollars(policy.max_underlying_nav_bps)
         normalized_catalyst_key = normalize_catalyst_bucket(catalyst_key)
+        underlying_key = normalize_underlying_key(instrument.underlying_symbol)
         alpha_source_before = next(
             (
                 item.gross_notional
@@ -134,6 +156,14 @@ class PortfolioConstructor:
                 item.gross_notional
                 for item in state.catalyst_buckets
                 if item.catalyst_key == normalized_catalyst_key
+            ),
+            Decimal(0),
+        )
+        underlying_before = next(
+            (
+                item.gross_notional
+                for item in state.underlying_buckets
+                if item.underlying_key == underlying_key
             ),
             Decimal(0),
         )
@@ -152,6 +182,8 @@ class PortfolioConstructor:
             "research_quality_multiplier": research_multiplier,
             "alpha_capital_governance": capital_governance,
             "forecast_calibration_governance": forecast_calibration,
+            "execution_cost_governance": execution_governance,
+            "execution_cost_reserve_bps": execution_governance.alpha_reserve_bps,
             "reference_nav": policy.reference_nav,
             "loss_budget": loss_budget,
             "position_notional_limit": position_limit,
@@ -168,6 +200,9 @@ class PortfolioConstructor:
             "catalyst_key": normalized_catalyst_key,
             "catalyst_notional_before": catalyst_before,
             "catalyst_notional_limit": catalyst_limit,
+            "underlying_key": underlying_key,
+            "underlying_notional_before": underlying_before,
+            "underlying_notional_limit": underlying_limit,
             "monitoring_triggers": monitoring_triggers,
         }
         admission_reason = self._admission_reason(
@@ -185,7 +220,9 @@ class PortfolioConstructor:
         calibration_reserve = forecast_calibration.alpha_reserve_bps
         expected_alpha = unreserved_expected_alpha - calibration_reserve
         cost_bps = self._cost_bps(instrument)
-        expected_net_alpha = expected_alpha - cost_bps
+        expected_net_alpha = (
+            expected_alpha - cost_bps - execution_governance.alpha_reserve_bps
+        )
         decision_horizon_days = min(horizon_days, decision.edge_half_life_days)
         clock = build_alpha_clock(
             known_at=known_at or instrument.quote.known_at,
@@ -234,6 +271,8 @@ class PortfolioConstructor:
             alpha_source_limit=alpha_source_limit,
             catalyst_before=catalyst_before,
             catalyst_limit=catalyst_limit,
+            underlying_before=underlying_before,
+            underlying_limit=underlying_limit,
             isolation_multiplier=isolation_multiplier,
             research_multiplier=research_multiplier,
             capital_multiplier=capital_governance.capital_multiplier,
@@ -321,6 +360,7 @@ class PortfolioConstructor:
             ),
             alpha_source_notional_after=alpha_source_before + target_notional,
             catalyst_notional_after=catalyst_before + target_notional,
+            underlying_notional_after=underlying_before + target_notional,
             target_notional=target_notional,
             target_quantity=quantity,
             estimated_stress_loss=stress_loss,
@@ -382,6 +422,8 @@ class PortfolioConstructor:
         alpha_source_limit: Decimal,
         catalyst_before: Decimal,
         catalyst_limit: Decimal,
+        underlying_before: Decimal,
+        underlying_limit: Decimal,
         isolation_multiplier: Decimal,
         research_multiplier: Decimal,
         capital_multiplier: Decimal,
@@ -437,6 +479,9 @@ class PortfolioConstructor:
                 ),
             ),
             "catalyst_remaining": max(Decimal(0), catalyst_limit - catalyst_before),
+            "underlying_remaining": max(
+                Decimal(0), underlying_limit - underlying_before
+            ),
             "liquidity_exit_capacity": liquidity_capacity,
         }
         exposure_capacity, exposure_tag = self._exposure_capacity(state, isolation)
@@ -490,6 +535,19 @@ class PortfolioConstructor:
         if plan.status != "ready":
             return ("implementation_plan_not_ready",)
         state = self.load_state()
+        return (
+            *self._revalidate_book_limits(plan, state, prospective_rotation),
+            *self._revalidate_governance(plan),
+            *self._revalidate_concentration(plan, state),
+            *self._revalidate_alpha_clock(plan),
+        )
+
+    def _revalidate_book_limits(
+        self,
+        plan: TradeImplementationPlan,
+        state: PortfolioState,
+        prospective_rotation: bool,
+    ) -> tuple[str, ...]:
         reasons = []
         if state.known_open_positions > self.max_open_positions or (
             state.known_open_positions == self.max_open_positions
@@ -514,6 +572,24 @@ class PortfolioConstructor:
             > plan.position_notional_limit * plan.research_quality_multiplier
         ):
             reasons.append("research_quality_limit_changed_before_entry")
+        if plan.estimated_stress_loss > plan.loss_budget:
+            reasons.append("loss_budget_changed_before_entry")
+        stress_credit = (
+            plan.portfolio_stress_replacement_credit
+            if prospective_rotation
+            and plan.portfolio_stress_replacement_credit is not None
+            else Decimal(0)
+        )
+        if (
+            plan.portfolio_stress_loss_limit is not None
+            and state.aggregate_stress_loss - stress_credit + plan.estimated_stress_loss
+            > plan.portfolio_stress_loss_limit
+        ):
+            reasons.append("portfolio_stress_limit_changed_before_entry")
+        return tuple(reasons)
+
+    def _revalidate_governance(self, plan: TradeImplementationPlan) -> tuple[str, ...]:
+        reasons = []
         current_governance = self.load_alpha_governance()
         if (
             plan.alpha_capital_governance is None
@@ -555,20 +631,28 @@ class PortfolioConstructor:
                     > plan.forecast_calibration_reserve_bps
                 ):
                     reasons.append("forecast_calibration_reserve_changed_before_entry")
-        if plan.estimated_stress_loss > plan.loss_budget:
-            reasons.append("loss_budget_changed_before_entry")
-        stress_credit = (
-            plan.portfolio_stress_replacement_credit
-            if prospective_rotation
-            and plan.portfolio_stress_replacement_credit is not None
-            else Decimal(0)
-        )
-        if (
-            plan.portfolio_stress_loss_limit is not None
-            and state.aggregate_stress_loss - stress_credit + plan.estimated_stress_loss
-            > plan.portfolio_stress_loss_limit
-        ):
-            reasons.append("portfolio_stress_limit_changed_before_entry")
+        frozen_execution = plan.execution_cost_governance
+        if frozen_execution is None:
+            reasons.append("execution_cost_policy_changed_before_entry")
+        else:
+            current_execution = self.load_execution_cost_governance(
+                frozen_execution.expression_kind
+            )
+            if (
+                current_execution.policy_version != frozen_execution.policy_version
+                or current_execution.source_portfolio_policy_version
+                != frozen_execution.source_portfolio_policy_version
+                or current_execution.expression_kind != frozen_execution.expression_kind
+            ):
+                reasons.append("execution_cost_policy_changed_before_entry")
+            elif current_execution.alpha_reserve_bps > plan.execution_cost_reserve_bps:
+                reasons.append("execution_cost_reserve_changed_before_entry")
+        return tuple(reasons)
+
+    def _revalidate_concentration(
+        self, plan: TradeImplementationPlan, state: PortfolioState
+    ) -> tuple[str, ...]:
+        reasons = []
         source_notional = next(
             (
                 item.gross_notional
@@ -596,6 +680,20 @@ class PortfolioConstructor:
             and catalyst_notional + plan.target_notional > plan.catalyst_notional_limit
         ):
             reasons.append("catalyst_limit_changed_before_entry")
+        underlying_notional = next(
+            (
+                item.gross_notional
+                for item in state.underlying_buckets
+                if item.underlying_key == plan.underlying_key
+            ),
+            Decimal(0),
+        )
+        if (
+            plan.underlying_notional_limit is not None
+            and underlying_notional + plan.target_notional
+            > plan.underlying_notional_limit
+        ):
+            reasons.append("underlying_limit_changed_before_entry")
         exposure_by_tag = {
             item.tag: item.gross_notional for item in state.exposure_buckets
         }
@@ -608,6 +706,9 @@ class PortfolioConstructor:
             if tag not in {"none", "unknown"}
         ):
             reasons.append("systematic_exposure_limit_changed_before_entry")
+        return tuple(reasons)
+
+    def _revalidate_alpha_clock(self, plan: TradeImplementationPlan) -> tuple[str, ...]:
         if plan.alpha_clock is not None:
             refreshed_clock = build_alpha_clock(
                 known_at=datetime.now(UTC),
@@ -623,8 +724,8 @@ class PortfolioConstructor:
                 refreshed_clock.time_adjusted_expected_net_alpha_bps
                 < self.policy.min_net_alpha_bps
             ):
-                reasons.append("alpha_decayed_below_entry_hurdle")
-        return tuple(reasons)
+                return ("alpha_decayed_below_entry_hurdle",)
+        return ()
 
     def _exposure_capacity(
         self, state: PortfolioState, isolation: AlphaIsolation
@@ -713,6 +814,7 @@ class PortfolioConstructor:
             portfolio_stress_loss_after=common.get("portfolio_stress_loss_before"),
             alpha_source_notional_after=common.get("alpha_source_notional_before"),
             catalyst_notional_after=common.get("catalyst_notional_before"),
+            underlying_notional_after=common.get("underlying_notional_before"),
             gross_notional_after=common["gross_notional_before"],
             target_notional=Decimal(0),
             target_quantity=Decimal(0),

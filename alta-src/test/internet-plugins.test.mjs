@@ -62,6 +62,7 @@ test("shared plugins register fifteen unique read-only tools", () => {
     "worldbank",
     "treasury",
     "sec",
+    "finnhub",
     "fred",
     "bls",
     "nyfed",
@@ -916,6 +917,55 @@ test("finance data normalizes five login-free public sources", async () => {
   assert.equal(worldbank.observations[0].country_code, "CHN");
   assert.equal(treasury.records.length, 1);
   assert.match(sec.filings[0].url, /example\.htm$/);
+});
+
+test("Finnhub company intelligence is bounded and never returns its credential", async () => {
+  const secret = "finnhub_fixture_1234567890"; // gitleaks:allow -- synthetic split test credential
+  const requested = [];
+  const service = {
+    backendHealth: new BackendHealth(),
+    finnhubKey: secret,
+    recordTool: () => {},
+    readText: async ({ url }) => {
+      requested.push(url);
+      return {
+        text: JSON.stringify([
+          {
+            category: "company",
+            datetime: 1_777_000_000,
+            headline: "Fixture operating update",
+            id: 42,
+            related: "EXM",
+            source: "Fixture Wire",
+            summary: "A bounded fixture summary.",
+            url: "https://example.test/update",
+            ignored: "not returned",
+          },
+        ]),
+      };
+    },
+  };
+
+  const result = await executeInternetTool(
+    service,
+    "alta_finance_data",
+    {
+      source: "finnhub",
+      dataset: "company_news",
+      symbol: "EXM",
+      from_date: "2026-08-01",
+      to_date: "2026-08-29",
+      max_records: 1,
+    },
+    {},
+  );
+
+  assert.equal(result.source, "finnhub");
+  assert.equal(result.records[0].headline, "Fixture operating update");
+  assert.equal(result.records[0].ignored, undefined);
+  assert.match(requested[0], /token=/);
+  assert.equal(JSON.stringify(result).includes(secret), false);
+  assert.equal(result.provenance.source_url.includes("token="), false);
 });
 
 function professionalFinanceService(observed = []) {

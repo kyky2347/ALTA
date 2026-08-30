@@ -4,8 +4,12 @@ from decimal import Decimal, InvalidOperation
 from .b5_runtime import _append_event, _contract_event
 from .contracts import Environment
 from .database import Database
+from .execution_quality import (
+    PositionExecutionQuality,
+    build_position_execution_quality,
+)
 from .market_data import MassiveMarketData
-from .shadow import PositionThesis
+from .shadow import PositionThesis, ShadowFill
 from .trade_path_diagnostics import (
     ExecutablePathObservation,
     build_position_path_diagnostics,
@@ -77,6 +81,16 @@ class PositionPerformanceRecorder:
                 ORDER BY sequence""",
                 (thesis.position_id,),
             ).fetchall()
+            fill_rows = connection.execute(
+                """SELECT payload FROM ops.event
+                WHERE aggregate_id = %s AND environment = 'shadow'
+                  AND event_type IN (
+                    'shadow.fill.recorded',
+                    'shadow.exit_fill.recorded'
+                  )
+                ORDER BY sequence""",
+                (thesis.position_id,),
+            ).fetchall()
             row = connection.execute(
                 """SELECT payload FROM ops.event WHERE aggregate_id = %s
                 AND event_type = 'position.benchmark.open'
@@ -113,6 +127,7 @@ class PositionPerformanceRecorder:
                 )
             except ValueError:
                 path_diagnostics = None
+            execution_quality = _execution_quality(thesis, fill_rows)
             payload = {
                 "position_id": thesis.position_id,
                 "opportunity_id": thesis.binding.opportunity_id,
@@ -139,6 +154,11 @@ class PositionPerformanceRecorder:
                     if path_diagnostics is not None
                     else None
                 ),
+                "execution_quality": (
+                    execution_quality.model_dump(mode="json")
+                    if execution_quality is not None
+                    else None
+                ),
             }
             _append_event(
                 connection,
@@ -152,6 +172,32 @@ class PositionPerformanceRecorder:
                     correlation_id=thesis.binding.opportunity_id,
                 ),
             )
+
+
+def _execution_quality(
+    thesis: PositionThesis, rows: list[tuple]
+) -> PositionExecutionQuality | None:
+    plan = thesis.implementation_plan
+    if plan is None or plan.estimated_cost_bps is None:
+        return None
+    fills = []
+    for (payload,) in rows:
+        try:
+            fills.append(ShadowFill.model_validate(payload))
+        except ValueError:
+            continue
+    entry = next((item for item in fills if item.action == "open"), None)
+    exit_fill = next((item for item in reversed(fills) if item.action == "close"), None)
+    if entry is None or exit_fill is None:
+        return None
+    try:
+        return build_position_execution_quality(
+            estimated_cost_bps=plan.estimated_cost_bps,
+            entry_fill=entry,
+            exit_fill=exit_fill,
+        )
+    except ValueError:
+        return None
 
 
 def _path_observations(rows: list[tuple]) -> tuple[ExecutablePathObservation, ...]:

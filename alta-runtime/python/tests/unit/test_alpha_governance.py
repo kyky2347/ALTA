@@ -34,7 +34,7 @@ def evaluate(values: tuple[CapitalPerformanceObservation, ...]):
     return evaluate_alpha_capital_governance(
         values,
         reference_nav=Decimal("1000000"),
-        source_portfolio_policy_version="alta-portfolio-risk-v7",
+        source_portfolio_policy_version="alta-portfolio-risk-v8",
     )
 
 

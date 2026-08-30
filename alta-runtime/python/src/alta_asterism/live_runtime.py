@@ -162,6 +162,7 @@ class LiveRuntime:
             per_trade_loss_budget_bps=settings.shadow_trade_loss_budget_bps,
             max_position_nav_bps=settings.shadow_max_position_nav_bps,
             max_gross_nav_bps=settings.shadow_max_gross_nav_bps,
+            max_underlying_nav_bps=settings.shadow_max_underlying_nav_bps,
             equity_stress_floor_bps=settings.shadow_equity_stress_floor_bps,
             max_exit_days=settings.shadow_max_exit_days,
             adv_participation_bps=settings.shadow_adv_participation_bps,
@@ -225,8 +226,13 @@ class LiveRuntime:
             research_config=ResearchRuntimeConfig(
                 model_provider=settings.agent_provider,
                 model_id=settings.agent_model,
-                max_tool_calls=4,
-                max_total_tokens=40_000,
+                max_tool_calls=5,
+                # Five-stage internet research routinely charges 48k–53k new
+                # (non-cached) tokens once evidence from each call is folded
+                # back into the Scout context. Keep the bound finite, but high
+                # enough that a completed deep-research turn is not rejected
+                # after it has already paid the latency and token cost.
+                max_total_tokens=64_000,
                 max_output_bytes=8_000,
                 deadline_seconds=settings.agent_deadline_seconds,
                 max_concurrency=settings.scout_concurrency,

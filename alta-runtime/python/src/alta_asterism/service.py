@@ -20,6 +20,7 @@ from .autonomous import AutonomousRunner
 from .contracts import Environment, Settings
 from .database import Database, event_json
 from .forward_evaluation import ForwardEvaluationReader
+from .implementation import PortfolioRiskPolicy
 from .research_incentive import (
     MAX_REWARD_TOKENS,
     MAX_REWARD_TOOL_CALLS,
@@ -65,6 +66,17 @@ def _handler(
     if runtime_state is None:
         runtime_state = {"autonomousStatus": "disabled"}
     runtime_state_lock = runtime_state_lock or threading.RLock()
+    portfolio_policy = PortfolioRiskPolicy(
+        reference_nav=settings.shadow_reference_nav,
+        per_trade_loss_budget_bps=settings.shadow_trade_loss_budget_bps,
+        max_position_nav_bps=settings.shadow_max_position_nav_bps,
+        max_gross_nav_bps=settings.shadow_max_gross_nav_bps,
+        max_underlying_nav_bps=settings.shadow_max_underlying_nav_bps,
+        equity_stress_floor_bps=settings.shadow_equity_stress_floor_bps,
+        max_exit_days=settings.shadow_max_exit_days,
+        adv_participation_bps=settings.shadow_adv_participation_bps,
+        min_net_alpha_bps=settings.shadow_min_net_alpha_bps,
+    )
 
     def runtime_snapshot() -> dict[str, object]:
         with runtime_state_lock:
@@ -174,7 +186,11 @@ def _handler(
                     200,
                     {
                         "data": {
-                            **database.runtime_detail(settings.environment.value),
+                            **database.runtime_detail(
+                                settings.environment.value,
+                                portfolio_policy,
+                                settings.universe,
+                            ),
                             "config": {
                                 "autonomousEnabled": settings.autonomous_enabled,
                                 "autonomousIntervalSeconds": (
@@ -275,6 +291,9 @@ def _handler(
                                     "maxGrossNavBps": str(
                                         settings.shadow_max_gross_nav_bps
                                     ),
+                                    "maxUnderlyingNavBps": str(
+                                        settings.shadow_max_underlying_nav_bps
+                                    ),
                                     "equityStressFloorBps": str(
                                         settings.shadow_equity_stress_floor_bps
                                     ),
@@ -300,7 +319,9 @@ def _handler(
                 return self.json_response(
                     200,
                     {
-                        "data": database.alpha_summary(settings.environment.value),
+                        "data": database.alpha_summary(
+                            settings.environment.value, portfolio_policy
+                        ),
                         "meta": meta,
                         "warnings": [],
                     },

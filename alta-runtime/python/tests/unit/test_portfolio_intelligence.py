@@ -7,6 +7,7 @@ from alta_asterism.implementation import (
     ExposureBucket,
     PortfolioRiskPolicy,
     PortfolioState,
+    UnderlyingBucket,
 )
 from alta_asterism.portfolio_intelligence import build_portfolio_research_mandate
 
@@ -55,6 +56,14 @@ def test_constrained_book_mandate_points_research_away_from_saturation() -> None
                 estimated_stress_loss=Decimal("4250"),
             ),
         ),
+        underlying_buckets=(
+            UnderlyingBucket(
+                underlying_key="DEMO",
+                open_positions=2,
+                gross_notional=Decimal("13000"),
+                estimated_stress_loss=Decimal("3250"),
+            ),
+        ),
     )
 
     mandate = build_portfolio_research_mandate(state, PortfolioRiskPolicy(), NOW)
@@ -63,7 +72,8 @@ def test_constrained_book_mandate_points_research_away_from_saturation() -> None
     assert mandate.saturated_alpha_sources == ("event",)
     assert mandate.saturated_systematic_exposures == ("market_beta",)
     assert mandate.saturated_catalyst_keys == ("shared-policy-reset",)
+    assert mandate.saturated_underlying_keys == ("DEMO",)
     assert "event" not in mandate.diversification_search_targets
     assert mandate.stress_nav_bps == Decimal("85.00")
     assert any("no-op" in item for item in mandate.research_objectives)
-    assert any("saturated catalyst" in item for item in mandate.research_objectives)
+    assert any("saturated underlying" in item for item in mandate.research_objectives)

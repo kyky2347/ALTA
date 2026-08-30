@@ -1,8 +1,11 @@
 import { createHash } from "node:crypto";
+import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import {
   externalCredentialRoot,
+  findCredentialFile,
+  readCredentialText,
   replaceCredentialFile,
 } from "./credential-files.mjs";
 import {
@@ -19,6 +22,7 @@ import {
 const RESOURCE_SLOTS = Object.freeze({
   massive: "MASSIVE_API_KEY",
   finlight: "FINLIGHT_API_KEY",
+  finnhub: "FINNHUB_API_KEY",
   brave: "BRAVE_SEARCH_API_KEY",
   jina: "JINA_API_KEY",
   openalex: "OPENALEX_API_KEY",
@@ -29,43 +33,109 @@ const SLOT_METADATA = Object.freeze({
     label: "DeepSeek",
     category: "models",
     purpose: "Primary agent inference and research",
+    credentialRequirement: "required",
   },
   xai: {
     label: "xAI / Grok",
     category: "models",
     purpose: "Independent debate and web-aware research",
+    credentialRequirement: "required",
   },
   kimi: {
     label: "Kimi / Moonshot",
     category: "models",
     purpose: "Independent analysis and long-context research",
+    credentialRequirement: "required",
   },
   massive: {
     label: "Massive",
     category: "market_data",
     purpose: "US equity and option market data",
+    credentialRequirement: "required",
   },
   finlight: {
     label: "Finlight",
     category: "news",
     purpose: "Normalized market news",
+    credentialRequirement: "required",
+  },
+  finnhub: {
+    label: "Finnhub",
+    category: "market_data",
+    purpose: "Company events, fundamentals, peers, and insider activity",
+    credentialRequirement: "optional",
   },
   brave: {
     label: "Brave Search",
     category: "research",
     purpose: "Open-web search",
+    credentialRequirement: "optional",
   },
   jina: {
     label: "Jina Reader",
     category: "research",
     purpose: "Readable web content extraction",
+    credentialRequirement: "optional",
+    availableWithoutCredential: true,
   },
   openalex: {
     label: "OpenAlex",
     category: "research",
     purpose: "Academic and research discovery",
+    credentialRequirement: "optional",
+    availableWithoutCredential: true,
   },
 });
+
+const BUILT_IN_PROVIDER_NETWORK = Object.freeze([
+  {
+    category: "market_and_regulatory",
+    providers: [
+      "Nasdaq",
+      "SEC EDGAR",
+      "FRED",
+      "BLS",
+      "New York Fed",
+      "U.S. Treasury",
+      "World Bank",
+      "IMF",
+      "OECD",
+      "ECB",
+      "Bank of Canada",
+      "Eurostat",
+      "FDIC",
+      "CFTC",
+      "Coinbase",
+      "Kraken",
+    ],
+  },
+  {
+    category: "news_and_discovery",
+    providers: [
+      "GDELT",
+      "Google News RSS",
+      "Yahoo Finance RSS",
+      "Nasdaq News",
+      "GlobeNewswire",
+      "Benzinga RSS",
+      "Investing.com RSS",
+    ],
+  },
+  {
+    category: "research_and_social",
+    providers: [
+      "Crossref",
+      "arXiv",
+      "Reddit",
+      "Hacker News",
+      "Bluesky",
+      "Mastodon",
+      "Lemmy",
+      "Stack Exchange",
+      "PeerTube",
+    ],
+  },
+]);
 
 export const CREDENTIAL_SLOT_IDS = Object.freeze([
   ...Object.keys(PROVIDERS),
@@ -133,7 +203,7 @@ function loadedValues(env) {
   };
 }
 
-function revision(values) {
+function revision(values, tradingFingerprint = "") {
   const hash = createHash("sha256");
   for (const slot of CREDENTIAL_SLOT_IDS) {
     hash.update(slot);
@@ -141,6 +211,8 @@ function revision(values) {
     hash.update(values[slot] ?? "");
     hash.update("\0");
   }
+  hash.update("tiger-paper\0");
+  hash.update(tradingFingerprint);
   return hash.digest("hex").slice(0, 16);
 }
 
@@ -155,12 +227,58 @@ function sourceKind(source) {
   return "missing";
 }
 
+function tigerPaperInventory(root, env) {
+  let file = null;
+  let source = "missing";
+  let sourceKindValue = "missing";
+  if (env.ALTA_TIGER_CONFIG_PATH) {
+    file = path.resolve(env.ALTA_TIGER_CONFIG_PATH);
+    source = "environment (ALTA_TIGER_CONFIG_PATH)";
+    sourceKindValue = "environment";
+  } else {
+    file = findCredentialFile(root, "broker", ["tiger"]);
+    if (file) {
+      source = `external credential file (${path.basename(file)})`;
+      sourceKindValue = "external";
+    }
+  }
+  if (!file || !fs.existsSync(file))
+    return {
+      provider: "Tiger Trade",
+      mode: "paper_only",
+      configured: false,
+      editable: false,
+      source,
+      sourceKind: sourceKindValue,
+      fingerprint: null,
+      status: "not_configured_capital_disabled",
+    };
+  const text = readCredentialText(file);
+  const hasAccount = /(?:^|\n)\s*account\s*=/i.test(text);
+  const hasTigerId = /(?:^|\n)\s*tiger_id\s*=/i.test(text);
+  const hasPrivateKey = /(?:^|\n)\s*private_key(?:_pk(?:1|8))?\s*=/i.test(text);
+  const configured = hasAccount && hasTigerId && hasPrivateKey;
+  return {
+    provider: "Tiger Trade",
+    mode: "paper_only",
+    configured,
+    editable: false,
+    source,
+    sourceKind: sourceKindValue,
+    fingerprint: fingerprint(text),
+    status: configured
+      ? "configured_external_capital_disabled"
+      : "invalid_external_config",
+  };
+}
+
 export function credentialInventory(env = process.env) {
   const root = externalCredentialRoot(env);
   const loaded = loadedValues(env);
+  const trading = tigerPaperInventory(root, env);
   return {
     root,
-    revision: revision(loaded.values),
+    revision: revision(loaded.values, trading.fingerprint ?? ""),
     configuredSlots: CREDENTIAL_SLOT_IDS.filter(
       (slot) => loaded.values[slot] !== undefined,
     ),
@@ -168,11 +286,16 @@ export function credentialInventory(env = process.env) {
       slot,
       ...SLOT_METADATA[slot],
       configured: loaded.values[slot] !== undefined,
+      operational:
+        loaded.values[slot] !== undefined ||
+        SLOT_METADATA[slot].availableWithoutCredential === true,
       source: loaded.sources[slot] ?? "missing",
       sourceKind: sourceKind(loaded.sources[slot]),
       editable: sourceKind(loaded.sources[slot]) !== "environment",
       fingerprint: fingerprint(loaded.values[slot]),
     })),
+    providerNetwork: BUILT_IN_PROVIDER_NETWORK,
+    trading,
   };
 }
 

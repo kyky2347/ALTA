@@ -1,6 +1,10 @@
+from __future__ import annotations
+
+import json
+import re
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Iterable
+from typing import TYPE_CHECKING, Any, Iterable
 
 from .alpha_isolation import (
     AlphaSource,
@@ -8,14 +12,20 @@ from .alpha_isolation import (
     normalize_alpha_source,
     normalize_systematic_exposure,
 )
-from .database import Database
 from .implementation import (
     AlphaSourceBucket,
     CatalystBucket,
     ExposureBucket,
     PortfolioState,
+    UnderlyingBucket,
 )
 from .opportunity_identity import normalize_catalyst_bucket
+
+if TYPE_CHECKING:
+    from .database import Database
+
+PortfolioPositionRow = tuple[Decimal, Any, str | None, str, str, Any]
+_UNDERLYING_PATTERN = re.compile(r"^[A-Z][A-Z0-9.:-]{0,31}$")
 
 
 def load_portfolio_state(
@@ -51,8 +61,14 @@ def load_portfolio_state(
                     )
                 ) * p.quantity,
                 p.position_thesis,
-                o.catalyst_key
+                o.catalyst_key,
+                p.symbol,
+                expression.kind,
+                expression.rationale
             FROM research.shadow_position p
+            JOIN research.expression expression
+              ON expression.id = p.expression_id
+             AND expression.environment = p.environment
             LEFT JOIN research.opportunity o
               ON o.id = p.position_thesis->'binding'->>'opportunity_id'
              AND o.environment = p.environment
@@ -64,7 +80,7 @@ def load_portfolio_state(
 
 
 def project_portfolio_state(
-    rows: Iterable[tuple[Decimal, Any, str | None]], *, max_open_positions: int
+    rows: Iterable[PortfolioPositionRow], *, max_open_positions: int
 ) -> PortfolioState:
     """Projects durable position rows without granting favorable legacy assumptions."""
 
@@ -73,7 +89,15 @@ def project_portfolio_state(
     exposure_totals: dict[SystematicExposure, Decimal] = {}
     source_totals: dict[AlphaSource, tuple[int, Decimal, Decimal]] = {}
     catalyst_totals: dict[str, tuple[int, Decimal, Decimal]] = {}
-    for raw_notional, raw_thesis, raw_catalyst_key in rows:
+    underlying_totals: dict[str, tuple[int, Decimal, Decimal]] = {}
+    for (
+        raw_notional,
+        raw_thesis,
+        raw_catalyst_key,
+        symbol,
+        expression_kind,
+        rationale,
+    ) in rows:
         notional = Decimal(raw_notional)
         notionals.append(notional)
         implementation = (
@@ -104,6 +128,15 @@ def project_portfolio_state(
             catalyst_count + 1,
             catalyst_gross + notional,
             catalyst_stress + stress_loss,
+        )
+        underlying_key = _underlying_key(symbol, expression_kind, rationale)
+        underlying_count, underlying_gross, underlying_stress = underlying_totals.get(
+            underlying_key, (0, Decimal(0), Decimal(0))
+        )
+        underlying_totals[underlying_key] = (
+            underlying_count + 1,
+            underlying_gross + notional,
+            underlying_stress + stress_loss,
         )
         for exposure in _systematic_exposures(implementation):
             exposure_totals[exposure] = (
@@ -143,7 +176,43 @@ def project_portfolio_state(
             )
             for catalyst_key, values in sorted(catalyst_totals.items())
         ),
+        underlying_buckets=tuple(
+            UnderlyingBucket(
+                underlying_key=underlying_key,
+                open_positions=values[0],
+                gross_notional=values[1],
+                estimated_stress_loss=values[2],
+            )
+            for underlying_key, values in sorted(underlying_totals.items())
+        ),
     )
+
+
+def normalize_underlying_key(value: object) -> str:
+    normalized = str(value or "").strip().upper()
+    return normalized if _UNDERLYING_PATTERN.fullmatch(normalized) else "UNKNOWN"
+
+
+def _underlying_key(symbol: str, expression_kind: str, rationale: Any) -> str:
+    payload = rationale
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except (TypeError, ValueError):
+            payload = None
+    market_instrument = (
+        payload.get("market_instrument") if isinstance(payload, dict) else None
+    )
+    underlying = (
+        market_instrument.get("underlying_symbol")
+        if isinstance(market_instrument, dict)
+        else None
+    )
+    if underlying is not None:
+        return normalize_underlying_key(underlying)
+    if expression_kind == "option":
+        return "UNKNOWN"
+    return normalize_underlying_key(symbol)
 
 
 def _scaled_stress_loss(

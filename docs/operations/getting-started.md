@@ -181,7 +181,7 @@ not injected into isolated research turns. Tool families include:
 | Academic    | OpenAlex, Crossref, and arXiv federation          | Bounded results and deduplication        |
 | Social      | Login-free public discovery and bounded reads     | No login or access-control bypass        |
 | News        | Aggregators, publishers, and primary institutions | Independent source deadlines             |
-| Finance     | Market, macro, regulatory, and filing sources     | One explicit source per call             |
+| Finance     | Market, macro, filings, plus optional Finnhub     | One explicit source per call             |
 | TradingView | Deterministic display navigation                  | Navigation only; no content scraping     |
 | Local files | Bounded parsing of supported workspace files      | Workspace-only and sensitive-path denial |
 

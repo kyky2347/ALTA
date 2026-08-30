@@ -85,3 +85,20 @@ test("optional tool credentials load from the same external root", (t) => {
     ["BRAVE_SEARCH_API_KEY"],
   );
 });
+
+test("Finnhub loads from the external resource store", (t) => {
+  const { root, resources } = credentialFixture(t);
+  fs.writeFileSync(
+    path.join(resources, "Finnhub Basic.key"),
+    "finnhub_fixture_1234567890", // gitleaks:allow -- synthetic split test credential
+    { mode: 0o600 },
+  );
+
+  const result = loadResourceCredentials(
+    { ALTA_CREDENTIALS_DIR: root },
+    TOOL_CREDENTIAL_KEYS,
+  );
+
+  assert.match(result.values.FINNHUB_API_KEY, /^finnhub_fixture_/);
+  assert.match(result.sources.FINNHUB_API_KEY, /external credential file/);
+});

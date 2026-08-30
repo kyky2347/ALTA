@@ -7,6 +7,7 @@ from alta_asterism.alpha_governance import AlphaCapitalGovernance
 from alta_asterism.alpha_isolation import AlphaIsolation
 from alta_asterism.expression import QuoteSnapshot
 from alta_asterism.execution_planning import ExecutionPlan
+from alta_asterism.execution_quality import ExecutionCostGovernance
 from alta_asterism.forecast_calibration import ForecastCalibrationGovernance
 from alta_asterism.implementation import (
     AlphaSourceBucket,
@@ -14,6 +15,7 @@ from alta_asterism.implementation import (
     ExposureBucket,
     PortfolioRiskPolicy,
     PortfolioState,
+    UnderlyingBucket,
 )
 from alta_asterism.market_data import MarketInstrument
 from alta_asterism.portfolio_construction import PortfolioConstructor
@@ -111,6 +113,7 @@ def plan(
     research_quality_score: Decimal | None = None,
     alpha_capital_governance: AlphaCapitalGovernance | None = None,
     forecast_calibration_governance: ForecastCalibrationGovernance | None = None,
+    execution_cost_governance: ExecutionCostGovernance | None = None,
     catalyst_key: str | None = None,
 ):
     constructor = PortfolioConstructor(None, PortfolioRiskPolicy())  # type: ignore[arg-type]
@@ -126,6 +129,7 @@ def plan(
         research_quality_score=research_quality_score,
         alpha_capital_governance=alpha_capital_governance,
         forecast_calibration_governance=forecast_calibration_governance,
+        execution_cost_governance=execution_cost_governance,
         catalyst_key=catalyst_key,
     )
 
@@ -331,7 +335,7 @@ def test_research_quality_controls_capital_admission_and_starter_size() -> None:
 def test_alpha_capital_governance_caps_unproven_and_degraded_books() -> None:
     collecting = AlphaCapitalGovernance(
         policy_version="alta-alpha-capital-governance-v1",
-        source_portfolio_policy_version="alta-portfolio-risk-v7",
+        source_portfolio_policy_version="alta-portfolio-risk-v8",
         posture="collecting",
         capital_multiplier=Decimal("0.50"),
         sample_size=0,
@@ -364,7 +368,7 @@ def test_entry_revalidation_rejects_a_stale_larger_governance_budget(
 ) -> None:
     normal = AlphaCapitalGovernance(
         policy_version="alta-alpha-capital-governance-v1",
-        source_portfolio_policy_version="alta-portfolio-risk-v7",
+        source_portfolio_policy_version="alta-portfolio-risk-v8",
         posture="normal",
         capital_multiplier=Decimal(1),
         sample_size=30,
@@ -398,7 +402,7 @@ def calibration(
 ) -> ForecastCalibrationGovernance:
     return ForecastCalibrationGovernance(
         policy_version="alta-forecast-calibration-v1",
-        source_portfolio_policy_version="alta-portfolio-risk-v7",
+        source_portfolio_policy_version="alta-portfolio-risk-v8",
         expression_kind="stock",
         posture=posture,  # type: ignore[arg-type]
         capital_multiplier=Decimal(multiplier),
@@ -411,6 +415,28 @@ def calibration(
         alpha_reserve_bps=Decimal(reserve),
         observed_through=NOW,
         reason_codes=("forecast_error_reserve_applied",),
+    )
+
+
+def execution_governance(
+    *, reserve: str = "0", posture: str = "calibrated"
+) -> ExecutionCostGovernance:
+    return ExecutionCostGovernance(
+        policy_version="alta-execution-cost-governance-v1",
+        source_portfolio_policy_version="alta-portfolio-risk-v8",
+        expression_kind="stock",
+        posture=posture,  # type: ignore[arg-type]
+        sample_size=30,
+        window_size=30,
+        minimum_sample=30,
+        mean_estimated_cost_bps=Decimal("20"),
+        mean_realized_cost_bps=Decimal("30"),
+        mean_cost_surprise_bps=Decimal("10"),
+        mean_absolute_surprise_bps=Decimal("10"),
+        within_budget_rate=Decimal("0.40"),
+        alpha_reserve_bps=Decimal(reserve),
+        observed_through=NOW,
+        reason_codes=("execution_cost_reserve_applied",),
     )
 
 
@@ -438,6 +464,50 @@ def test_forecast_reserve_can_fail_a_marginal_idea_closed() -> None:
 
     assert reserved.status == "wait"
     assert reserved.reason_codes == ("insufficient_net_alpha_after_costs",)
+
+
+def test_mature_execution_cost_reserve_reduces_admitted_net_edge() -> None:
+    baseline = plan(instrument())
+    reserved = plan(
+        instrument(), execution_cost_governance=execution_governance(reserve="35")
+    )
+
+    assert reserved.status == "ready"
+    assert reserved.execution_cost_reserve_bps == Decimal("35")
+    assert reserved.expected_alpha_bps == baseline.expected_alpha_bps
+    assert reserved.expected_net_alpha_bps == (
+        reserved.expected_alpha_bps
+        - reserved.estimated_cost_bps
+        - reserved.execution_cost_reserve_bps
+    )
+
+
+def test_execution_cost_reserve_can_fail_a_marginal_idea_closed() -> None:
+    reserved = plan(
+        instrument(), execution_cost_governance=execution_governance(reserve="500")
+    )
+
+    assert reserved.status == "wait"
+    assert reserved.reason_codes == ("insufficient_net_alpha_after_costs",)
+
+
+def test_entry_revalidation_detects_a_higher_execution_cost_reserve(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ready = plan(
+        instrument(), execution_cost_governance=execution_governance(reserve="10")
+    )
+    constructor = PortfolioConstructor(None, PortfolioRiskPolicy())  # type: ignore[arg-type]
+    monkeypatch.setattr(constructor, "load_state", lambda: PortfolioState())
+    monkeypatch.setattr(
+        constructor,
+        "load_execution_cost_governance",
+        lambda _kind: execution_governance(reserve="40"),
+    )
+
+    assert "execution_cost_reserve_changed_before_entry" in constructor.revalidate(
+        ready
+    )
 
 
 def test_weak_directional_calibration_caps_new_position_size() -> None:
@@ -575,6 +645,31 @@ def test_catalyst_capacity_prevents_cross_ticker_event_crowding() -> None:
     assert result.catalyst_notional_limit == Decimal("20000")
 
 
+def test_underlying_capacity_blocks_cross_carrier_concentration() -> None:
+    state = PortfolioState(
+        known_open_positions=2,
+        gross_notional=Decimal("14500"),
+        aggregate_stress_loss=Decimal("3625"),
+        underlying_buckets=(
+            UnderlyingBucket(
+                underlying_key="DEMO",
+                open_positions=2,
+                gross_notional=Decimal("14500"),
+                estimated_stress_loss=Decimal("3625"),
+            ),
+        ),
+    )
+
+    result = plan(instrument(), state)
+
+    assert result.status == "ready"
+    assert result.target_notional == Decimal("500")
+    assert result.binding_constraint == "underlying_remaining"
+    assert result.underlying_key == "DEMO"
+    assert result.underlying_notional_after == Decimal("15000")
+    assert result.underlying_notional_limit == Decimal("15000")
+
+
 def test_entry_revalidation_detects_new_catalyst_crowding(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -598,3 +693,28 @@ def test_entry_revalidation_detects_new_catalyst_crowding(
     )
 
     assert "catalyst_limit_changed_before_entry" in constructor.revalidate(ready)
+
+
+def test_entry_revalidation_detects_new_underlying_crowding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ready = plan(instrument())
+    constructor = PortfolioConstructor(None, PortfolioRiskPolicy())  # type: ignore[arg-type]
+    monkeypatch.setattr(
+        constructor,
+        "load_state",
+        lambda: PortfolioState(
+            known_open_positions=1,
+            gross_notional=Decimal("11000"),
+            underlying_buckets=(
+                UnderlyingBucket(
+                    underlying_key="DEMO",
+                    open_positions=1,
+                    gross_notional=Decimal("11000"),
+                    estimated_stress_loss=Decimal("2750"),
+                ),
+            ),
+        ),
+    )
+
+    assert "underlying_limit_changed_before_entry" in constructor.revalidate(ready)

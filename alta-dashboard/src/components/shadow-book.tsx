@@ -1,6 +1,7 @@
 import {
   ChartNoAxesCombined,
   CircleDot,
+  Gauge,
   ShieldCheck,
   Waypoints,
 } from "lucide-react";
@@ -73,6 +74,19 @@ export function ShadowBook({
   const calibration = alpha?.forecastCalibrationGovernance;
   const capital = alpha?.capitalGovernance;
   const path = alpha?.pathDiagnostics;
+  const execution = alpha?.executionQuality;
+  const stockExecution = alpha?.executionCostGovernance?.stock;
+  const risk = alpha?.portfolioRisk;
+  const underlyingBuckets = risk?.underlyingBuckets ?? [];
+  const largestUnderlying = underlyingBuckets.reduce<
+    (typeof underlyingBuckets)[number] | null
+  >(
+    (largest, current) =>
+      !largest || Number(current.grossNavBps) > Number(largest.grossNavBps)
+        ? current
+        : largest,
+    null,
+  );
   const sampleSize = evidence?.sampleSize ?? alpha?.closedPositions ?? 0;
   const minimumSample =
     evidence?.minimumSample ?? calibration?.minimumSample ?? 30;
@@ -179,6 +193,138 @@ export function ShadowBook({
             <p>{t("capitalPostureDetail")}</p>
           </div>
         </div>
+        <section className="book-risk" aria-labelledby="book-risk-title">
+          <header>
+            <div>
+              <h3 id="book-risk-title">{t("portfolioRiskEnvelope")}</h3>
+              <p>{t("portfolioRiskEnvelopeDetail")}</p>
+            </div>
+            <span>{domain(risk?.posture ?? "not measured")}</span>
+          </header>
+          <div className="book-risk-grid">
+            <div>
+              <span>{t("grossResearchExposure")}</span>
+              <strong>
+                {magnitudeBps(risk?.grossNavBps, formatNumber)}
+                <small>
+                  {" "}
+                  / {magnitudeBps(risk?.grossLimitNavBps, formatNumber)}
+                </small>
+              </strong>
+            </div>
+            <div>
+              <span>{t("aggregateStressBudget")}</span>
+              <strong>
+                {magnitudeBps(risk?.stressNavBps, formatNumber)}
+                <small>
+                  {" "}
+                  / {magnitudeBps(risk?.stressLimitNavBps, formatNumber)}
+                </small>
+              </strong>
+            </div>
+            <div>
+              <span>{t("largestUnderlying")}</span>
+              <strong>{largestUnderlying?.underlyingKey ?? "—"}</strong>
+              <small>
+                {largestUnderlying
+                  ? `${magnitudeBps(
+                      largestUnderlying.grossNavBps,
+                      formatNumber,
+                    )} / ${magnitudeBps(
+                      risk?.underlyingLimitNavBps,
+                      formatNumber,
+                    )}`
+                  : t("noCurrentConcentration")}
+              </small>
+            </div>
+            <div>
+              <span>{t("openRiskUnits")}</span>
+              <strong>{formatNumber(risk?.knownOpenPositions ?? 0)}</strong>
+              <small>{t("crossCarrierAggregation")}</small>
+            </div>
+          </div>
+          {underlyingBuckets.length > 0 && (
+            <div
+              className="underlying-buckets"
+              aria-label={t("underlyingBuckets")}
+            >
+              {underlyingBuckets.map((bucket) => (
+                <span key={bucket.underlyingKey}>
+                  <strong>{bucket.underlyingKey}</strong>
+                  {magnitudeBps(bucket.grossNavBps, formatNumber)} ·{" "}
+                  {t("positionsCount", { count: bucket.openPositions })}
+                </span>
+              ))}
+            </div>
+          )}
+        </section>
+        <section
+          className="execution-quality"
+          aria-labelledby="execution-quality-title"
+        >
+          <header>
+            <div>
+              <h3 id="execution-quality-title">
+                <Gauge />
+                {t("executionQuality")}
+              </h3>
+              <p>{t("executionQualityDetail")}</p>
+            </div>
+            <span>
+              {t("measured", {
+                count: formatNumber(execution?.measuredPositions ?? 0),
+              })}
+            </span>
+          </header>
+          <div className="execution-quality-grid">
+            <div>
+              <span>{t("realizedRoundTripCost")}</span>
+              <strong>
+                {magnitudeBps(execution?.meanRealizedCostBps, formatNumber)}
+              </strong>
+              <small>
+                {t("estimatedCost", {
+                  value: magnitudeBps(
+                    execution?.meanEstimatedCostBps,
+                    formatNumber,
+                  ),
+                })}
+              </small>
+            </div>
+            <div>
+              <span>{t("costBudgetVariance")}</span>
+              <strong>
+                {bps(execution?.meanCostSurpriseBps, formatNumber)}
+              </strong>
+              <small>{t("positiveMeansCostOverrun")}</small>
+            </div>
+            <div>
+              <span>{t("withinCostBudget")}</span>
+              <strong>{rate(execution?.withinBudgetRate, formatNumber)}</strong>
+              <small>
+                {t("executionReserve", {
+                  value: magnitudeBps(
+                    stockExecution?.alphaReserveBps,
+                    formatNumber,
+                  ),
+                })}
+              </small>
+            </div>
+            <div>
+              <span>{t("openFillReliability")}</span>
+              <strong>{rate(execution?.openFillRate, formatNumber)}</strong>
+              <small>
+                {t("fillAttempts", {
+                  fills: formatNumber(execution?.openFills ?? 0),
+                  misses: formatNumber(execution?.openNoFills ?? 0),
+                })}
+              </small>
+            </div>
+          </div>
+          <p className="execution-quality-note">
+            {systemMessage(execution?.warning) ?? t("executionQualityWarning")}
+          </p>
+        </section>
         <section
           className="path-diagnostics"
           aria-labelledby="path-quality-title"

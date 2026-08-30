@@ -20,6 +20,7 @@ read-only observability.
 flowchart TB
   source["Finlight · Massive · bounded public sources"]
   evidence["Raw-first Evidence<br/>point-in-time frozen wake"]
+  attention["Research Attention Portfolio<br/>one continuation · broader independent coverage"]
   scouts["Four active Trader Minds<br/>Web · news · social · finance"]
   thesis["Frozen Thesis Ledger<br/>observable · confirm · invalidate · due"]
   diligence["Research diligence<br/>actual tools · source diversity · next test"]
@@ -47,6 +48,8 @@ flowchart TB
   paper["Explicit acceptance only<br/>Tiger Paper BUY 1 · SELL 1 · flat"]
 
   source --> evidence --> scouts --> thesis --> diligence --> foundry --> registry --> challenge --> odds --> decision --> rank
+  registry -. prior production Candidates .-> attention
+  attention -. frozen exploration seats .-> scouts
   registry --> agenda
   agenda --> director
   director -. exact parent + question · later wake .-> scouts
@@ -83,6 +86,17 @@ different questions are assigned to different Minds, leaving at least two Minds
 for independent exploration. Follow-up must bind the assigned parent and
 question, and a Candidate still requires new auditable Evidence. The queue and
 its score are process memory, not Evidence, conviction, rank, or capital input.
+
+Separately, the Research Attention Portfolio reads at most the latest 64
+production Candidates strictly before the wake. Fewer than four observations
+leave every Mind unconstrained. When one entity is a strict majority, the Mind
+with the strongest recent continuity keeps the single continuation seat and the
+other Minds must expand entity coverage for exploratory Candidates. Exact
+Research Director follow-ups retain priority. The allocation, concentration
+metrics, and every seat are frozen into each role snapshot, revalidated against
+PostgreSQL, recovered identically after interruption, and exposed in the
+operator console. This control reallocates research capacity only; it is not
+Evidence, a diversification trade rule, a rank, or permission to use capital.
 
 The runtime derives a research-diligence record from what each Trader Mind
 actually completed, but source families, independent domains, non-news depth,
@@ -424,7 +438,8 @@ the tightest available constraint:
 
 - per-trade scenario stress-loss budget;
 - single-position and aggregate-gross fractions of a synthetic Shadow NAV;
-- per-Alpha-source, shared-systematic-factor, and shared-catalyst capacity;
+- per-Alpha-source, shared-systematic-factor, shared-catalyst, and cross-carrier
+  underlying capacity;
 - configured market-data notional ceiling;
 - Massive snapshot day-volume participation over the configured exit window
   for Stock/ETF, explicitly labeled as a proxy rather than institutional ADV;
@@ -453,7 +468,7 @@ The final deterministic gates check:
 - target size is the tightest credible constraint and its estimated stress
   loss remains within budget;
 - current aggregate gross, portfolio stress, Alpha-source, systematic-factor,
-  shared-catalyst, and duplicate-underlying rules still pass immediately before
+  shared-catalyst, cross-carrier underlying, and duplicate-underlying rules still pass immediately before
   intent;
 - a forward quote was observed after intent and frozen latency.
 
@@ -493,6 +508,9 @@ Every completed Shadow close writes an append-only performance event containing:
 - an observed lifecycle diagnostic derived only from executable bid observations
   captured while the position was open and the actual close: MFE, MAE, maximum
   observed drawdown, exit capture, time to best observation, and holding time.
+- an execution-quality record derived from the actual forward entry and exit
+  fill contracts: arrival-midpoint shortfall, both commissions, mean quoted
+  spread, realized round-trip cost, frozen estimated cost, and budget variance.
 
 Sparse quotes are not interpolated. Malformed lifecycle samples are omitted
 rather than blocking the close ledger or final return measurement. The lifecycle
@@ -518,6 +536,16 @@ The Expression Agent may explain the posture but cannot override it. The
 portfolio constructor reloads it immediately before intent, rejects stale or
 tightened plans, and never grants a multiplier above 1.0. Rolling recovery is
 allowed only through later small Shadow observations replacing older results.
+
+An additional controller closes execution-cost calibration separately for Stock, ETF,
+and Option carriers. Before 30 comparable completed executions, the measurements
+are descriptive and the reserve is zero. After maturity, positive mean cost
+surprise plus 25% of mean absolute surprise is deducted from new expected Alpha,
+capped at 500 bp. Favorable fills cannot create a negative reserve. The frozen
+carrier policy and reserve are reloaded immediately before intent; a tighter
+result requires a fresh implementation plan. This TCA is based on forward Shadow
+quotes and modeled fills, not a claim about live-market capacity or broker
+performance.
 
 A second, separate controller closes the forecast-calibration loop only for
 comparable direct-stock positions under the same portfolio-policy version. It
@@ -550,7 +578,7 @@ has no code path to models, ranking, expression, limits, capital, or brokers.
 | `/api/v1/runs/{id}`          | Role input binding, budgets, status, and artifact                   |
 | `/api/v1/opportunities/{id}` | Evidence, Thesis Ledger, agenda/lineage, challenge, rank, and audit |
 | `/api/v1/expressions/{id}`   | Recommendation, risk/implementation plan, and Shadow state          |
-| `/api/v1/alpha/summary`      | Closed sample, lifecycle quality, reserve, and capital postures     |
+| `/api/v1/alpha/summary`      | Closed sample, lifecycle/TCA quality, reserves, and capital posture |
 | `/api/v1/alpha/feedback`     | PIT Mind/archetype/route/mode maturity and feedback                 |
 | `/api/v1/evaluation/summary` | Cohort drift, coverage, missingness, and sample readiness           |
 | `/api/v1/stream`             | Cursor-based lifecycle events                                       |
@@ -618,7 +646,7 @@ The verified release has demonstrated:
 - `0.23.0` rolling-governance tests covering collecting, probation,
   preservation, unique-position enforcement, drawdown response, rolling
   recovery, no bonus leverage, and pre-intent tightening;
-- complete Node (141), Opportunity OS Python (240), and isolated capital (25)
+- complete Node (168), Opportunity OS Python (284), and isolated capital (25)
   test suites for the current tree;
 - a fresh `0.23.0` host-managed deployment in which four DeepSeek V4 Flash
   Scouts completed without an external Agent, the Foundry admitted no

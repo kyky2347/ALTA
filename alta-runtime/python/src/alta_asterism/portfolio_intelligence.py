@@ -37,6 +37,7 @@ class PortfolioResearchMandate(FrozenContract):
         default=(), max_length=16
     )
     saturated_catalyst_keys: tuple[str, ...] = Field(default=(), max_length=8)
+    saturated_underlying_keys: tuple[str, ...] = Field(default=(), max_length=16)
     diversification_search_targets: tuple[AlphaSource, ...] = Field(
         default=(), max_length=3
     )
@@ -62,6 +63,7 @@ def build_portfolio_research_mandate(
     source_limit = policy.dollars(policy.max_alpha_source_nav_bps)
     exposure_limit = policy.dollars(policy.max_systematic_exposure_nav_bps)
     catalyst_limit = policy.dollars(policy.max_catalyst_nav_bps)
+    underlying_limit = policy.dollars(policy.max_underlying_nav_bps)
     stress_limit = policy.dollars(policy.max_portfolio_stress_nav_bps)
     saturated_sources = tuple(
         item.source
@@ -81,6 +83,11 @@ def build_portfolio_research_mandate(
         if item.catalyst_key != "legacy-unclassified"
         and item.gross_notional >= catalyst_limit * _SATURATION_FRACTION
     )
+    saturated_underlyings = tuple(
+        item.underlying_key
+        for item in state.underlying_buckets
+        if item.gross_notional >= underlying_limit * _SATURATION_FRACTION
+    )
     stress_constrained = (
         state.aggregate_stress_loss >= stress_limit * _SATURATION_FRACTION
     )
@@ -92,6 +99,7 @@ def build_portfolio_research_mandate(
         saturated_sources
         or saturated_exposures
         or saturated_catalysts
+        or saturated_underlyings
         or stress_constrained
     ):
         search_targets = tuple(
@@ -113,6 +121,7 @@ def build_portfolio_research_mandate(
         saturated_sources
         or saturated_exposures
         or saturated_catalysts
+        or saturated_underlyings
         or stress_constrained
     ):
         posture = "risk_constrained"
@@ -129,9 +138,9 @@ def build_portfolio_research_mandate(
         objectives.insert(
             0,
             (
-                "Test independent opportunities outside saturated catalyst, "
-                "Alpha-source, and factor buckets."
-                if saturated_catalysts
+                "Test independent opportunities outside saturated underlying, "
+                "catalyst, Alpha-source, and factor buckets."
+                if saturated_catalysts or saturated_underlyings
                 else "Test independent opportunities outside saturated Alpha and factor buckets."
             ),
         )
@@ -148,6 +157,7 @@ def build_portfolio_research_mandate(
         saturated_alpha_sources=saturated_sources,
         saturated_systematic_exposures=saturated_exposures,
         saturated_catalyst_keys=saturated_catalysts,
+        saturated_underlying_keys=saturated_underlyings,
         diversification_search_targets=search_targets,
         research_objectives=tuple(objectives),
     )

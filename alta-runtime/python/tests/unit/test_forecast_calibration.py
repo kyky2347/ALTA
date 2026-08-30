@@ -33,7 +33,7 @@ def observations(
 def test_small_forward_sample_is_descriptive_and_cannot_change_underwriting() -> None:
     result = evaluate_forecast_calibration(
         observations(29),
-        source_portfolio_policy_version="alta-portfolio-risk-v7",
+        source_portfolio_policy_version="alta-portfolio-risk-v8",
     )
 
     assert result.posture == "collecting"
@@ -45,7 +45,7 @@ def test_small_forward_sample_is_descriptive_and_cannot_change_underwriting() ->
 def test_mature_overforecasting_builds_a_downside_only_alpha_reserve() -> None:
     result = evaluate_forecast_calibration(
         observations(30),
-        source_portfolio_policy_version="alta-portfolio-risk-v7",
+        source_portfolio_policy_version="alta-portfolio-risk-v8",
     )
 
     assert result.posture == "calibrated"
@@ -58,7 +58,7 @@ def test_mature_overforecasting_builds_a_downside_only_alpha_reserve() -> None:
 def test_calibration_never_rewards_favorable_bias_with_negative_reserve() -> None:
     result = evaluate_forecast_calibration(
         observations(30, expected=Decimal("100"), realized=Decimal("200")),
-        source_portfolio_policy_version="alta-portfolio-risk-v7",
+        source_portfolio_policy_version="alta-portfolio-risk-v8",
     )
 
     assert result.mean_forecast_error_bps == Decimal("100")
@@ -78,7 +78,7 @@ def test_weak_directional_calibration_tightens_but_never_levers_capital() -> Non
     )
     result = evaluate_forecast_calibration(
         mixed,
-        source_portfolio_policy_version="alta-portfolio-risk-v7",
+        source_portfolio_policy_version="alta-portfolio-risk-v8",
     )
 
     assert result.posture == "caution"
@@ -91,7 +91,7 @@ def test_calibration_is_point_in_time_and_uses_only_the_bounded_latest_window() 
     policy = ForecastCalibrationPolicy(window_size=30, minimum_sample=30)
     result = evaluate_forecast_calibration(
         observations(45),
-        source_portfolio_policy_version="alta-portfolio-risk-v7",
+        source_portfolio_policy_version="alta-portfolio-risk-v8",
         policy=policy,
         total_sample_size=100,
     )
@@ -106,7 +106,7 @@ def test_calibration_rejects_duplicate_or_timeless_evidence() -> None:
     with pytest.raises(ValueError, match="unique"):
         evaluate_forecast_calibration(
             duplicate,
-            source_portfolio_policy_version="alta-portfolio-risk-v7",
+            source_portfolio_policy_version="alta-portfolio-risk-v8",
         )
 
     timeless = (
@@ -120,5 +120,5 @@ def test_calibration_rejects_duplicate_or_timeless_evidence() -> None:
     with pytest.raises(ValueError, match="timezone-aware"):
         evaluate_forecast_calibration(
             timeless,
-            source_portfolio_policy_version="alta-portfolio-risk-v7",
+            source_portfolio_policy_version="alta-portfolio-risk-v8",
         )

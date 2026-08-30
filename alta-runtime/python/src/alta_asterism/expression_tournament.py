@@ -79,12 +79,12 @@ class EvaluatedExpression:
                 "payoff_thesis": self.hypothesis.payoff_thesis[:160],
                 "thesis_purity": self.hypothesis.thesis_purity,
                 "timing_fit": self.hypothesis.timing_fit,
-                "primary_tradeoff": self.hypothesis.primary_tradeoff[:120],
+                "primary_tradeoff": self.hypothesis.primary_tradeoff[:96],
                 "thesis_pillar_ids": self.hypothesis.thesis_pillar_ids,
                 "alpha_source": self.hypothesis.alpha_source,
                 "systematic_exposures": self.hypothesis.systematic_exposures,
                 "hedge_posture": self.hypothesis.hedge_posture,
-                "basis_risk": self.hypothesis.basis_risk[:120],
+                "basis_risk": self.hypothesis.basis_risk[:96],
             },
             "market_gate": self.market_gate,
             "admissible": self.ready,
@@ -120,9 +120,15 @@ class EvaluatedExpression:
             "implementation": (
                 {
                     "status": plan.status,
-                    "reason_codes": plan.reason_codes,
+                    **(
+                        {"reason_codes": plan.reason_codes} if plan.reason_codes else {}
+                    ),
                     "binding_constraint": plan.binding_constraint,
                     "exposure_binding_tag": plan.exposure_binding_tag,
+                    "underlying_key": plan.underlying_key,
+                    "underlying_before": _text(plan.underlying_notional_before),
+                    "underlying_after": _text(plan.underlying_notional_after),
+                    "underlying_limit": _text(plan.underlying_notional_limit),
                     "execution": (
                         {
                             "status": plan.execution_plan.status,

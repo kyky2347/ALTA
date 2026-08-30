@@ -1094,6 +1094,40 @@ and the Review of Financial Studies work on the
 The lifecycle fields are an audit surface for a later preregistered study, not
 evidence that ALTA has discovered a profitable exit policy.
 
+## B36 — point-in-time research attention portfolio
+
+Objective: prevent several expensive independent Trader Minds from repeatedly
+spending the same wake on one crowded entity while preserving the informed
+continuation needed to update a genuinely evolving thesis.
+
+Implemented controls in the local development tree:
+
+- only production Candidates strictly older than the current wake enter the
+  bounded 64-Candidate window; replay/demo artifacts and current-wake output do
+  not enter the projection;
+- samples below four remain unconstrained, and a coverage intervention requires
+  one entity to be a strict majority rather than merely winning a tie;
+- exactly one deterministic continuation seat is assigned to the Mind with the
+  strongest recent history on the dominant entity; every other exploratory
+  seat must expand entity coverage;
+- an exact Research Director follow-up overrides the exploration seat because
+  resolving a registered decision gap is different from duplicating broad
+  discovery;
+- completed-bar seeds that conflict with expansion are removed before the wake,
+  while a conflicting exploratory Candidate fails before persistence;
+- the complete allocation and its concentration metrics are frozen into every
+  role snapshot, revalidated against PostgreSQL, reconstructed during same-wake
+  recovery, and shown in the bilingual operator console.
+
+The control follows the conservative intuition that research breadth is useful
+only when independent work is actually different. It does not reward Candidate
+count, mechanically diversify a portfolio, or infer that breadth creates Alpha.
+Multiple-testing discipline still requires preregistered forward evaluation;
+see Harvey, Liu, and Zhu on
+[multiple testing](https://academic.oup.com/rfs/article-abstract/29/1/5/1843824)
+and the _Review of Financial Studies_ editorial on
+[cross-sectional and time-series research methods](https://academic.oup.com/rfs/article/33/5/1879/5758275).
+
 ## F1 — sustained forward Shadow evidence
 
 This is the next meaningful stage. It is an observation program, not a one-week

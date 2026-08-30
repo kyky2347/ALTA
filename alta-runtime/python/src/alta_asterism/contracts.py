@@ -101,6 +101,11 @@ class Settings(BaseSettings):
         gt=0,
         validation_alias="ALTA_SHADOW_MAX_GROSS_NAV_BPS",
     )
+    shadow_max_underlying_nav_bps: Decimal = Field(
+        default=Decimal("150"),
+        gt=0,
+        validation_alias="ALTA_SHADOW_MAX_UNDERLYING_NAV_BPS",
+    )
     shadow_equity_stress_floor_bps: Decimal = Field(
         default=Decimal("2500"),
         gt=0,
@@ -363,6 +368,14 @@ class Settings(BaseSettings):
             raise ValueError("expression and audit require two different models")
         if self.shadow_max_position_nav_bps > self.shadow_max_gross_nav_bps:
             raise ValueError("Shadow position NAV limit cannot exceed gross NAV limit")
+        if self.shadow_max_underlying_nav_bps < self.shadow_max_position_nav_bps:
+            raise ValueError(
+                "Shadow underlying NAV limit cannot be below position NAV limit"
+            )
+        if self.shadow_max_underlying_nav_bps > self.shadow_max_gross_nav_bps:
+            raise ValueError(
+                "Shadow underlying NAV limit cannot exceed gross NAV limit"
+            )
         configured_position_limit = (
             self.shadow_reference_nav
             * self.shadow_max_position_nav_bps
@@ -417,6 +430,7 @@ class Settings(BaseSettings):
             "kimi",
             "massive",
             "finlight",
+            "finnhub",
             "brave",
             "jina",
             "openalex",
@@ -487,6 +501,7 @@ class Settings(BaseSettings):
                 "trade_loss_budget_bps": str(self.shadow_trade_loss_budget_bps),
                 "max_position_nav_bps": str(self.shadow_max_position_nav_bps),
                 "max_gross_nav_bps": str(self.shadow_max_gross_nav_bps),
+                "max_underlying_nav_bps": str(self.shadow_max_underlying_nav_bps),
                 "equity_stress_floor_bps": str(self.shadow_equity_stress_floor_bps),
                 "max_exit_days": self.shadow_max_exit_days,
                 "adv_participation_bps": str(self.shadow_adv_participation_bps),

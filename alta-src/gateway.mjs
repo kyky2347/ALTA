@@ -577,6 +577,7 @@ export async function startGateway({
       readerKey: internet.readerKey,
       jinaKey: internet.jinaKey,
       openAlexKey: internet.openAlexKey,
+      finnhubKey: internet.finnhubKey,
       crossrefMailto: internet.crossrefMailto,
       lemmyUrl: internet.lemmyUrl,
       mastodonUrl: internet.mastodonUrl,

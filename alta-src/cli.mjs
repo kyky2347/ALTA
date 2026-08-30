@@ -162,6 +162,7 @@ function isolatedEnvironment(extra = {}) {
   delete env.BRAVE_SEARCH_API_KEY;
   delete env.JINA_API_KEY;
   delete env.OPENALEX_API_KEY;
+  delete env.FINNHUB_API_KEY;
   delete env.CROSSREF_MAILTO;
   return process.env.ALTA_AGENT_SAFE_APP_SERVER === "1"
     ? agentSafeChildEnvironment(env)
@@ -311,6 +312,7 @@ async function startUnifiedGateway(state, storage) {
       readerKey: state.resourceCredentials.values.JINA_API_KEY,
       jinaKey: state.resourceCredentials.values.JINA_API_KEY,
       openAlexKey: state.resourceCredentials.values.OPENALEX_API_KEY,
+      finnhubKey: state.resourceCredentials.values.FINNHUB_API_KEY,
       crossrefMailto: process.env.CROSSREF_MAILTO,
       lemmyUrl: process.env.ALTA_LEMMY_URL,
       mastodonUrl: process.env.ALTA_MASTODON_URL,
@@ -730,7 +732,10 @@ async function doctor(live, liveProviders = Object.keys(PROVIDERS)) {
     `  academic sources: OpenAlex${state.resourceCredentials.values.OPENALEX_API_KEY ? " authenticated" : " best-effort"}, Crossref, arXiv`,
   );
   console.log(
-    `  public intelligence: 11 direct / 48 discoverable social platforms; 20 news / 17 finance sources; display-only TradingView navigation`,
+    `  company intelligence: Finnhub${state.resourceCredentials.values.FINNHUB_API_KEY ? " credential loaded (live validity requires a provider probe)" : " optional credential missing"}`,
+  );
+  console.log(
+    `  public intelligence: 11 direct / 48 discoverable social platforms; 20 news / 18 finance sources; display-only TradingView navigation`,
   );
   console.log(
     "  provider admission: automatic 429 concurrency reduction with gradual recovery",

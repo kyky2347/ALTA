@@ -1208,6 +1208,37 @@ def test_one_click_demo_api_sse_reconnect_and_supervisor_crash_recovery(
         assert expression_detail["data"]["shadowPosition"]
         runtime = request_json(port, "/api/v1/system/runtime")
         assert runtime["data"]["minds"]
+        assert runtime["data"]["researchAttention"] == {
+            "version": "alta-research-attention-v1",
+            "knownAt": runtime["data"]["researchAttention"]["knownAt"],
+            "observedThrough": None,
+            "maximumWindow": 64,
+            "minimumSample": 4,
+            "concentrationThreshold": "0.50",
+            "sampleSize": 0,
+            "uniqueEntities": 0,
+            "topEntity": None,
+            "topEntityShare": None,
+            "concentrationHhi": None,
+            "effectiveBreadth": None,
+            "posture": "insufficient_sample",
+            "continuationScoutId": None,
+            "assignments": [
+                {
+                    "scoutId": scout_id,
+                    "mode": "unconstrained",
+                    "deprioritizedEntities": [],
+                    "directive": "Explore independently; no production Candidate concentration sample is mature.",
+                }
+                for scout_id in (
+                    "change_event_scout",
+                    "market_dislocation_scout",
+                    "causal_policy_scout",
+                    "expectation_gap_scout",
+                )
+            ],
+            "warning": "Research attention breadth is descriptive process control, not Evidence, Alpha, rank, or permission to trade.",
+        }
         assert runtime["data"]["config"]["capitalMode"] == "disabled"
         assert runtime["data"]["config"]["credentials"] == {
             "revision": "unmanaged",
@@ -1226,6 +1257,7 @@ def test_one_click_demo_api_sse_reconnect_and_supervisor_crash_recovery(
             "tradeLossBudgetBps": "25",
             "maxPositionNavBps": "100",
             "maxGrossNavBps": "800",
+            "maxUnderlyingNavBps": "150",
             "equityStressFloorBps": "2500",
             "maxExitDays": 2,
             "advParticipationBps": "500",
@@ -1234,7 +1266,7 @@ def test_one_click_demo_api_sse_reconnect_and_supervisor_crash_recovery(
         }
         assert runtime["data"]["config"]["traderMinds"] == {
             "count": 4,
-            "promptVersion": "alpha-trader-v15",
+            "promptVersion": "alpha-trader-v16",
             "toolCatalogVersion": "alta-active-research-v4",
             "activeResearchRequired": True,
             "memoryMode": "bounded_non_evidence",

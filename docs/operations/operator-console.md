@@ -98,8 +98,11 @@ automated operation.
   the tightest evidence-driven capital posture. An observed-lifecycle panel
   separately shows favorable/adverse excursion, drawdown, exit capture, and
   missed positive paths using only prices captured while positions were open.
-  It is explicitly separated from brokerage, cannot auto-tune exits, and never
-  labels Shadow evidence as proven performance.
+  A separate execution-quality panel shows realized versus estimated round-trip
+  cost, budget variance, budget hit rate, open-fill reliability, and the current
+  same-carrier empirical Alpha reserve. Both panels are explicitly separated
+  from brokerage, cannot auto-tune execution, and never label Shadow evidence
+  as proven performance.
 - **Credentials** — Safe configuration state for every supported external
   token slot, grouped by model, market data, news, and research. Secret values
   are write-only and replacement is available only while the complete research
@@ -164,10 +167,14 @@ wedged dependency cannot occupy a control operation indefinitely.
 
 Credential inventory is deliberately separate from Python API polling, so a
 new clone can be configured while the backend and containers are stopped. It
-returns provider label, purpose, configured state, source kind, editability, and
-a short one-way fingerprint—never a raw value or filesystem path. A replacement
-is bounded to 8 KiB, validated for its selected provider, atomically written to
-the external owner-only credential directory, and rolled back if verification
+returns provider label, purpose, required/optional posture, configured state,
+source kind, editability, and a short one-way fingerprint—never a raw value or
+filesystem path. Jina and OpenAlex remain explicitly available in their no-key
+modes; Finnhub is an optional authenticated company-intelligence source. The
+inventory also lists built-in no-key public providers and can detect only safe
+metadata for an owner-only external Tiger Paper file. A token replacement is
+bounded to 8 KiB, validated for its selected provider, atomically written to the
+external owner-only credential directory, and rolled back if local verification
 fails. Environment-provided values are locked instead of silently shadowed. The
 browser password field is cleared after either success or failure.
 

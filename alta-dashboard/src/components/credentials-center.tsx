@@ -7,6 +7,7 @@ import {
   KeyRound,
   LockKeyhole,
   Newspaper,
+  Network,
   RefreshCw,
   Search,
   ShieldCheck,
@@ -47,6 +48,7 @@ function providerPurpose(slot: string, t: ReturnType<typeof useI18n>["t"]) {
   if (slot === "kimi") return t("purposeKimi");
   if (slot === "massive") return t("purposeMassive");
   if (slot === "finlight") return t("purposeFinlight");
+  if (slot === "finnhub") return t("purposeFinnhub");
   if (slot === "brave") return t("purposeBrave");
   if (slot === "jina") return t("purposeJina");
   if (slot === "openalex") return t("purposeOpenalex");
@@ -137,6 +139,17 @@ export function CredentialsCenter({
 
   const mutationLocked = runtimeActive || preview || !selected?.editable;
   const configured = inventory?.configuredSlots.length ?? 0;
+  const operational =
+    inventory?.slots.filter((slot) => slot.operational ?? slot.configured)
+      .length ?? 0;
+
+  function slotState(slot: CredentialSlot) {
+    if (slot.configured) return t("credentialStored");
+    if (slot.availableWithoutCredential) return t("availableWithoutKey");
+    if (slot.credentialRequirement === "optional")
+      return t("optionalEnhancement");
+    return t("credentialMissing");
+  }
 
   return (
     <section className="credentials-shell">
@@ -154,6 +167,10 @@ export function CredentialsCenter({
           <span>
             <strong>{inventory?.slots.length ?? 0}</strong>
             {t("supported")}
+          </span>
+          <span>
+            <strong>{operational}</strong>
+            {t("operational")}
           </span>
           <Button
             variant="outline"
@@ -215,18 +232,19 @@ export function CredentialsCenter({
                           <span
                             className={cn(
                               "provider-state",
-                              slot.configured && "is-configured",
+                              (slot.operational ?? slot.configured) &&
+                                "is-configured",
                             )}
                           >
-                            {slot.configured ? <Check /> : <KeyRound />}
+                            {(slot.operational ?? slot.configured) ? (
+                              <Check />
+                            ) : (
+                              <KeyRound />
+                            )}
                           </span>
                           <span>
                             <strong>{slot.label}</strong>
-                            <small>
-                              {slot.configured
-                                ? t("credentialStored")
-                                : t("credentialMissing")}
-                            </small>
+                            <small>{slotState(slot)}</small>
                           </span>
                           {slot.sourceKind === "environment" && (
                             <Badge variant="outline">ENV</Badge>
@@ -242,12 +260,21 @@ export function CredentialsCenter({
               <ShieldCheck /> {t("trading")}
             </h3>
             <div className="provider-row is-disabled" aria-disabled="true">
-              <span className="provider-state">
-                <LockKeyhole />
+              <span
+                className={cn(
+                  "provider-state",
+                  inventory?.trading.configured && "is-configured",
+                )}
+              >
+                {inventory?.trading.configured ? <Check /> : <LockKeyhole />}
               </span>
               <span>
                 <strong>{inventory?.trading.provider ?? "Tiger Trade"}</strong>
-                <small>{t("paperExecutionDisabled")}</small>
+                <small>
+                  {inventory?.trading.configured
+                    ? t("paperConfigStoredExecutionDisabled")
+                    : t("paperExecutionDisabled")}
+                </small>
               </span>
               <Badge variant="outline">PAPER</Badge>
             </div>
@@ -266,8 +293,20 @@ export function CredentialsCenter({
                   <h3>{selected.label}</h3>
                   <p>{providerPurpose(selected.slot, t)}</p>
                 </div>
-                <Badge variant={selected.configured ? "default" : "outline"}>
-                  {selected.configured ? t("configured") : t("notConfigured")}
+                <Badge
+                  variant={
+                    (selected.operational ?? selected.configured)
+                      ? "default"
+                      : "outline"
+                  }
+                >
+                  {selected.configured
+                    ? t("configured")
+                    : selected.availableWithoutCredential
+                      ? t("availableNoKey")
+                      : selected.credentialRequirement === "optional"
+                        ? t("optional")
+                        : t("notConfigured")}
                 </Badge>
               </header>
 
@@ -289,7 +328,9 @@ export function CredentialsCenter({
                   <strong>
                     {selected.configured
                       ? t("nextRuntimeStart")
-                      : t("notActive")}
+                      : selected.availableWithoutCredential
+                        ? t("availableNow")
+                        : t("notActive")}
                   </strong>
                 </div>
               </div>
@@ -361,6 +402,29 @@ export function CredentialsCenter({
           )}
         </div>
       </div>
+
+      {Boolean(inventory?.providerNetwork?.length) && (
+        <section
+          className="provider-network"
+          aria-label={t("builtInProviderNetwork")}
+        >
+          <header>
+            <Network />
+            <div>
+              <strong>{t("builtInProviderNetwork")}</strong>
+              <p>{t("builtInProviderNetworkDetail")}</p>
+            </div>
+          </header>
+          <div className="provider-network-groups">
+            {inventory?.providerNetwork?.map((group) => (
+              <div key={group.category}>
+                <span>{domain(group.category)}</span>
+                <p>{group.providers.join(" · ")}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <footer className="credential-boundary">
         <ShieldCheck />

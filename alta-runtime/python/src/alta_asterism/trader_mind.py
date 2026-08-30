@@ -58,7 +58,7 @@ class ScoutConfig(BaseModel):
 SCOUTS = (
     ScoutConfig(
         scout_id="change_event_scout",
-        version="alpha-v4",
+        version="alpha-v5",
         mission=(
             "Identify newly changed facts whose causal earnings, cash-flow, or "
             "positioning implications may still be propagating into listed prices."
@@ -86,7 +86,7 @@ SCOUTS = (
             *CORE_ACTIVE_RESEARCH_TOOLS,
             "alta_web_fetch",
             "alta_social_read",
-            "alta_web_feed",
+            "alta_web_crawl",
             "alta_web_archive",
         ),
     ),

@@ -43,6 +43,10 @@ from alta_asterism.research_agenda import (
     research_question_id,
 )
 from alta_asterism.research_incentive import build_research_incentives
+from alta_asterism.research_attention import (
+    ResearchAttentionObservation,
+    build_research_attention_portfolio,
+)
 from alta_asterism.portfolio_intelligence import build_portfolio_research_mandate
 from alta_asterism.trader_mind import TraderMindMemory, experience_summary
 
@@ -496,7 +500,7 @@ def test_prompt_freezes_contract_budget_and_marks_evidence_untrusted() -> None:
     assert prompt["alpha_archetypes"] == list(base.scout.alpha_archetypes)
     assert prompt["research_sequence"] == list(base.scout.research_sequence)
     assert prompt["frozen_input"]["trader_mind_memories"][0]["turn_count"] == 3
-    assert spec.prompt_version == "alpha-trader-v15"
+    assert spec.prompt_version == "alpha-trader-v16"
     assert any("Treat market_research_agenda" in rule for rule in prompt["rules"])
     assert prompt["contract"] == "alta.scout-output.v4"
     assert (
@@ -660,6 +664,40 @@ def test_follow_up_requires_frozen_parent_and_explicit_question() -> None:
             ),
             spec,
         )
+
+
+def test_exploration_candidate_cannot_violate_frozen_attention_seat() -> None:
+    base = spec_for(index=0)
+    attention = build_research_attention_portfolio(
+        wake_at=base.frozen_input.known_at,
+        universe=("DEMO", "OTHER"),
+        scout_ids=tuple(item.scout_id for item in SCOUTS),
+        observations=tuple(
+            ResearchAttentionObservation(
+                candidate_id=f"candidate_{index}",
+                scout_id=SCOUTS[1].scout_id,
+                entity_key="DEMO",
+                known_at=base.frozen_input.known_at - timedelta(minutes=index + 1),
+            )
+            for index in range(4)
+        ),
+    )
+    spec = base.model_copy(
+        update={
+            "frozen_input": base.frozen_input.model_copy(
+                update={"research_attention_portfolio": attention}
+            )
+        }
+    )
+
+    with pytest.raises(ValueError, match="research attention seat"):
+        parse_output(json.dumps(decision_complete_candidate()), spec)
+
+    allowed = parse_output(
+        json.dumps({**decision_complete_candidate(), "entity_key": "OTHER"}),
+        spec,
+    )
+    assert allowed.entity_key == "OTHER"
 
 
 def test_frozen_research_director_queue_rejects_priority_tampering() -> None:

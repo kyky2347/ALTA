@@ -67,9 +67,11 @@ function safeError(error) {
 }
 
 async function readJsonBody(request, maximumBytes = MAX_CREDENTIAL_BODY_BYTES) {
-  if (!String(request.headers["content-type"] ?? "").startsWith(
-    "application/json",
-  ))
+  if (
+    !String(request.headers["content-type"] ?? "").startsWith(
+      "application/json",
+    )
+  )
     throw Object.assign(new Error("A JSON request body is required"), {
       statusCode: 415,
       code: "json_required",
@@ -332,12 +334,16 @@ export function createOperatorConsole({
       revision: inventory.revision,
       configuredSlots: inventory.configuredSlots,
       slots: inventory.slots,
-      trading: {
+      providerNetwork: inventory.providerNetwork ?? [],
+      trading: inventory.trading ?? {
         provider: "Tiger Trade",
         mode: "paper_only",
         configured: false,
         editable: false,
-        status: "capital_runtime_disabled",
+        source: "missing",
+        sourceKind: "missing",
+        fingerprint: null,
+        status: "not_configured_capital_disabled",
       },
     };
   }
@@ -602,10 +608,7 @@ export function createOperatorConsole({
         json(response, 200, { data: await state() });
         return;
       }
-      if (
-        request.method === "GET" &&
-        url.pathname === "/control/credentials"
-      ) {
+      if (request.method === "GET" && url.pathname === "/control/credentials") {
         json(response, 200, { data: publicCredentialInventory() });
         return;
       }

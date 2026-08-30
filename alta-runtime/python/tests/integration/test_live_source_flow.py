@@ -103,6 +103,9 @@ def test_database_source_flow_normalizes_raw_and_enforces_point_in_time(
     assert frozen.expectation_posture == "available"
     assert frozen.portfolio_research_mandate is not None
     assert frozen.portfolio_research_mandate.posture == "empty_book"
+    assert frozen.research_attention_portfolio is not None
+    assert frozen.research_attention_portfolio.posture == "insufficient_sample"
+    assert len(frozen.research_attention_portfolio.assignments) == len(SCOUTS)
     assert postures == {"finlight": "healthy"}
     assert recovered.evidence == frozen.evidence
     assert repeated.evidence == frozen.evidence

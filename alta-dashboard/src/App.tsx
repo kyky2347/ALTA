@@ -47,8 +47,8 @@ import { StatusPill } from "@/components/status-pill";
 import { SystemOverview } from "@/components/system-overview";
 import { useAltaConsole } from "@/hooks/use-alta-console";
 import { useI18n } from "@/lib/i18n";
-import type { SelectedEntity } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import type { ControlState, SelectedEntity } from "@/lib/types";
+import { cn, readableMindSummary } from "@/lib/utils";
 
 type View =
   | "field"
@@ -202,6 +202,8 @@ export default function App() {
     localizedSelected ??
     searchable.find((item) => item.kind === "opportunity") ??
     null;
+  const visibleOperation = recentOperation(control?.operation);
+  const runtimeReady = preview || Boolean(control?.runtime.ready);
 
   async function handleAction(action: "start" | "stop" | "restart") {
     setActionError(null);
@@ -263,34 +265,34 @@ export default function App() {
               time: relative(runtime?.config.lastHeartbeatAt),
             })}
           </span>
-          {control?.operation && (
+          {visibleOperation && (
             <span
               className={cn(
                 "operation-progress",
-                `is-${control.operation.status}`,
+                `is-${visibleOperation.status}`,
               )}
               role="status"
               aria-live="polite"
-              title={control.operation.error}
+              title={visibleOperation.error}
             >
-              {control.operation.status === "running" ? (
+              {visibleOperation.status === "running" ? (
                 <span className="loading-orbit" />
-              ) : control.operation.status === "completed" ? (
+              ) : visibleOperation.status === "completed" ? (
                 <CheckCircle2 />
               ) : (
                 <TriangleAlert />
               )}
-              {control.operation.status === "running"
+              {visibleOperation.status === "running"
                 ? t("operationRunning", {
-                    action: domain(control.operation.action),
-                    phase: domain(control.operation.phase ?? t("working")),
+                    action: domain(visibleOperation.action),
+                    phase: domain(visibleOperation.phase ?? t("working")),
                   })
-                : control.operation.status === "completed"
+                : visibleOperation.status === "completed"
                   ? t("operationComplete", {
-                      action: domain(control.operation.action),
+                      action: domain(visibleOperation.action),
                     })
                   : t("operationFailed", {
-                      action: domain(control.operation.action),
+                      action: domain(visibleOperation.action),
                     })}
             </span>
           )}
@@ -329,8 +331,11 @@ export default function App() {
         <div className="rail-nav">
           {navigation.map(({ id, icon: Icon }) => (
             <button
+              type="button"
               className={cn("rail-item", view === id && "is-active")}
               key={id}
+              aria-label={viewNavigationLabel(id, t)}
+              aria-current={view === id ? "page" : undefined}
               onClick={() => setView(id)}
             >
               <Icon />
@@ -389,11 +394,15 @@ export default function App() {
             <span>{status?.currentPipelineId ?? t("noActiveCycle")}</span>
             <Separator orientation="vertical" />
             <span>
-              {runtime?.config.nextCycleAt
-                ? t("nextCycle", {
-                    time: relative(runtime.config.nextCycleAt),
-                  })
-                : t("scheduleUnavailable")}
+              {!runtimeReady && status
+                ? t("savedSnapshot")
+                : runtime?.config.autonomousStatus === "running"
+                  ? t("cycleInProgress")
+                  : runtime?.config.nextCycleAt
+                    ? t("nextCycle", {
+                        time: relative(runtime.config.nextCycleAt),
+                      })
+                    : t("scheduleUnavailable")}
             </span>
           </div>
         </div>
@@ -679,7 +688,10 @@ function AgentDesk({
               <StatusPill status={agent.status} live />
             </div>
             <h2>{domain(agent.id)}</h2>
-            <p>{mind?.rollingSummary ?? t("noRollingSummary")}</p>
+            <p>
+              {readableMindSummary(mind?.rollingSummary) ??
+                t("noRollingSummary")}
+            </p>
             <div className="desk-facts">
               <span>
                 {t("model")}
@@ -708,6 +720,14 @@ function viewNavigationLabel(view: View, t: ReturnType<typeof useI18n>["t"]) {
   if (view === "agents") return t("agentDesk");
   if (view === "shadow") return t("shadowBook");
   return t("credentials");
+}
+
+function recentOperation(operation: ControlState["operation"] | undefined) {
+  if (!operation || operation.status !== "completed") return operation ?? null;
+  const completedAt = Date.parse(operation.completedAt ?? "");
+  return Number.isFinite(completedAt) && Date.now() - completedAt < 15_000
+    ? operation
+    : null;
 }
 
 function viewHeading(view: View, t: ReturnType<typeof useI18n>["t"]) {
@@ -741,6 +761,15 @@ function relabelEntity(
       label: t("shadowPosition", {
         symbol: String(summary.symbol ?? entity.label.split(" ")[0]),
       }),
+    };
+  if (
+    entity.kind === "event" &&
+    typeof summary.scoutId === "string" &&
+    typeof summary.mode === "string"
+  )
+    return {
+      ...entity,
+      label: `${domain(summary.scoutId)} · ${domain(summary.mode)}`,
     };
   const eventType = summary.eventType;
   return typeof eventType === "string"

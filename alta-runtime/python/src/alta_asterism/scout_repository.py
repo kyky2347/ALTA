@@ -18,6 +18,10 @@ from .market_research_projection import MarketResearchAgendaProjector
 from .research_diligence import build_research_diligence
 from .research_agenda import ResearchQueueInput, build_research_queue
 from .research_incentive import build_research_incentives
+from .research_attention import (
+    ResearchAttentionProjector,
+    apply_research_attention_to_market_agenda,
+)
 from .scouts import (
     CandidateOutput,
     FrozenScoutInput,
@@ -27,7 +31,10 @@ from .scouts import (
 )
 from .trader_mind import TraderMindMemory, bounded_mind_summary, experience_summary
 
-MAX_SCOUT_ATTEMPTS = 2
+# App Server structured streams can fail validation before a ModelTurn exists.
+# Three total attempts keep recovery bounded while tolerating two identical,
+# pre-output transport/schema failures observed under concurrent Scout load.
+MAX_SCOUT_ATTEMPTS = 3
 
 
 @dataclass(frozen=True)
@@ -84,6 +91,7 @@ class ScoutRepository:
             item.scout_id: item for item in frozen_input.research_incentives
         }
         expected_market_agenda = frozen_input.market_research_agenda
+        expected_attention = frozen_input.research_attention_portfolio
         with self.database.connect() as connection:
             rows = (
                 connection.execute(
@@ -216,6 +224,27 @@ class ScoutRepository:
             ):
                 raise ValueError(
                     "frozen market research seed does not match PostgreSQL"
+                )
+        if expected_attention is not None:
+            projected_attention = ResearchAttentionProjector(self.database).at(
+                frozen_input.environment.value,
+                frozen_input.universe,
+                tuple(item.scout_id for item in expected_attention.assignments),
+                frozen_input.known_at,
+            )
+            if projected_attention != expected_attention:
+                raise ValueError(
+                    "frozen research attention portfolio does not match PostgreSQL"
+                )
+            if (
+                expected_market_agenda is not None
+                and apply_research_attention_to_market_agenda(
+                    expected_market_agenda, expected_attention
+                )
+                != expected_market_agenda
+            ):
+                raise ValueError(
+                    "frozen market research agenda conflicts with attention seats"
                 )
 
     def reconcile_expired_activity(self, known_at: datetime) -> tuple[int, int]:

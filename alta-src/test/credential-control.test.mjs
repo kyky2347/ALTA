@@ -42,6 +42,36 @@ test("credential inventory reports sources and revision without values", (t) => 
     /external credential file/,
   );
   assert.equal(JSON.stringify(inventory).includes(value), false);
+  assert.equal(
+    inventory.slots.find((item) => item.slot === "jina").operational,
+    true,
+  );
+  assert.equal(
+    inventory.slots.find((item) => item.slot === "brave").credentialRequirement,
+    "optional",
+  );
+});
+
+test("Tiger Paper inventory exposes only safe external configuration metadata", (t) => {
+  const { env, root } = fixture(t);
+  const broker = path.join(root, "broker");
+  fs.mkdirSync(broker, { mode: 0o700 });
+  const privateMaterial = "fixture-private-material";
+  fs.writeFileSync(
+    path.join(broker, "tiger-paper.properties"),
+    `account=fixture-account\ntiger_id=fixture-id\nprivate_key_pk8=${privateMaterial}\n`,
+    { mode: 0o600 },
+  );
+
+  const inventory = credentialInventory(env);
+
+  assert.equal(inventory.trading.configured, true);
+  assert.equal(inventory.trading.mode, "paper_only");
+  assert.equal(
+    inventory.trading.status,
+    "configured_external_capital_disabled",
+  );
+  assert.equal(JSON.stringify(inventory).includes(privateMaterial), false);
 });
 
 test("credential replacement is atomic, owner-only, and immediately readable", (t) => {

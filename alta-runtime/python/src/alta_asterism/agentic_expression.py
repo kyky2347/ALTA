@@ -951,7 +951,11 @@ class AgenticExpressionFlow:
                     "known_at": instrument.quote.known_at.isoformat(),
                 },
             }
-        audit_opportunity = opportunity_context(opportunity, narrative_bytes=120)
+        # The implementation desk needs a decision brief, not a second copy of
+        # the full research memo.  Keep this hand-off deliberately compact so
+        # the replayable JSONB record stays inside the same byte boundary that
+        # PostgreSQL enforces.
+        audit_opportunity = opportunity_context(opportunity, narrative_bytes=96)
         for field in (
             "research_mode",
             "parent_opportunity_id",
@@ -960,6 +964,14 @@ class AgenticExpressionFlow:
             "disconfirming_evidence",
             "next_test",
             "research_diligence",
+            # Durable identity and display metadata are already bound by the
+            # opportunity ID and the run input hash.  Repeating them consumes
+            # scarce audit context without changing the implementation call.
+            "version",
+            "snapshot_hash",
+            "title",
+            "entity_key",
+            "prediction",
         ):
             audit_opportunity.pop(field, None)
         frozen_input = {
@@ -971,15 +983,21 @@ class AgenticExpressionFlow:
                 "recommendation": {
                     "preferred_kind": recommendation.preferred_kind,
                     "symbol": recommendation.symbol,
-                    "rationale": bounded_text(recommendation.rationale, 320),
-                    "payoff_thesis": bounded_text(recommendation.payoff_thesis, 320),
-                    "invalidation": bounded_text(recommendation.invalidation, 320),
-                    "intended_alpha": bounded_text(recommendation.intended_alpha, 240),
-                    "unwanted_exposures": recommendation.unwanted_exposures,
-                    "retained_exposure": bounded_text(
-                        recommendation.retained_exposure, 240
+                    "rationale": bounded_text(recommendation.rationale, 240),
+                    "payoff_thesis": bounded_text(recommendation.payoff_thesis, 240),
+                    "invalidation": bounded_text(recommendation.invalidation, 200),
+                    "intended_alpha": bounded_text(recommendation.intended_alpha, 180),
+                    "unwanted_exposures": tuple(
+                        bounded_text(item, 120)
+                        for item in recommendation.unwanted_exposures
                     ),
-                    "alternatives_considered": recommendation.alternatives_considered,
+                    "retained_exposure": bounded_text(
+                        recommendation.retained_exposure, 180
+                    ),
+                    "alternatives_considered": tuple(
+                        bounded_text(item, 160)
+                        for item in recommendation.alternatives_considered
+                    ),
                 },
                 "selected_instrument": (
                     None if expression_slate else selected_instrument

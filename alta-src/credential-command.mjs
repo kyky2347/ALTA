@@ -58,8 +58,11 @@ function printInventory(inventory, output = console.log) {
   output(`  revision: ${inventory.revision}`);
   for (const item of inventory.slots)
     output(
-      `  ${item.slot}: ${item.configured ? `configured (${item.source})` : "missing"}`,
+      `  ${item.slot}: ${item.configured ? `configured (${item.source})` : item.availableWithoutCredential ? "available without credential" : item.credentialRequirement === "optional" ? "optional credential missing" : "missing"}`,
     );
+  output(
+    `  tiger-paper: ${inventory.trading.configured ? `configured (${inventory.trading.source}); capital runtime disabled` : "not configured; capital runtime disabled"}`,
+  );
 }
 
 async function reloadActiveService(service) {

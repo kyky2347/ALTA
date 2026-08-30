@@ -26,7 +26,17 @@ def canonical_json_bytes(value: Any) -> bytes:
 
 
 def json_size(value: Any) -> int:
-    return len(canonical_json_bytes(value))
+    # PostgreSQL's ``jsonb::text`` renders separators with spaces.  The durable
+    # run constraint measures that representation rather than the compact JSON
+    # used for hashes and model prompts, so size hand-offs the same way here.
+    return len(
+        json.dumps(
+            value,
+            ensure_ascii=False,
+            sort_keys=True,
+            default=str,
+        ).encode()
+    )
 
 
 def require_json_budget(value: Any, maximum_bytes: int, message: str) -> None:

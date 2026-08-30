@@ -5,6 +5,7 @@ import {
   uniqueStrings,
 } from "./support.mjs";
 import {
+  boundedRecord,
   dateBefore,
   dateToday,
   isoDate,
@@ -32,7 +33,14 @@ import {
 } from "./finance-global.mjs";
 import { runSource } from "./source-runtime.mjs";
 
-const BASE_SOURCES = ["nasdaq", "coinbase", "worldbank", "treasury", "sec"];
+const BASE_SOURCES = [
+  "nasdaq",
+  "coinbase",
+  "worldbank",
+  "treasury",
+  "sec",
+  "finnhub",
+];
 const SOURCE_NAMES = [
   ...BASE_SOURCES,
   ...MACRO_SOURCES,
@@ -50,6 +58,7 @@ const SOURCE_INTERVALS = {
   worldbank: 250,
   treasury: 250,
   sec: 150,
+  finnhub: 1_000,
   ...MACRO_INTERVALS,
   ...REGULATORY_INTERVALS,
   ...GLOBAL_FINANCE_INTERVALS,
@@ -60,6 +69,7 @@ const SOURCE_DEADLINES = {
   worldbank: 12_000,
   treasury: 12_000,
   sec: 12_000,
+  finnhub: 15_000,
   ...MACRO_DEADLINES,
   ...REGULATORY_DEADLINES,
   ...GLOBAL_FINANCE_DEADLINES,
@@ -381,12 +391,156 @@ async function sec(service, args, maximum, options) {
   };
 }
 
+const FINNHUB_DATASETS = new Set([
+  "company_news",
+  "earnings_calendar",
+  "insider_transactions",
+  "peers",
+  "metrics",
+  "recommendations",
+]);
+
+const FINNHUB_FIELDS = {
+  company_news: [
+    "category",
+    "datetime",
+    "headline",
+    "id",
+    "image",
+    "related",
+    "source",
+    "summary",
+    "url",
+  ],
+  earnings_calendar: [
+    "date",
+    "epsActual",
+    "epsEstimate",
+    "hour",
+    "quarter",
+    "revenueActual",
+    "revenueEstimate",
+    "symbol",
+    "year",
+  ],
+  insider_transactions: [
+    "change",
+    "filingDate",
+    "name",
+    "share",
+    "symbol",
+    "transactionCode",
+    "transactionDate",
+    "transactionPrice",
+  ],
+  metrics: ["metric", "series", "symbol"],
+  recommendations: [
+    "buy",
+    "hold",
+    "period",
+    "sell",
+    "strongBuy",
+    "strongSell",
+    "symbol",
+  ],
+};
+
+function finnhubRecords(dataset, value, maximum) {
+  if (dataset === "peers")
+    return (Array.isArray(value) ? value : [])
+      .slice(0, maximum)
+      .map((symbol) => ({ symbol: String(symbol).slice(0, 20) }));
+  const rows =
+    dataset === "earnings_calendar"
+      ? value.earningsCalendar
+      : dataset === "insider_transactions"
+        ? value.data
+        : dataset === "metrics"
+          ? [value]
+          : value;
+  return (Array.isArray(rows) ? rows : [])
+    .slice(0, maximum)
+    .map((row) => boundedRecord(row, FINNHUB_FIELDS[dataset] ?? [], 1_000));
+}
+
+async function finnhub(service, args, maximum, options) {
+  if (!service.finnhubKey)
+    throw Object.assign(
+      new Error(
+        "Finnhub credential is not configured in the external ALTA credential store",
+      ),
+      { status: 503, code: "alta_finance_finnhub_credential_missing" },
+    );
+  const dataset = FINNHUB_DATASETS.has(args.dataset)
+    ? args.dataset
+    : "company_news";
+  const symbol = requiredText(
+    args.symbol,
+    "symbol",
+    /^[A-Za-z0-9.^-]{1,20}$/,
+    20,
+  ).toUpperCase();
+  const fromDate = isoDate(args.from_date, dateBefore(30));
+  const toDate = isoDate(args.to_date, dateToday());
+  if (fromDate > toDate)
+    throw Object.assign(new Error("from_date must not exceed to_date"), {
+      status: 400,
+      code: "alta_finance_invalid_date_range",
+    });
+  const endpoints = {
+    company_news: "/api/v1/company-news",
+    earnings_calendar: "/api/v1/calendar/earnings",
+    insider_transactions: "/api/v1/stock/insider-transactions",
+    peers: "/api/v1/stock/peers",
+    metrics: "/api/v1/stock/metric",
+    recommendations: "/api/v1/stock/recommendation",
+  };
+  const url = new URL(endpoints[dataset], "https://finnhub.io");
+  url.searchParams.set("symbol", symbol);
+  if (
+    ["company_news", "earnings_calendar", "insider_transactions"].includes(
+      dataset,
+    )
+  ) {
+    url.searchParams.set("from", fromDate);
+    url.searchParams.set("to", toDate);
+  }
+  if (dataset === "metrics") url.searchParams.set("metric", "all");
+  url.searchParams.set("token", service.finnhubKey);
+  const value = await readJson(
+    service,
+    {
+      url: url.href,
+      accept: "application/json",
+      max_chars: 768_000,
+      cache_namespace: `finance-finnhub-${dataset}`,
+      attempts: 2,
+    },
+    options,
+  );
+  const sourceUrl = new URL(url);
+  sourceUrl.searchParams.delete("token");
+  return {
+    source: "finnhub",
+    dataset,
+    symbol,
+    records: finnhubRecords(dataset, value, maximum),
+    provenance: {
+      publisher: "Finnhub",
+      source_url: sourceUrl.href,
+      official: true,
+      authentication: "api_key",
+    },
+  };
+}
+
 const ADAPTERS = {
   nasdaq,
   coinbase,
   worldbank: worldBank,
   treasury,
   sec,
+  finnhub,
   ...MACRO_ADAPTERS,
   ...REGULATORY_ADAPTERS,
   ...GLOBAL_FINANCE_ADAPTERS,
@@ -459,7 +613,7 @@ export const financePlugin = {
     defineTool(
       "alta_finance_data",
       "ALTA Public Finance Data",
-      "Query 17 bounded, login-free sources for markets, macro, central banks, fiscal data, banks, positioning, filings, and XBRL. Find unknown series/dataset codes with ALTA web search. Returns provenance; not financial advice.",
+      "Query 17 login-free public sources plus authenticated Finnhub company intelligence for markets, macro, positioning, filings, events, peers, and fundamentals. Returns bounded provenance; not financial advice.",
       {
         type: "object",
         properties: {
@@ -467,7 +621,7 @@ export const financePlugin = {
             type: "string",
             enum: SOURCE_NAMES,
             description:
-              "Markets: nasdaq/coinbase/kraken; macro: fred/bls/worldbank/imf/oecd/eurostat; rates/FX: nyfed/ecb/boc; fiscal: treasury; regulatory: fdic/cftc/sec/sec_xbrl.",
+              "Markets: nasdaq/coinbase/kraken; company intelligence: finnhub; macro: fred/bls/worldbank/imf/oecd/eurostat; rates/FX: nyfed/ecb/boc; fiscal: treasury; regulatory: fdic/cftc/sec/sec_xbrl.",
           },
           symbol: { type: "string" },
           product: { type: "string" },
@@ -522,6 +676,12 @@ export const financePlugin = {
               "financials",
               "failures",
               "summary",
+              "company_news",
+              "earnings_calendar",
+              "insider_transactions",
+              "peers",
+              "metrics",
+              "recommendations",
             ],
           },
           rate_type: {

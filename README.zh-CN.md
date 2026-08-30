@@ -22,8 +22,11 @@ ALTA 是一个仅用于研究、以证据为先的公开市场多模型 Agent �
 Replay / Shadow · **经纪账户路径：** 仅显式 Tiger 模拟盘验收 · **Alpha：** 尚未证明
 
 **本地开发状态：** 已接入机构化组合智能和可重放的市场研究漏斗。完整日线最多给每个 Trader
-Mind 分配一个非 Evidence 异常问题，Mind 必须重新核验行情、因果路径和反方解释；组合构建同时
-限制总压力损失、Alpha 来源与共享催化剂集中度；满仓轮换还必须提升预期 Alpha 美元和单位压力
+Mind 分配一个非 Evidence 异常问题，Mind 必须重新核验行情、因果路径和反方解释。系统还会用
+严格时点一致的 Research Attention Portfolio 检查近期生产候选是否过度集中于同一标的：
+保留一个知情的连续研究席位，其余探索席位必须扩大独立标的覆盖。组合层继续限制总压力损失、
+Alpha 来源、共享催化剂与跨载体底层标的集中度；同一底层标的不能靠改用股票、
+ETF 或期权绕过组合风险边界；满仓轮换还必须提升预期 Alpha 美元和单位压力
 资本效率。新的确定性 Research Director 会剔除已经过期或已经由持仓监控负责的问题，按决策缺口
 和剩余期限给研究排队，把不同问题分配给不同 Mind，并始终保留至少两名 Mind 继续独立发现。
 当前本地树还统一了所有 Agent 交接的字节预算；结构化输出错误的 Scout 只有一次全新且受限的
@@ -36,6 +39,10 @@ Shadow 平仓样本后，持续高估才会被转换成只向下的 Alpha 储备
 持有期间真实捕获的可执行价格路径，用来区分机会发现质量、路径风险与退出损失；这些诊断只读且不会
 自动优化退出。缺少可信风险票据的历史或畸形持仓按当前全额名义价值计入压力损失，不再获得有利的
 零风险假设。
+完整的前向成交现在还会闭合一条独立的执行成本回路：系统按股票、ETF、期权分别记录相对到达中价
+的短缺、开平仓佣金、实际往返成本和冻结预算偏差。只有同类载体达到 30 个可比较平仓样本后，正向
+成本超支与受限误差准备才会变成只向下的 Alpha 准备金；下单意图前必须重新校验，永远不能增加
+预期收益或杠杆。
 
 [架构](docs/architecture/overview.md) · [快速开始](#快速开始一条命令启动) ·
 [实时操作台](docs/operations/operator-console.md) ·
@@ -65,14 +72,16 @@ flowchart TB
     sources["有边界的数据源"] --> evidence["时点一致的证据"]
     evidence --> screen["完整日线研究漏斗<br/>价格 · 成交量 · 相对表现 · 市场宽度"]
     screen -. 非 Evidence 研究问题 .-> scouts["主动 Trader Minds<br/>互联网 · 新闻 · 社交 · 金融数据"]
+    attention["研究注意力组合<br/>一个连续席位 · 扩大独立覆盖"] -. 非 Evidence 探索席位 .-> scouts
     scouts --> thesisledger["冻结的 Thesis Ledger<br/>可观测量 · 证实 · 推翻 · 到期"]
     thesisledger --> diligence["研究尽调记录<br/>交叉核验 · 来源 · 下一项测试"]
     diligence --> registry["机会注册表<br/>身份 · 去重 · 补全"]
+    registry --> attention
     registry --> agenda["开放研究问题<br/>下一项测试 · 首要反对理由 · 审计缺口"]
     agenda --> director["确定性 Research Director<br/>决策缺口 · 期限紧迫度 · 唯一问题分配"]
     director -. 后续冻结 wake<br/>至少两名独立探索 .-> scouts
     memory["持续进化但有边界的 Mind 经验<br/>结果 · 工具路径 · 不是 Evidence"] -. 下一次 wake .-> scouts
-    mandate["冻结的组合研究任务书<br/>拥挤 · 压力 · 缺失的 Alpha 来源"] -. 非 Evidence 上下文 .-> scouts
+    mandate["冻结的组合研究任务书<br/>压力 · 因子 · Alpha 来源 · 催化剂 · 底层标的拥挤"] -. 非 Evidence 上下文 .-> scouts
   end
 
   subgraph decide["挑战与决策"]
@@ -83,7 +92,7 @@ flowchart TB
     ranking --> expression["实施 PM<br/>提出至多三个收益结构假设"]
     expression --> tournament["绑定论点支柱的表达锦标赛<br/>股票 · ETF · 期权 · 等待"]
     tournament --> audit["独立实施审计<br/>选择一个或等待"]
-    audit --> construction["审计后刷新行情并重做构建<br/>净 Alpha · 研究质量 · 因子 · 流动性 · 仓位"]
+    audit --> construction["审计后刷新行情并重做构建<br/>净 Alpha · 研究质量 · 因子 · 底层集中度 · 流动性 · 仓位"]
     construction --> allocation["Alpha 生命周期与资本竞争<br/>衰减 · 持仓门槛 · 准入或轮换"]
   end
 
@@ -140,9 +149,9 @@ _前向证据与经纪账户边界分离；看板展示样本成熟度、不确�
 | 范围           | 当前状态                                                                                                                                                                                                                |
 | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 研究生命周期   | 完整日线异常漏斗、主动多来源探索、按决策缺口和期限排序的 Research Director、唯一跟进问题分配、至少两席独立探索、空跑后轮换路线、可证伪 Thesis Ledger、研究尽调、独立挑战、情景与决策承销、表达锦标赛、Shadow 监控和测量 |
-| 证据与状态     | 时点 Evidence、不可改写的论点支柱、受限问题与过程记忆、建仓时冻结的研究归因、成熟度门控的 Mind Alpha 反馈、可撤销的只读研究激励、Replay                                                                                 |
-| 资金生存       | 仅用当前政策、每仓最新一条前向结果缩小后续 Shadow 仓位；成熟预测误差会扣减后续承销 Alpha，弱方向校准会缩仓，小样本和正结果永远不会自动放大杠杆；未知历史风险按全额名义价值计量                                          |
-| 组合构建       | 单笔与组合总压力预算、总敞口、成熟预测储备、共享因子桶、Alpha 来源与共享催化剂集中度、流动性，以及按 Alpha 美元和压力资本效率进行的持仓竞争                                                                             |
+| 证据与状态     | 时点 Evidence、不可改写的论点支柱、受限问题与过程记忆、研究注意力组合、建仓时冻结的研究归因、成熟度门控的 Mind Alpha 反馈、可撤销的只读研究激励、Replay                                                                 |
+| 资金生存       | 仅用当前政策、每仓最新一条前向结果缩小后续 Shadow 仓位；成熟预测误差和执行成本超支会扣减后续承销 Alpha，弱方向校准会缩仓，小样本和正结果永远不会自动放大杠杆；未知历史风险按全额名义价值计量                            |
+| 组合构建       | 单笔与组合总压力预算、总敞口、成熟预测与执行成本准备金、共享因子桶、Alpha 来源、共享催化剂和跨股票/ETF/期权的底层标的集中度、流动性，以及按 Alpha 美元和压力资本效率进行的持仓竞争                                      |
 | 无人值守服务   | 内部调度器、单主租约、按机会积压调整节奏、统一上下文预算、数据源退避、开放持仓更快观察、runtime 重建、一次可审计 Scout 重试、健康看门狗和安全退出                                                                       |
 | 只读可观测性   | Runtime、Run、Opportunity、冻结 cohort、缺失率、MFE/MAE/回撤/退出捕获和 Shadow 测量的 loopback JSON 与 SSE 接口                                                                                                         |
 | 经纪账户边界   | 默认禁用；隔离的 CLI 只允许一个精确 Tiger 模拟盘账户与 1 股限价验收                                                                                                                                                     |
@@ -150,7 +159,7 @@ _前向证据与经纪账户边界分离；看板展示样本成熟度、不确�
 
 ### 最新本地验收
 
-当前本地工作树通过了 155 项 Node/harness 测试、263 项 Opportunity OS Python 测试和
+当前本地工作树通过了 168 项 Node/harness 测试、284 项 Opportunity OS Python 测试和
 25 项隔离 capital 包测试。2026-08-27 08:19–17:00 EDT 的受监督真实墙钟试运行观察到 28 个
 自主周期身份：26 个完成为 `MVP_IDLE`，2 个在修复前因上下文预算边界失败；系统形成 3 个
 Opportunity 和 4 份独立评估，但产生 0 个 Rank、0 个 Expression、0 个持仓和 0 个订单。两处
@@ -169,6 +178,13 @@ Agent 子进程、监听端口、PostgreSQL 和 Redis 最终全部安全停止�
 不同的 Opportunity 和精确问题，另外两个 Run 保持独立探索；4/4 Trader Mind 成功，周期以
 `MVP_IDLE` 结束，连续失败为 0，capital 始终 disabled，随后服务安全停止。这个结果证明队列分工、
 真实 Agent 运行和失败恢复路径，不代表发现了可盈利机会。
+
+2026-08-29 EDT 的最新一次受限托管部署同样达到 `live`/`ready`，活动自主周期以
+`MVP_IDLE` 完成，保留 4 份 Mind 状态，连续失败为 0，并通过鉴权 API 与中英文控制台展示 v8
+时点组合风险边界。本轮还真实发现并修复了独立表达审计交接中“应用按紧凑 JSON 计数、
+PostgreSQL 按 `jsonb::text` 计数”的字节边界不一致。资本始终 disabled，没有连接经纪执行路径，
+也没有下单；随后浏览器、操作台、调度器、服务、PostgreSQL、Redis 和两个本机监听端口均已验证
+安全关闭。这是可运行性、风险约束和恢复边界的证据，不是收益或 Alpha 证明。
 
 最新一轮可维护性优化把网关准入、协议路由、流式失败处理、Alpha 反馈聚合、Trader Mind
 记忆迁移、Scout 输出校验、前向 cohort 投影、Opportunity 详情物化、Alpha 汇总序列化和两套
@@ -552,24 +568,33 @@ scheduler 子进程。Linux systemd-user 定义通过确定性生成测试；真
 `买入 1 → 卖出 1 → 空仓` 镜像，并把 Massive 用量控制在 8 次预算内。这些结果证明的是受控
 工程路径，不是可盈利 Alpha 或策略有效性。
 
-| 验证项目                         |                                                    结果 |
-| -------------------------------- | ------------------------------------------------------: |
-| Node / Opportunity OS / 资金边界 |                             141 / 243 / 25 tests passed |
-| 当前受控完整生命周期             |            4 Minds、3 Opportunities、1 Shadow、精确回放 |
-| 研究与表达门控                   | 真实工具尽调；三个收益结构的市场锦标赛；独立选择或 Wait |
-| 主动资本轮换                     |     剩余 Alpha 门槛、旧仓幂等退出与冻结绝对限价执行通过 |
-| 前台 24×7 冒烟                   | readiness 与 heartbeat 正常、Tiger 关闭、进程树干净停止 |
-| 凭据轮换故障测试                 |                  原子替换、歧义拒绝、失败回滚与恢复成功 |
-| 当前公共工具探测                 |                      Web、新闻、社交、金融数据 4/4 成功 |
-| 异构模型真实角色验收             |                            5 个角色成功，Wait，0 个持仓 |
-| 加速连续运行 soak                |             86,400 event seconds，49 cycles，0 failures |
-| 恢复能力验收                     |                       连续 4 轮失败后恢复并重建 runtime |
-| 当前中断周期恢复                 |             1 Candidate、1 Opportunity、审查超时后 Idle |
-| 宿主崩溃恢复                     |                     launchd 恢复为唯一 1 / 1 / 1 进程树 |
-| 干净归档与密钥扫描门控           |                                                    PASS |
-| 默认资金模式                     |                                                disabled |
+| 验证项目                         |                                                        结果 |
+| -------------------------------- | ----------------------------------------------------------: |
+| Node / Opportunity OS / 资金边界 |                                 168 / 284 / 25 tests passed |
+| 当前受控完整生命周期             |                4 Minds、3 Opportunities、1 Shadow、精确回放 |
+| 研究与表达门控                   |     真实工具尽调；三个收益结构的市场锦标赛；独立选择或 Wait |
+| 主动资本轮换                     |         剩余 Alpha 门槛、旧仓幂等退出与冻结绝对限价执行通过 |
+| 前台 24×7 冒烟                   |     readiness 与 heartbeat 正常、Tiger 关闭、进程树干净停止 |
+| 研究注意力真实部署               | 7 个历史 Candidate、头部标的 85.7%、1 个连续 + 3 个扩展席位 |
+| 操作台恢复能力                   |           断网降级/重连、前端启停和停机快照状态均已真实验证 |
+| 凭据轮换故障测试                 |                      原子替换、歧义拒绝、失败回滚与恢复成功 |
+| 当前公共工具探测                 |                          Web、新闻、社交、金融数据 4/4 成功 |
+| 异构模型真实角色验收             |                                5 个角色成功，Wait，0 个持仓 |
+| 加速连续运行 soak                |                 86,400 event seconds，49 cycles，0 failures |
+| 恢复能力验收                     |                           连续 4 轮失败后恢复并重建 runtime |
+| 当前中断周期恢复                 |                 1 Candidate、1 Opportunity、审查超时后 Idle |
+| 宿主崩溃恢复                     |                         launchd 恢复为唯一 1 / 1 / 1 进程树 |
+| 干净归档与密钥扫描门控           |                                                        PASS |
+| 默认资金模式                     |                                                    disabled |
 
 这项 soak 推进的是模拟事件时间，不代表模型已经完成 24 小时真实墙钟运行。
+
+2026-08-30 的受限真实部署从已有生产账本读取了 7 个历史 Candidate 和 2 个标的，测得头部标的
+占比 85.7%，因此保留 1 个知情连续研究席位，并要求另外 3 个 Mind 扩展独立标的覆盖。连续研究席位
+新增了 1 个 Candidate；探索席位没有持久化被规则禁止的同标的 Candidate。双语操作台正确展示了
+冻结分工和可读的 Mind 摘要，并在 390、1,024、1,440 像素宽度下无横向溢出。最后从前端执行安全
+停止，PostgreSQL、Redis、操作台、scheduler、服务、Agent 子进程和两个本机监听端口全部验证关闭。
+资金能力始终为 disabled，没有尝试经纪订单。这证明协作和拒绝路径可以运行，不证明存在 Alpha。
 
 公开仓库包含无凭据的 CI、Issue/PR 模板和依赖更新配置；它们不进入 Trader Mind 的研究工具面。
 发布前必须让锁定的第一方测试、格式检查、干净 clone 复现以及完整 Git 历史密钥扫描全部通过。
@@ -688,15 +713,18 @@ Opportunity、Agent Run、表达或事件，会显示系统真正保存的输入
 重启、安全停止和凭据替换都要求精确同源与 CSRF。
 
 **凭据**页面按用途列出全部受支持的外部 Token 槽位：DeepSeek、xAI/Grok、Kimi、Massive、
-Finlight、Brave、Jina 和 OpenAlex。页面只展示是否配置、来源类型及短的一向 SHA-256 指纹；原始
-Secret 只写、提交后立即清空、原子写入仓库外 owner-only 目录，并且永不回传浏览器。环境变量提供的
-凭据只显示锁定元数据，不能被文件覆盖。只有研究 runtime 完全停止后才允许更换，避免同一周期混用
-两套 Provider 状态。OpenAI 继续使用官方 Codex 登录流程，而不是 API Key 输入框。
+Finlight、Finnhub、Brave、Jina 和 OpenAlex，并明确区分必需凭据、可选增强，以及无 Key 也能工作的
+供应商。内置的受限公共数据源网络也会完整列出，不再被误标为“缺失凭据”。页面只展示是否配置、
+来源类型及短的单向 SHA-256 指纹；原始 Secret 只写、提交后立即清空、原子写入仓库外 owner-only
+目录，并且永不回传浏览器。环境变量提供的凭据只显示锁定元数据，不能被文件覆盖。只有研究 runtime
+完全停止后才允许更换，避免同一周期混用两套 Provider 状态。OpenAI 继续使用官方 Codex 登录流程，
+而不是 API Key 输入框。
 
 全新 clone 上第一次点击 **启动 ALTA** 会自动准备隔离环境并安装用户级研究服务；后续启动幂等且
 必须等到 readiness。**安全停止**会停止研究服务、PostgreSQL 和 Redis，同时保留前台操作台供再次
-启动。控制面仍然只管理 Shadow 研究：Tiger 只作为 Paper-only 安全边界显示；当前 capital-disabled
-构建不接受券商凭据、不连接 Tiger、不提交订单，也不提供订单 API。若需要登录后自动恢复操作台本身，
+启动。控制面仍然只管理 Shadow 研究：它可以检测仓库外、owner-only 的 Tiger 模拟盘配置安全元数据，
+但浏览器绝不接收券商私钥；当前 capital-disabled 构建不连接 Tiger、不提交订单，也不提供订单 API。
+若需要登录后自动恢复操作台本身，
 仍可选用 `./alta dashboard install|open|status|logs|stop|uninstall`。完整说明见
 [操作台指南](docs/operations/operator-console.md)。
 
@@ -715,19 +743,19 @@ lock 和冻结周期重放共同负责。研究服务和操作台各自使用独
 服务提供 loopback 健康检查以及以下只读接口。`/api/v1` 路由可以使用
 `ALTA_API_TOKEN` 进行 Bearer 保护；服务不提供订单 API。
 
-| 接口                            | 用途                                      |
-| ------------------------------- | ----------------------------------------- |
-| `/health/live`、`/health/ready` | 进程与依赖健康状态                        |
-| `/api/v1/system/summary`        | 持久化对象统计                            |
-| `/api/v1/system/runtime`        | Agent、数据源、心跳和安全状态             |
-| `/api/v1/mvp/status`            | 当前周期与近期事件                        |
-| `/api/v1/events`                | 支持前向/后向 cursor 分页的追加型历史账本 |
-| `/api/v1/runs/{id}`             | Run 详情和阶段结果                        |
-| `/api/v1/opportunities/{id}`    | 证据、辩论、排序和审计链路                |
-| `/api/v1/expressions/{id}`      | 拟议工具和 Shadow 状态                    |
-| `/api/v1/alpha/summary`         | 前向 Alpha、生命周期质量与承销校准        |
-| `/api/v1/evaluation/summary`    | 冻结 cohort、漂移、覆盖率和就绪度         |
-| `/api/v1/stream`                | 基于 cursor 的 Server-Sent Events         |
+| 接口                            | 用途                                                       |
+| ------------------------------- | ---------------------------------------------------------- |
+| `/health/live`、`/health/ready` | 进程与依赖健康状态                                         |
+| `/api/v1/system/summary`        | 持久化对象统计                                             |
+| `/api/v1/system/runtime`        | Agent、数据源、心跳和安全状态                              |
+| `/api/v1/mvp/status`            | 当前周期与近期事件                                         |
+| `/api/v1/events`                | 支持前向/后向 cursor 分页的追加型历史账本                  |
+| `/api/v1/runs/{id}`             | Run 详情和阶段结果                                         |
+| `/api/v1/opportunities/{id}`    | 证据、辩论、排序和审计链路                                 |
+| `/api/v1/expressions/{id}`      | 拟议工具和 Shadow 状态                                     |
+| `/api/v1/alpha/summary`         | 前向 Alpha、生命周期与执行质量、承销校准和当前组合风险边界 |
+| `/api/v1/evaluation/summary`    | 冻结 cohort、漂移、覆盖率和就绪度                          |
+| `/api/v1/stream`                | 基于 cursor 的 Server-Sent Events                          |
 
 ## 测试
 

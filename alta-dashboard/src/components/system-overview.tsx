@@ -3,6 +3,7 @@ import {
   Bot,
   Database,
   FileSearch2,
+  Focus,
   Radar,
   ShieldCheck,
   Waypoints,
@@ -10,6 +11,7 @@ import {
 import { StatusPill } from "@/components/status-pill";
 import { useI18n } from "@/lib/i18n";
 import type { MvpStatus, RuntimeDetail, SelectedEntity } from "@/lib/types";
+import { readableMindSummary } from "@/lib/utils";
 
 export function SystemOverview({
   status,
@@ -20,7 +22,14 @@ export function SystemOverview({
   runtime: RuntimeDetail | null;
   onSelect: (entity: SelectedEntity) => void;
 }) {
-  const { domain, relative, t } = useI18n();
+  const { domain, number, relative, t } = useI18n();
+  const attention = runtime?.researchAttention;
+  const percent = (value?: string | null) => {
+    const parsed = value === null || value === undefined ? NaN : Number(value);
+    return Number.isFinite(parsed)
+      ? number(parsed, { style: "percent", maximumFractionDigits: 1 })
+      : t("unavailable");
+  };
   return (
     <section className="overview-grid">
       <OverviewBlock
@@ -79,6 +88,89 @@ export function SystemOverview({
           {!status.sources.length && <p>{t("noSourcePosture")}</p>}
         </div>
       </div>
+      <div className="overview-wide attention-portfolio">
+        <div className="overview-wide-head">
+          <span>
+            <Focus /> {t("researchAttention")}
+          </span>
+          <StatusPill status={attention?.posture ?? "waiting"} />
+        </div>
+        <p className="attention-intro">
+          {attention
+            ? t("researchAttentionDetail")
+            : t("researchAttentionWaiting")}
+        </p>
+        {attention ? (
+          <>
+            <div className="attention-metrics">
+              <div>
+                <small>{t("candidateSample")}</small>
+                <strong>{number(attention.sampleSize)}</strong>
+              </div>
+              <div>
+                <small>{t("uniqueEntities")}</small>
+                <strong>{number(attention.uniqueEntities)}</strong>
+              </div>
+              <div>
+                <small>{t("topEntityShare")}</small>
+                <strong>{percent(attention.topEntityShare)}</strong>
+              </div>
+              <div>
+                <small>{t("effectiveBreadth")}</small>
+                <strong>
+                  {attention.effectiveBreadth ?? t("unavailable")}
+                </strong>
+              </div>
+            </div>
+            <div className="attention-seat-list">
+              {(attention.assignments ?? []).map((assignment) => {
+                const entity =
+                  assignment.deprioritizedEntities[0] ??
+                  attention.topEntity ??
+                  t("noDominantEntity");
+                const directive =
+                  assignment.mode === "continue_lead"
+                    ? t("continueLeadDetail", { entity })
+                    : assignment.mode === "expand_coverage"
+                      ? t("expandCoverageDetail", { entity })
+                      : t("unconstrainedDetail");
+                return (
+                  <button
+                    key={assignment.scoutId}
+                    type="button"
+                    onClick={() =>
+                      onSelect({
+                        kind: "event",
+                        id: `research-attention:${assignment.scoutId}`,
+                        label: `${domain(assignment.scoutId)} · ${domain(assignment.mode)}`,
+                        summary: {
+                          ...assignment,
+                          posture: attention.posture,
+                          sampleSize: attention.sampleSize,
+                          topEntity: attention.topEntity,
+                          topEntityShare: attention.topEntityShare,
+                          effectiveBreadth: attention.effectiveBreadth,
+                          knownAt: attention.knownAt,
+                        },
+                      })
+                    }
+                  >
+                    <span className={`attention-mode is-${assignment.mode}`} />
+                    <span>
+                      <strong>{domain(assignment.scoutId)}</strong>
+                      <small>{domain(assignment.mode)}</small>
+                    </span>
+                    <p>{directive}</p>
+                  </button>
+                );
+              })}
+            </div>
+            <small className="attention-boundary">
+              {t("researchAttentionBoundary")}
+            </small>
+          </>
+        ) : null}
+      </div>
       <div className="overview-wide">
         <div className="overview-wide-head">
           <span>
@@ -102,7 +194,10 @@ export function SystemOverview({
               }
             >
               <strong>{domain(mind.id)}</strong>
-              <span>{mind.rollingSummary ?? t("noRollingSummarySaved")}</span>
+              <span>
+                {readableMindSummary(mind.rollingSummary) ??
+                  t("noRollingSummarySaved")}
+              </span>
               <small>
                 {mind.modelId ?? mind.modelProvider ?? t("modelPending")}
               </small>

@@ -19,6 +19,14 @@ export const RESOURCE_CREDENTIALS = Object.freeze({
     hints: ["finlight"],
     patterns: [/\b(sk-[A-Za-z0-9_-]{20,128})\b/i],
   },
+  FINNHUB_API_KEY: {
+    directoryName: "resources",
+    hints: ["finnhub"],
+    patterns: [
+      /[?&]token=([A-Za-z0-9_-]{16,128})/i,
+      /\bfinnhub[^\r\n]{0,48}\b([A-Za-z0-9_-]{16,128})\b/i,
+    ],
+  },
   BRAVE_SEARCH_API_KEY: {
     directoryName: "tools",
     hints: ["brave"],
@@ -40,6 +48,7 @@ export const TOOL_CREDENTIAL_KEYS = Object.freeze([
   "BRAVE_SEARCH_API_KEY",
   "JINA_API_KEY",
   "OPENALEX_API_KEY",
+  "FINNHUB_API_KEY",
 ]);
 
 function genericCandidate(text) {

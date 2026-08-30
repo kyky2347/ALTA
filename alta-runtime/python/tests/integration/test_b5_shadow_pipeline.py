@@ -365,6 +365,18 @@ def test_full_book_executes_idempotent_alpha_rotation(
                         "time_to_best_seconds": 1,
                         "holding_seconds": 1,
                     },
+                    "execution_quality": {
+                        "version": "alta-execution-quality-v1",
+                        "estimated_cost_bps": "20",
+                        "realized_cost_bps": "30",
+                        "cost_surprise_bps": "10",
+                        "entry_shortfall_bps": "12",
+                        "exit_shortfall_bps": "14",
+                        "entry_commission_bps": "2",
+                        "exit_commission_bps": "2",
+                        "mean_quoted_spread_bps": "10",
+                        "within_cost_budget": False,
+                    },
                 },
                 correlation_id="opportunity_b5_fixture",
             ),
@@ -394,6 +406,15 @@ def test_full_book_executes_idempotent_alpha_rotation(
     assert path_diagnostics["meanMaximumFavorableExcursionBps"] == "180.00"
     assert path_diagnostics["meanMaximumAdverseExcursionBps"] == "-70.00"
     assert path_diagnostics["meanExitCaptureRatio"] == "0.5556"
+    execution_quality = alpha_summary["executionQuality"]
+    assert execution_quality["posture"] == "collecting"
+    assert execution_quality["measuredPositions"] == 1
+    assert execution_quality["meanRealizedCostBps"] == "30.00"
+    assert execution_quality["meanCostSurpriseBps"] == "10.00"
+    stock_execution = alpha_summary["executionCostGovernance"]["stock"]
+    assert stock_execution["posture"] == "collecting"
+    assert stock_execution["sampleSize"] == 1
+    assert stock_execution["alphaReserveBps"] == "0"
     assert "unproven" in alpha_summary["warning"].lower()
 
 

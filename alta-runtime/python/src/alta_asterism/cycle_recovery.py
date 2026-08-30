@@ -51,6 +51,7 @@ def recover_frozen_wake(
     seen_feedback = {}
     incentives = []
     seen_incentives = {}
+    research_attention = None
     market_agenda = None
     market_agenda_base = None
     market_seeds = []
@@ -117,6 +118,13 @@ def recover_frozen_wake(
             if existing is None:
                 seen_incentives[item.scout_id] = item
                 incentives.append(item)
+        attention = by_role[role].research_attention_portfolio
+        if attention is not None:
+            if research_attention is not None and research_attention != attention:
+                raise ValueError(
+                    "Scout snapshots disagree on research attention portfolio"
+                )
+            research_attention = attention
         agenda = by_role[role].market_research_agenda
         if agenda is not None:
             agenda_base = agenda.model_copy(update={"seeds": ()})
@@ -176,6 +184,7 @@ def recover_frozen_wake(
             "trader_mind_memories": tuple(memories),
             "alpha_feedback": tuple(feedback),
             "research_incentives": tuple(incentives),
+            "research_attention_portfolio": research_attention,
             "opportunity_drive": opportunity_drive,
             "market_research_agenda": market_agenda,
         }

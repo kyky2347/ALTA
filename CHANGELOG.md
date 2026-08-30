@@ -8,6 +8,28 @@ semantic versioning while the project remains experimental.
 
 ### Added
 
+- A point-in-time Research Attention Portfolio derived only from prior
+  production Candidates. When one entity dominates a mature recent sample, it
+  preserves exactly one continuation seat and directs the other Trader Minds
+  toward independent entity coverage; same-wake recovery and persistence
+  revalidate the identical frozen allocation.
+- A bilingual Research Attention surface in the operator console showing the
+  production sample, unique entities, top-entity share, effective breadth, and
+  every current Trader Mind seat.
+- The production Scout contract is now `alpha-trader-v16`; the new attention
+  seat is explicit non-Evidence process state and exact follow-up precedence is
+  part of the frozen prompt contract.
+
+- Point-in-time execution-cost governance for Stock, ETF, and Option carriers.
+  Every measurable closed Shadow position now freezes arrival-midpoint
+  shortfall, both commissions, quoted spread, realized round-trip cost, and
+  budget variance. After 30 comparable same-carrier closes, positive cost
+  surprise plus a bounded error allowance becomes a downside-only Alpha
+  reserve for future plans.
+- An execution-quality surface in the bilingual operator console showing
+  realized versus estimated costs, cost-budget hit rate, fill reliability, and
+  the currently applied empirical reserve.
+
 - Complete English and Simplified Chinese localization for the local operator
   console, including persistent one-click switching, locale-aware dates and
   numbers, domain-status labels, controls, errors, empty states, replay, and
@@ -24,6 +46,18 @@ semantic versioning while the project remains experimental.
   with responsive containment and an explicit ALTA product lockup.
 
 ### Fixed
+
+- A stopped runtime can no longer leave the workspace context labeled as an
+  active cycle. The console now identifies retained data as a saved snapshot,
+  while preserving the original durable record statuses for audit.
+
+- Completed-bar research seeds that conflict with a frozen coverage-expansion
+  seat are removed before the wake, and an exploratory Candidate that violates
+  its own seat now fails before persistence. Exact Research Director follow-ups
+  retain priority.
+
+- Execution-cost governance is reloaded immediately before an entry intent, so
+  a plan cannot trade against a newly tighter empirical cost reserve.
 
 - Long-lived databases can no longer abort a new autonomous cycle when combined
   Evidence, Opportunity memory, Trader Mind memory, feedback, and book context
@@ -109,6 +143,10 @@ semantic versioning while the project remains experimental.
   a bps hurdle alone.
 
 ### Safety
+
+- Research-attention state is non-Evidence process allocation. It cannot alter
+  confidence, ranking, instrument choice, capital, execution, or broker access;
+  insufficient and balanced samples remain unconstrained.
 
 - Lifecycle diagnostics are descriptive forward evidence only. They cannot
   tune an exit, alter a rank, change capital, or authorize a broker action, and

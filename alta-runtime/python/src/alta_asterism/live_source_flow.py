@@ -25,6 +25,10 @@ from .research_agenda import (
     build_research_queue,
 )
 from .research_incentive import build_research_incentives
+from .research_attention import (
+    ResearchAttentionProjector,
+    apply_research_attention_to_market_agenda,
+)
 from .scouts import EvidenceSnapshot, FrozenScoutInput
 from .trader_mind import SCOUTS, TraderMindMemory, bounded_mind_summary
 
@@ -216,6 +220,7 @@ class DatabaseSourceFlow:
             database, self.portfolio_policy
         )
         self.market_research = MarketResearchAgendaProjector(database)
+        self.research_attention = ResearchAttentionProjector(database)
 
     def schedule_and_wake(
         self,
@@ -260,8 +265,16 @@ class DatabaseSourceFlow:
             self.portfolio_policy,
             wake_at,
         )
-        market_research_agenda = self.market_research.at(
-            self.environment, self.universe, wake_at
+        scout_ids = tuple(item.scout_id for item in SCOUTS)
+        research_attention_portfolio = self.research_attention.at(
+            self.environment.value,
+            self.universe,
+            scout_ids,
+            wake_at,
+        )
+        market_research_agenda = apply_research_attention_to_market_agenda(
+            self.market_research.at(self.environment, self.universe, wake_at),
+            research_attention_portfolio,
         )
         snapshots = tuple(
             EvidenceSnapshot(
@@ -277,13 +290,13 @@ class DatabaseSourceFlow:
             for row in rows
         )
         posture = "available" if snapshots else "unavailable"
-        scout_ids = tuple(item.scout_id for item in SCOUTS)
         evidence = snapshots
         prior = prior_opportunities
         memories = trader_mind_memories
         feedback = alpha_feedback
         incentives = build_research_incentives(feedback, scout_ids=scout_ids)
         agenda = market_research_agenda
+        attention = research_attention_portfolio
         mandate = portfolio_research_mandate
         while True:
             drive = build_opportunity_drive(
@@ -317,6 +330,7 @@ class DatabaseSourceFlow:
                     trader_mind_memories=memories,
                     alpha_feedback=feedback,
                     research_incentives=incentives,
+                    research_attention_portfolio=attention,
                     portfolio_research_mandate=mandate,
                     expectation_posture=posture,
                 )
@@ -346,6 +360,8 @@ class DatabaseSourceFlow:
                 incentives = ()
             elif mandate is not None:
                 mandate = None
+            elif attention is not None:
+                attention = None
             elif agenda is not None:
                 agenda = None
             elif evidence:

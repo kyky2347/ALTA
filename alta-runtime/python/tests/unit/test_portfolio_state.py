@@ -17,8 +17,18 @@ def test_portfolio_state_scales_durable_entry_risk_to_current_notional() -> None
                     }
                 },
                 "shared-policy-reset",
+                "DEMO",
+                "stock",
+                {"market_instrument": {"underlying_symbol": "DEMO"}},
             ),
-            (Decimal("800"), {"implementation_plan": None}, None),
+            (
+                Decimal("800"),
+                {"implementation_plan": None},
+                None,
+                "O:DEMO250101C00100000",
+                "option",
+                "not-json",
+            ),
         ),
         max_open_positions=2,
     )
@@ -39,6 +49,10 @@ def test_portfolio_state_scales_durable_entry_risk_to_current_notional() -> None
         "market_beta",
         "unknown",
     }
+    assert {item.underlying_key for item in state.underlying_buckets} == {
+        "DEMO",
+        "UNKNOWN",
+    }
 
 
 def test_malformed_legacy_risk_is_charged_full_notional_instead_of_zero() -> None:
@@ -53,6 +67,9 @@ def test_malformed_legacy_risk_is_charged_full_notional_instead_of_zero() -> Non
                     }
                 },
                 None,
+                "DEMO",
+                "stock",
+                {},
             ),
         ),
         max_open_positions=8,
@@ -60,3 +77,33 @@ def test_malformed_legacy_risk_is_charged_full_notional_instead_of_zero() -> Non
 
     assert state.aggregate_stress_loss == Decimal("750")
     assert state.alpha_source_buckets[0].estimated_stress_loss == Decimal("750")
+
+
+def test_portfolio_state_aggregates_cross_carrier_underlying_risk() -> None:
+    state = project_portfolio_state(
+        (
+            (
+                Decimal("6000"),
+                {"implementation_plan": None},
+                None,
+                "DEMO",
+                "stock",
+                {},
+            ),
+            (
+                Decimal("2000"),
+                {"implementation_plan": None},
+                None,
+                "O:DEMO250101C00100000",
+                "option",
+                '{"market_instrument":{"underlying_symbol":"DEMO"}}',
+            ),
+        ),
+        max_open_positions=8,
+    )
+
+    assert len(state.underlying_buckets) == 1
+    assert state.underlying_buckets[0].underlying_key == "DEMO"
+    assert state.underlying_buckets[0].open_positions == 2
+    assert state.underlying_buckets[0].gross_notional == Decimal("8000")
+    assert state.underlying_buckets[0].estimated_stress_loss == Decimal("8000")

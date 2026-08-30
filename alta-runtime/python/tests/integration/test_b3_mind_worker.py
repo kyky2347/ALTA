@@ -390,7 +390,7 @@ def test_fake_app_server_runs_four_scouts_with_sdk_and_persists_provenance(
     assert all(
         row[5:9]
         == (
-            "alpha-trader-v15",
+            "alpha-trader-v16",
             "alta-active-research-v4",
             "fixture",
             "fixture-model",
@@ -527,10 +527,10 @@ def test_invalid_structured_output_fails_one_scout_without_candidate_insert(
     assert failed_run == (
         "failed",
         "invalid_output",
-        "thread_3",
-        "turn_3",
+        "thread_4",
+        "turn_4",
     )
-    assert len(failure_artifacts) == 2
+    assert len(failure_artifacts) == 3
     assert all(item[0]["error_type"] == "ValidationError" for item in failure_artifacts)
     assert all(len(item[0]["error_fingerprint"]) == 64 for item in failure_artifacts)
     assert all(
@@ -541,13 +541,13 @@ def test_invalid_structured_output_fails_one_scout_without_candidate_insert(
         assert connection.execute(
             """SELECT attempt_count FROM research.run
             WHERE role = 'market_dislocation_scout'"""
-        ).fetchone() == (2,)
+        ).fetchone() == (3,)
         assert connection.execute(
             """SELECT array_agg(a.version ORDER BY a.version)
             FROM research.run_artifact a JOIN research.run r ON r.id = a.run_id
             WHERE r.role = 'market_dislocation_scout'
               AND a.artifact_kind = 'failure'"""
-        ).fetchone() == ([1, 2],)
+        ).fetchone() == ([1, 2, 3],)
 
 
 def test_invalid_structured_output_gets_one_bounded_fresh_retry(
@@ -678,7 +678,7 @@ def test_fake_app_server_deadline_interrupts_one_turn_and_batch_continues(
                 """SELECT attempt_count FROM research.run
             WHERE role = 'change_event_scout'"""
             ).fetchone()[0]
-            == 2
+            == 3
         )
 
 
@@ -709,7 +709,7 @@ def test_stuck_turn_resets_app_server_before_next_scout(
         "succeeded",
         "succeeded",
     ]
-    assert [item["method"] for item in read_log(log)].count("initialize") == 3
+    assert [item["method"] for item in read_log(log)].count("initialize") == 4
 
 
 def test_tool_budget_rejects_tool_using_scout_but_preserves_other_runs(
