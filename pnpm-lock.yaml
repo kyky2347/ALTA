@@ -12,8 +12,8 @@ importers:
         specifier: 0.23.2
         version: 0.23.2
       prettier:
-        specifier: 3.5.3
-        version: 3.5.3
+        specifier: 3.9.6
+        version: 3.9.6
 
   alta-dashboard:
     dependencies:
@@ -2507,8 +2507,8 @@ packages:
     resolution: {integrity: sha512-ZlsFlG7MtSFCoc5xreOvBAozCJ6Pf06opgJjh9ONEv418xpZSAzNjstD36C6+JwOnfSqOW/9uDkqKjezTdxZhw==}
     engines: {node: '>=20'}
 
-  prettier@3.5.3:
-    resolution: {integrity: sha512-QQtaxnoDJeAkDvDKWCLiwIXkTgRhwYDEQCghU9Z6q03iyek/rxRh/2lC3HB7P8sWT2xC/y5JDctPLBIGzHKbhw==}
+  prettier@3.9.6:
+    resolution: {integrity: sha512-OpN0zzVdiaiAhxpuuj5efpIS4sY9j7bY6uR5mnj5yPzGkdkjNKSJeUThPb60Jw29QuAZgA4o+/iB49kFiaBX6g==}
     engines: {node: '>=14'}
     hasBin: true
 
@@ -5344,7 +5344,7 @@ snapshots:
 
   powershell-utils@0.2.0: {}
 
-  prettier@3.5.3: {}
+  prettier@3.9.6: {}
 
   pretty-ms@9.3.0:
     dependencies:
