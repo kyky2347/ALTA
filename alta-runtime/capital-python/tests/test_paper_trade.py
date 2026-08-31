@@ -6,12 +6,25 @@ from types import SimpleNamespace
 import pytest
 
 import alta_capitald.paper_trade as paper_trade
+from alta_capitald.__main__ import _safe_error_code
 from alta_capitald import (
     PaperBoundaryError,
     PaperOrderRequest,
     PaperTradeConfig,
     TigerPaperSession,
 )
+
+
+def test_broker_error_code_diagnostics_are_bounded() -> None:
+    safe = RuntimeError("safe")
+    safe.code = 1200  # type: ignore[attr-defined]
+    unsafe = RuntimeError("unsafe")
+    unsafe.code = "secret\nvalue"  # type: ignore[attr-defined]
+
+    assert _safe_error_code(safe) == "1200"
+    assert _safe_error_code(unsafe) is None
+    assert _safe_error_code(RuntimeError("plain")) is None
+
 
 PAPER_ACCOUNT = "00000000000000000"
 
@@ -77,7 +90,7 @@ class _FakeClient:
         self.pending = None
 
     def get_prime_assets(self, *, account):
-        return SimpleNamespace(account=account)
+        return SimpleNamespace(account=account, update_timestamp=None, segments={})
 
     def get_positions(self, *, account, symbol=None):
         if self.quantity == 0:
@@ -92,6 +105,10 @@ class _FakeClient:
 
     def get_open_orders(self, *, account):
         assert account == self.account
+        return []
+
+    def get_orders(self, *, account, limit, is_brief):
+        assert (account, limit, is_brief) == (self.account, 100, True)
         return []
 
     def preview_order(self, _order):
@@ -176,6 +193,98 @@ def test_preflight_reports_open_orders(
 
     with TigerPaperSession(config(tmp_path)) as session:
         assert session.preflight()["openOrderCount"] == 1
+
+
+def test_snapshot_exposes_portfolio_without_raw_account_or_order_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class SnapshotClient(_FakeClient):
+        def __init__(self, client_config) -> None:
+            super().__init__(client_config)
+            self.quantity = Decimal("1")
+
+        def get_prime_assets(self, *, account):
+            stock = SimpleNamespace(
+                currency="USD",
+                cash_balance=10_000,
+                cash_available_for_trade=9_000,
+                net_liquidation=10_150,
+                gross_position_value=150,
+                buying_power=18_000,
+                unrealized_pl=5,
+                realized_pl=2,
+                maintain_margin=45,
+            )
+            return SimpleNamespace(
+                account=account,
+                update_timestamp=1_725_000_000_000,
+                segments={"S": stock},
+            )
+
+        def get_positions(self, *, account, symbol=None):
+            return [
+                SimpleNamespace(
+                    account=account,
+                    contract=SimpleNamespace(
+                        symbol=symbol or "SPY", sec_type="STK", currency="USD"
+                    ),
+                    quantity=1,
+                    average_cost=500,
+                    market_price=505,
+                    market_value=505,
+                    unrealized_pnl=5,
+                    unrealized_pnl_percent=0.01,
+                    realized_pnl=2,
+                    today_pnl=3,
+                    salable_qty=1,
+                )
+            ]
+
+        def get_orders(self, *, account, limit, is_brief):
+            assert (limit, is_brief) == (100, True)
+            return [
+                SimpleNamespace(
+                    account=account,
+                    id=987654321,
+                    contract=SimpleNamespace(
+                        symbol="SPY", sec_type="STK", currency="USD"
+                    ),
+                    action="BUY",
+                    order_type="LMT",
+                    status="FILLED",
+                    quantity=1,
+                    filled=1,
+                    remaining=0,
+                    limit_price=500,
+                    avg_fill_price=500,
+                    commission=0.01,
+                    realized_pnl=0,
+                    time_in_force="DAY",
+                    outside_rth=False,
+                    order_time=1_725_000_000_000,
+                    update_time=1_725_000_001_000,
+                    trade_time=1_725_000_001_000,
+                )
+            ]
+
+    patch_sdk(monkeypatch, SnapshotClient)
+
+    with TigerPaperSession(config(tmp_path)) as session:
+        snapshot = session.snapshot()
+
+    encoded = str(snapshot)
+    assert PAPER_ACCOUNT not in encoded
+    assert "987654321" not in encoded
+    assert (
+        snapshot["accountFingerprint"]
+        == hashlib.sha256(PAPER_ACCOUNT.encode()).hexdigest()[:12]
+    )
+    assert snapshot["assets"]["netLiquidation"] == "10150"
+    assert snapshot["positions"][0]["symbol"] == "SPY"
+    assert (
+        snapshot["orders"][0]["reference"]
+        == hashlib.sha256(b"987654321").hexdigest()[:16]
+    )
 
 
 def test_unconfirmed_cancel_fails_closed(

@@ -146,6 +146,57 @@ export function replaceCredential(
   );
 }
 
+export function verifyCredentialHealth(
+  csrfToken: string,
+  force = false,
+  options: { signal?: AbortSignal; timeoutMs?: number } = {},
+) {
+  return requestJson<import("@/lib/types").CredentialInventory>(
+    `/control/credentials/verify${force ? "?force=1" : ""}`,
+    {
+      method: "POST",
+      headers: { "X-ALTA-CSRF": csrfToken },
+    },
+    { timeoutMs: 60_000, ...options },
+  );
+}
+
+export function refreshPaperCapital(
+  csrfToken: string,
+  options: { signal?: AbortSignal; timeoutMs?: number } = {},
+) {
+  return requestJson<import("@/lib/types").PaperCapitalStatus>(
+    "/control/capital/refresh",
+    {
+      method: "POST",
+      headers: { "X-ALTA-CSRF": csrfToken },
+    },
+    { timeoutMs: 60_000, ...options },
+  );
+}
+
+export function setPaperCapitalAuthorization(
+  enabled: boolean,
+  csrfToken: string,
+  options: { signal?: AbortSignal; timeoutMs?: number } = {},
+) {
+  return requestJson<import("@/lib/types").PaperCapitalStatus>(
+    "/control/capital/authorization",
+    {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "X-ALTA-CSRF": csrfToken,
+      },
+      body: JSON.stringify({
+        enabled,
+        confirmation: enabled ? "ENABLE TIGER PAPER" : "DISABLE TIGER PAPER",
+      }),
+    },
+    { timeoutMs: 60_000, ...options },
+  );
+}
+
 export function entityDetailPath(kind: string, id: string) {
   if (kind === "opportunity")
     return `/proxy/api/v1/opportunities/${encodeURIComponent(id)}`;

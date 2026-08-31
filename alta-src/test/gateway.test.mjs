@@ -648,12 +648,13 @@ test("gateway serves one authenticated stateless MCP internet surface", async ()
     token: "internet-token",
     internet: { fileRoots: [root] },
   });
-  const invoke = (body, token = "internet-token") =>
+  const invoke = (body, token = "internet-token", headers = {}) =>
     fetch(`${gateway.baseUrl}/mcp`, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${token}`,
         "Content-Type": "application/json",
+        ...headers,
       },
       body: JSON.stringify(body),
     });
@@ -746,6 +747,48 @@ test("gateway serves one authenticated stateless MCP internet surface", async ()
       params: { name: "alta_file_read", arguments: { path: "report.txt" } },
     }).then((response) => response.json());
     assert.equal(file.result.structuredContent.content, "file evidence");
+
+    const budgetHeaders = {
+      "X-ALTA-Run-ID": `run_${"a".repeat(32)}`,
+      "X-ALTA-Max-Tool-Calls": "2",
+    };
+    const firstBudgeted = await invoke(
+      {
+        jsonrpc: "2.0",
+        id: 5,
+        method: "tools/call",
+        params: { name: "alta_file_read", arguments: { path: "report.txt" } },
+      },
+      "internet-token",
+      budgetHeaders,
+    ).then((response) => response.json());
+    assert.match(
+      firstBudgeted.result.content[0].text,
+      /1 of 2 tool calls remain/,
+    );
+    const finalBudgeted = await invoke(
+      {
+        jsonrpc: "2.0",
+        id: 6,
+        method: "tools/call",
+        params: { name: "alta_file_read", arguments: { path: "report.txt" } },
+      },
+      "internet-token",
+      budgetHeaders,
+    ).then((response) => response.json());
+    assert.match(finalBudgeted.result.content[0].text, /finalize now/);
+    const exhausted = await invoke(
+      {
+        jsonrpc: "2.0",
+        id: 7,
+        method: "tools/call",
+        params: { name: "alta_file_read", arguments: { path: "report.txt" } },
+      },
+      "internet-token",
+      budgetHeaders,
+    );
+    assert.equal(exhausted.status, 429);
+    assert.match(await exhausted.text(), /tool call budget exhausted/);
   } finally {
     await gateway.close();
     fs.rmSync(root, { recursive: true, force: true });

@@ -56,6 +56,7 @@ export type ControlState = {
   safety: {
     environment: string;
     capitalMode: string;
+    brokerEnvironment: "PAPER";
     dashboardBinding: string;
   };
 };
@@ -73,11 +74,34 @@ export type CredentialSlot = {
   sourceKind: "environment" | "external" | "missing";
   editable: boolean;
   fingerprint: string | null;
+  verification: CredentialVerification;
+};
+
+export type CredentialVerificationStatus =
+  | "healthy"
+  | "auth_rejected"
+  | "rate_limited"
+  | "unavailable"
+  | "unverified"
+  | "not_required"
+  | "not_configured";
+
+export type CredentialVerification = {
+  status: CredentialVerificationStatus;
+  reason: string | null;
+  checkedAt: string | null;
+  latencyMs: number | null;
+  httpStatus: number | null;
 };
 
 export type CredentialInventory = {
   revision: string;
   configuredSlots: string[];
+  verification: {
+    checkedAt: string | null;
+    expiresAt: string | null;
+    stale: boolean;
+  };
   slots: CredentialSlot[];
   providerNetwork: Array<{
     category: string;
@@ -91,11 +115,114 @@ export type CredentialInventory = {
     source: string;
     sourceKind: "environment" | "external" | "missing";
     fingerprint: string | null;
+    authorizationEnabled?: boolean;
+    authorizationPosture?: string;
     status:
       | "configured_external_capital_disabled"
       | "not_configured_capital_disabled"
       | "invalid_external_config";
   };
+};
+
+export type PaperCapitalPosition = {
+  symbol: string;
+  securityType: string;
+  currency: string;
+  quantity: string | null;
+  averageCost: string | null;
+  marketPrice: string | null;
+  marketValue: string | null;
+  unrealizedPnl: string | null;
+  unrealizedPnlPercent: string | null;
+  realizedPnl: string | null;
+  todayPnl: string | null;
+  salableQuantity: string | null;
+};
+
+export type PaperCapitalOrder = {
+  reference: string;
+  symbol: string;
+  securityType: string;
+  side: string;
+  orderType: string;
+  status: string;
+  quantity: string | null;
+  filled: string | null;
+  remaining: string | null;
+  limitPrice: string | null;
+  averageFillPrice: string | null;
+  commission: string | null;
+  realizedPnl: string | null;
+  timeInForce: string;
+  outsideRegularHours: boolean;
+  createdAt: string | null;
+  updatedAt: string | null;
+  filledAt: string | null;
+};
+
+export type PaperCapitalSnapshot = {
+  paper: true;
+  accountBinding: true;
+  accountFingerprint: string;
+  observedAt: string;
+  brokerUpdatedAt: string | null;
+  savedAt: string;
+  positionCount: number;
+  openOrderCount: number;
+  recentOrderCount: number;
+  mutationPolicy: "one_share_limit_day";
+  assets: {
+    currency?: string;
+    cashBalance?: string | null;
+    cashAvailableForTrade?: string | null;
+    netLiquidation?: string | null;
+    grossPositionValue?: string | null;
+    buyingPower?: string | null;
+    unrealizedPnl?: string | null;
+    realizedPnl?: string | null;
+    maintenanceMargin?: string | null;
+  };
+  positions: PaperCapitalPosition[];
+  orders: PaperCapitalOrder[];
+};
+
+export type PaperCapitalAuditEvent = {
+  id: string;
+  action: string;
+  result: "succeeded" | "failed";
+  knownAt: string;
+  accountFingerprint: string | null;
+  errorFingerprint?: string;
+};
+
+export type PaperCapitalStatus = {
+  version: 1;
+  provider: "Tiger Trade";
+  environment: "PAPER";
+  configured: boolean;
+  requestedEnabled: boolean;
+  enabled: boolean;
+  posture:
+    | "disabled"
+    | "not_configured"
+    | "authorization_invalid"
+    | "snapshot_invalid"
+    | "configuration_changed"
+    | "paper_enabled"
+    | "paper_ready_disabled";
+  accountFingerprint: string | null;
+  configurationFingerprint: string | null;
+  mutationPolicy: "one_share_limit_day";
+  instrumentPolicy: "us_stock_only";
+  outsideRegularHours: false;
+  requiresStoppedRuntime: true;
+  lastChangedAt: string | null;
+  lastPreflightAt: string | null;
+  configurationError: string | null;
+  authorizationError: string | null;
+  snapshotError: string | null;
+  snapshot: PaperCapitalSnapshot | null;
+  audit: PaperCapitalAuditEvent[];
 };
 
 export type AgentRun = {
@@ -206,6 +333,11 @@ export type AlphaEvidenceSummary = {
   meanAlphaBps?: string | null;
   confidence95LowerBps?: string | null;
   confidence95UpperBps?: string | null;
+  researchTrials?: number;
+  selectionPolicyVersion?: string;
+  selectionCriticalZ?: string | null;
+  selectionAdjustedConfidence95LowerBps?: string | null;
+  selectionAdjustedLowerBoundAboveZero?: boolean;
 };
 
 export type AlphaCapitalGovernanceSummary = {
@@ -214,6 +346,11 @@ export type AlphaCapitalGovernanceSummary = {
   sampleSize?: number;
   windowSize?: number;
   recentMeanAlphaBps?: string | null;
+  confidence95LowerAlphaBps?: string | null;
+  confidence95UpperAlphaBps?: string | null;
+  researchTrials?: number;
+  selectionAdjustedLowerAlphaBps?: string | null;
+  selectionCriticalZ?: string | null;
   maxDrawdownNavBps?: string;
   evidencePosture?: string;
 };
@@ -298,12 +435,41 @@ export type PortfolioRiskSummary = {
   stressNavBps?: string;
   stressLimitNavBps?: string;
   underlyingLimitNavBps?: string;
+  alphaSourceLimitNavBps?: string;
+  catalystLimitNavBps?: string;
+  systematicExposureLimitNavBps?: string;
+  mostConstrainedBucket?: {
+    kind: string;
+    key: string;
+    grossNavBps: string;
+    limitNavBps: string;
+    utilization: string;
+  } | null;
   underlyingBuckets?: Array<{
     underlyingKey: string;
     openPositions: number;
     grossNotional: string;
     grossNavBps: string;
     estimatedStressLoss: string;
+  }>;
+  alphaSourceBuckets?: Array<{
+    alphaSource: string;
+    openPositions: number;
+    grossNotional: string;
+    grossNavBps: string;
+    estimatedStressLoss: string;
+  }>;
+  catalystBuckets?: Array<{
+    catalystKey: string;
+    openPositions: number;
+    grossNotional: string;
+    grossNavBps: string;
+    estimatedStressLoss: string;
+  }>;
+  systematicExposureBuckets?: Array<{
+    tag: string;
+    grossNotional: string;
+    grossNavBps: string;
   }>;
 };
 
@@ -342,15 +508,108 @@ export type ResearchAttentionSummary = {
   topEntityShare?: string | null;
   concentrationHhi?: string | null;
   effectiveBreadth?: string | null;
+  uniqueArchetypes?: number;
+  archetypeEffectiveBreadth?: string | null;
+  horizonMix?: Record<string, number>;
+  directionMix?: Record<string, number>;
   posture: "insufficient_sample" | "balanced" | "concentrated";
   continuationScoutId?: string | null;
   assignments: Array<{
     scoutId: string;
     mode: "unconstrained" | "continue_lead" | "expand_coverage";
     deprioritizedEntities: string[];
+    targetArchetype?: string | null;
+    targetHorizonBucket?: "short" | "medium" | "long" | null;
     directive: string;
   }>;
   warning: string;
+};
+
+export type OpportunityContinuitySummary = {
+  version: string;
+  knownAt: string;
+  scanLimit: number;
+  frozenLimit: number;
+  registryActive: number;
+  scannedActive: number;
+  frozenActive: number;
+  pendingQuestions: number;
+  deferredQuestions: number;
+  nextResearchDueAt?: string | null;
+  expiringActive: number;
+  staleActive: number;
+  oldestActiveDays: number;
+  earliestDecisionDeadlineAt?: string | null;
+  selectedOpportunityIds: string[];
+  priorityOpportunityIds: string[];
+  selectionTruncated: boolean;
+  registryScanSaturated: boolean;
+  posture: "empty" | "healthy" | "backlog" | "expiring" | "stale";
+  warning: string;
+};
+
+export type ResearchOperationsSummary = {
+  version: string;
+  posture: "waiting" | "active" | "degraded" | "cross_checked";
+  windowRuns: number;
+  candidateRuns: number;
+  noOpRuns: number;
+  failedRuns: number;
+  completedToolCalls: number;
+  failedToolCalls: number;
+  uniqueSourceDomains: number;
+  independentEvidenceOrigins: number;
+  citedSources: number;
+  sourceRoleCollisions: number;
+  sourceFamilies: string[];
+  crossCheckedRuns: number;
+  screenGradeRuns: number;
+  retriedRuns: number;
+  retryRecoveredRuns: number;
+  contractRejectedRuns: number;
+  deadlineFailedRuns: number;
+  followUpAssignedRuns: number;
+  followUpExecutedRuns: number;
+  followUpNoOpRuns: number;
+  totalTokens: number;
+  averageLatencyMs?: number | null;
+  minds: Array<{
+    scoutId: string;
+    posture:
+      | "waiting"
+      | "active"
+      | "degraded"
+      | "cross_checked"
+      | "screen_grade";
+    lastRunAt?: string | null;
+    latestStatus?: string | null;
+    latestErrorCode?: string | null;
+    windowRuns: number;
+    candidateRuns: number;
+    noOpRuns: number;
+    failedRuns: number;
+    completedToolCalls: number;
+    failedToolCalls: number;
+    uniqueSourceDomains: number;
+    independentEvidenceOrigins: number;
+    citedSources: number;
+    sourceRoleCollisions: number;
+    sourceFamilies: string[];
+    evidenceRoles: string[];
+    crossCheckedRuns: number;
+    screenGradeRuns: number;
+    retriedRuns: number;
+    retryRecoveredRuns: number;
+    contractRejectedRuns: number;
+    deadlineFailedRuns: number;
+    followUpAssignedRuns: number;
+    followUpExecutedRuns: number;
+    followUpNoOpRuns: number;
+    latestAttemptCount: number;
+    totalTokens: number;
+    averageLatencyMs?: number | null;
+  }>;
+  disclosure: string;
 };
 
 export type RuntimeDetail = {
@@ -366,6 +625,8 @@ export type RuntimeDetail = {
   sourceCursors: Array<{ source: string; cursor: string; knownAt: string }>;
   alpha?: AlphaSummary;
   researchAttention?: ResearchAttentionSummary | null;
+  opportunityContinuity?: OpportunityContinuitySummary | null;
+  researchOperations?: ResearchOperationsSummary | null;
   config: Record<string, unknown> & {
     autonomousStatus?: string;
     currentCycleId?: string;

@@ -111,13 +111,13 @@ class HybridAgentClient:
                 for index, (tool_name, character) in enumerate(
                     (
                         ("alta_web_search", "a"),
-                        ("alta_finance_data", "b"),
-                        ("alta_news_search", "c"),
+                        ("alta_web_batch_fetch", "b"),
+                        ("alta_finance_data", "c"),
                     ),
                     start=1,
                 )
             )
-            discoveries = tuple(
+            base_discoveries = tuple(
                 ToolEvidenceDiscovery(
                     tool_call_id=tools[index].tool_call_id,
                     tool_name=tools[index].tool_name,
@@ -130,12 +130,34 @@ class HybridAgentClient:
                 )
                 for index, character in enumerate(("d", "e", "f"))
             )
+            discoveries = (
+                *base_discoveries,
+                ToolEvidenceDiscovery(
+                    tool_call_id=tools[0].tool_call_id,
+                    tool_name=tools[0].tool_name,
+                    source_locator="https://source4.example/research",
+                    content={
+                        "fixture": 4,
+                        "result_text": "Independent fixture counterevidence.",
+                    },
+                    content_hash="0" * 64,
+                ),
+            )
+            evidence_roles = (
+                "primary_fact",
+                "mechanism",
+                "market_context",
+                "counterevidence",
+            )
             payload["tool_evidence_refs"] = [
                 {
                     "tool_call_id": discovery.tool_call_id,
+                    "evidence_role": evidence_role,
                     "source_locator": discovery.source_locator,
                 }
-                for discovery in discoveries
+                for discovery, evidence_role in zip(
+                    discoveries, evidence_roles, strict=True
+                )
             ]
             return replace(
                 turn,
@@ -320,6 +342,7 @@ def test_fixture_e2e_replay_is_stable_and_projects_every_mvp_stage(
     first = runtime.run("b6-baseline", wake_at)
     replay = runtime.run("b6-baseline", wake_at)
     status = database.mvp_status()
+    assert database.event_cursor("shadow") == status["eventCursor"]
     opportunity_detail = database.opportunity_detail(first.opportunity_ids[0], "shadow")
 
     assert (first.status, first.replayed, replay.replayed) == (
@@ -1208,37 +1231,40 @@ def test_one_click_demo_api_sse_reconnect_and_supervisor_crash_recovery(
         assert expression_detail["data"]["shadowPosition"]
         runtime = request_json(port, "/api/v1/system/runtime")
         assert runtime["data"]["minds"]
-        assert runtime["data"]["researchAttention"] == {
-            "version": "alta-research-attention-v1",
-            "knownAt": runtime["data"]["researchAttention"]["knownAt"],
-            "observedThrough": None,
-            "maximumWindow": 64,
-            "minimumSample": 4,
-            "concentrationThreshold": "0.50",
-            "sampleSize": 0,
-            "uniqueEntities": 0,
-            "topEntity": None,
-            "topEntityShare": None,
-            "concentrationHhi": None,
-            "effectiveBreadth": None,
-            "posture": "insufficient_sample",
-            "continuationScoutId": None,
-            "assignments": [
-                {
-                    "scoutId": scout_id,
-                    "mode": "unconstrained",
-                    "deprioritizedEntities": [],
-                    "directive": "Explore independently; no production Candidate concentration sample is mature.",
-                }
-                for scout_id in (
-                    "change_event_scout",
-                    "market_dislocation_scout",
-                    "causal_policy_scout",
-                    "expectation_gap_scout",
-                )
-            ],
-            "warning": "Research attention breadth is descriptive process control, not Evidence, Alpha, rank, or permission to trade.",
+        attention = runtime["data"]["researchAttention"]
+        assert attention["version"] == "alta-research-attention-v2"
+        assert attention["sampleSize"] == 0
+        assert attention["uniqueEntities"] == 0
+        assert attention["uniqueArchetypes"] == 0
+        assert attention["horizonMix"] == {"short": 0, "medium": 0, "long": 0}
+        assert attention["directionMix"] == {
+            "positive": 0,
+            "negative": 0,
+            "neutral": 0,
+            "unknown": 0,
         }
+        assert attention["posture"] == "insufficient_sample"
+        assert len(attention["assignments"]) == 4
+        assert all(item["mode"] == "unconstrained" for item in attention["assignments"])
+        assert all(item["targetArchetype"] for item in attention["assignments"])
+        assert all(item["targetHorizonBucket"] for item in attention["assignments"])
+        assert runtime["data"]["opportunityContinuity"] is None
+        assert runtime["data"]["researchOperations"]["version"] == (
+            "alta-research-operations-v4"
+        )
+        assert runtime["data"]["researchOperations"]["followUpAssignedRuns"] == 0
+        assert runtime["data"]["researchOperations"]["followUpExecutedRuns"] == 0
+        assert runtime["data"]["researchOperations"]["followUpNoOpRuns"] == 0
+        assert len(runtime["data"]["researchOperations"]["minds"]) == 4
+        assert {
+            item["scoutId"] for item in runtime["data"]["researchOperations"]["minds"]
+        } == {
+            "change_event_scout",
+            "market_dislocation_scout",
+            "causal_policy_scout",
+            "expectation_gap_scout",
+        }
+        assert "credentials" not in runtime["data"]["researchOperations"]
         assert runtime["data"]["config"]["capitalMode"] == "disabled"
         assert runtime["data"]["config"]["credentials"] == {
             "revision": "unmanaged",
@@ -1266,13 +1292,14 @@ def test_one_click_demo_api_sse_reconnect_and_supervisor_crash_recovery(
         }
         assert runtime["data"]["config"]["traderMinds"] == {
             "count": 4,
-            "promptVersion": "alpha-trader-v16",
-            "toolCatalogVersion": "alta-active-research-v4",
+            "promptVersion": "alpha-trader-v21",
+            "toolCatalogVersion": "alta-active-research-v8",
             "activeResearchRequired": True,
             "memoryMode": "bounded_non_evidence",
             "coreActiveTools": [
                 "alta_web_search",
                 "alta_web_research",
+                "alta_web_batch_fetch",
                 "alta_news_search",
                 "alta_social_search",
                 "alta_finance_data",

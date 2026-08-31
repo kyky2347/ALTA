@@ -89,7 +89,12 @@ automated operation.
   timestamp, public summary, selected-record hand-off, in-view filtering, and
   backward pagination to older history.
 - **System overview** — Current source posture, object counts, Trader Mind
-  memory summaries, and append-only event cursor.
+  memory summaries, append-only event cursor, and a bounded Research Operations
+  audit. The audit shows recent saved retrieval counts, independently frozen
+  evidence records, independent domains, four-role evidence coverage,
+  cross-checked runs, source-role reuse, and failed routes per Mind;
+  it never exposes credentials, query arguments, source text, hidden prompts,
+  or private reasoning.
 - **Agent desk** — Latest Run per role, actual model route, durable mind summary,
   turn count, context usage, latency, and Run details.
 - **Shadow book** — Research-only open and closed Shadow positions plus the
@@ -103,11 +108,15 @@ automated operation.
   same-carrier empirical Alpha reserve. Both panels are explicitly separated
   from brokerage, cannot auto-tune execution, and never label Shadow evidence
   as proven performance.
+- **Capital desk** — The durable Tiger Paper authorization gate, exact-account
+  and configuration fingerprints, explicit broker snapshot refresh, sanitized
+  assets, positions, recent orders, and the bounded authorization audit. It has
+  no manual order-entry surface and no live-account path.
 - **Credentials** — Safe configuration state for every supported external
   token slot, grouped by model, market data, news, and research. Secret values
   are write-only and replacement is available only while the complete research
-  runtime is stopped. Tiger appears only as a locked Paper boundary because the
-  capital-disabled research build does not accept broker credentials.
+  runtime is stopped. Tiger credentials remain external and owner-only; the
+  browser shows only safe configuration and authorization posture.
 - **Inspector** — Opportunity packets, independent assessments, committee
   arguments, frozen Run inputs, tool provenance, artifacts, implementation
   plans, hashes, and normalized JSON records.
@@ -131,12 +140,24 @@ record.
 
 The browser calls only the operator-console origin. The Node console proxies
 bounded read requests to the bearer-protected Python service and keeps the
-Opportunity API token server-side. Current state is refreshed every 2.5 seconds.
+Opportunity API token server-side. Foreground steady state is refreshed every
+2.5 seconds, an active lifecycle operation temporarily tightens that to one
+second, and a hidden tab downshifts to 15 seconds. After the initial cursor is
+established, status, runtime detail, and new events are requested concurrently
+rather than serially.
 The event cursor advances through `/api/v1/events`, deduplicates by event ID,
 and retains a bounded live window in the browser. Once the operator requests
 older pages, the ledger preserves that explicitly expanded range and can keep
 paging backward with the `before` cursor without disturbing the live cursor.
 Full detail is loaded only when the operator selects a record.
+
+The browser suppresses state updates when the durable event cursor or runtime
+payload is unchanged, so a healthy poll does not imply a full React render.
+Feature views, the detail inspector, and global search are separate production
+chunks loaded on demand; navigation intent prefetches a view before selection.
+Record detail uses a small bounded stale-while-revalidate cache and aborts
+obsolete selection requests. Long ledger rows use browser rendering containment
+without changing their accessible DOM order.
 
 Polling is single-flight: a slow response cannot stack duplicate refreshes.
 Requests have bounded timeouts, transient failures use capped exponential
@@ -159,6 +180,18 @@ detects that instance change, obtains fresh CSRF material, and continues without
 exposing the session secret. Dependency status probes are coalesced and briefly
 cached so several browser refreshes cannot create a Docker command storm.
 
+The Python read service keeps upstream HTTP/1.1 connections reusable and uses a
+bounded PostgreSQL connection pool. Current-status projections are cached with
+stampede protection and keyed by the append-only event cursor: idle reads avoid
+rebuilding the same multi-table snapshot, while the next committed event changes
+the key immediately. Runtime-only database projections use a short bounded TTL;
+the in-process scheduler heartbeat and current-cycle state are merged fresh on
+every response. Cache age and hit posture are exposed in response metadata.
+Recent-history and environment/cursor access paths have dedicated database
+indexes. The Node static server retains built assets in memory and supports
+immutable ETag revalidation; `index.html` remains `no-store` so a restarted
+console advertises the current build.
+
 The frontend and Node console also share an explicit protocol version. A stale
 or mismatched build is blocked with a rebuild instruction before controls become
 available. Upstream response size, request time, migration time, Compose
@@ -178,6 +211,18 @@ external owner-only credential directory, and rolled back if local verification
 fails. Environment-provided values are locked instead of silently shadowed. The
 browser password field is cleared after either success or failure.
 
+The credential page automatically requests a bounded provider verification
+when its owner-only result is missing or older than 15 minutes. The operator can
+also force a new check with **Verify APIs**. Each configured slot uses a fixed
+read-only endpoint and a ten-second deadline. Status is normalized to
+`healthy`, `auth_rejected`, `rate_limited`, `unavailable`, or `unverified`;
+missing and no-key modes remain distinct. HTTP 401/403 supports the UI wording
+“expired or rejected” but is not presented as provider-supplied expiration
+metadata. Only status, HTTP code, latency, and check time are retained. Response
+bodies, headers, credential-bearing URLs, provider error text, and secrets are
+discarded before the inventory crosses into the browser process. Replacing a
+credential changes the revision and invalidates the previous health snapshot.
+
 If the autonomous service is stopped, the console shows a truthful offline
 state instead of stale research data. A synthetic layout preview exists only at
 `?preview=1`, is visibly labeled, and disables all controls; it is intended for
@@ -193,7 +238,12 @@ The control surface can:
 - restart it and wait for readiness; and
 - safely stop the service, supervisor, PostgreSQL, and Redis; and
 - inspect and replace supported external provider tokens while the complete
-  research runtime is stopped.
+  research runtime is stopped;
+- verify configured provider availability through bounded, sanitized read-only
+  probes without stopping the runtime;
+- explicitly refresh a sanitized Tiger Paper account snapshot; and
+- enable or revoke the isolated Paper authorization while preserving its
+  account/configuration binding and audit record.
 
 Every mutation requires the HttpOnly session, exact same origin, and a per-run
 CSRF token. Only one lifecycle operation may run at a time. Operation status and
@@ -204,10 +254,22 @@ The control surface cannot:
 - reveal a stored API key, accept repository-local secrets, or replace an
   environment-supplied value;
 - install Node, `uv`, Docker, or operating-system prerequisites;
-- enable Tiger Paper or any other broker;
-- submit, cancel, or replace an order;
-- enable capital or a live environment; or
+- discover brokerage accounts, accept broker credentials, or expose raw broker
+  identifiers;
+- manually submit, cancel, or replace an order;
+- enable a live environment or live-account route; or
 - bind beyond the local machine.
+
+Enabling Tiger Paper is fail-closed. The complete runtime must be stopped, the
+operator must confirm the protected action, and a fresh broker preflight must
+prove Paper mode, the configured 17-digit account, an empty position book, and
+zero open orders. The resulting authorization is stored outside source files
+with owner-only permissions and is invalidated by any account or configuration
+change. On the next runtime start, only audited stock expressions can reach the
+isolated one-share DAY-limit, regular-hours Paper mirror. Disabling writes the
+revocation before stopping an active runtime and dependencies. Research Agents
+never receive the credentials or executor, and the console deliberately has no
+general brokerage-order endpoint.
 
 The dashboard process intentionally remains alive after a safe stop so the
 operator can inspect the stopped state and start the system later. Dashboard
@@ -242,18 +304,20 @@ external alert delivery, restore drills, and independent monitoring.
 
 ## Troubleshooting
 
-| Symptom                       | Check                                                                                                                         |
-| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `console_unauthorized`        | Run `./alta dashboard restart`, then claim the URL from `./alta dashboard open`.                                              |
-| Dashboard update required     | Stop the foreground console, run `./alta dashboard` again, and reload the page.                                               |
-| First Start fails             | Verify Node/npm, `uv`, Docker Compose, and free loopback ports, then retry; the operation reports its exact failed phase.     |
-| Credential cannot be changed  | Safely stop ALTA first; an environment-supplied value must be unset outside the browser.                                      |
-| Runtime stays stopped         | Check the persisted operation phase, then `./alta service logs`.                                                              |
-| Runtime is live but not ready | Inspect heartbeat and dependency posture; do not force a research cycle.                                                      |
-| No events appear              | Verify `/health/ready`, PostgreSQL health, and the current event cursor. An idle system may validly emit no new opportunity.  |
-| Port is in use                | Stop the conflicting process; use foreground mode with `--port` only for development.                                         |
-| Console says reconnecting     | Wait for automatic backoff or use **Retry**; controls stay locked until the control channel recovers.                         |
-| Power was interrupted         | After login, check both `./alta dashboard status` and `./alta service status`; inspect their separate logs if either is down. |
+| Symptom                       | Check                                                                                                                                                   |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `console_unauthorized`        | Run `./alta dashboard restart`, then claim the URL from `./alta dashboard open`.                                                                        |
+| Dashboard update required     | Stop the foreground console, run `./alta dashboard` again, and reload the page.                                                                         |
+| First Start fails             | Verify Node/npm, `uv`, Docker Compose, and free loopback ports, then retry; the operation reports its exact failed phase.                               |
+| Credential cannot be changed  | Safely stop ALTA first; an environment-supplied value must be unset outside the browser.                                                                |
+| Paper authorization is locked | Stop ALTA, verify the external Tiger Paper file, then enable from **Capital desk**. The preflight rejects non-Paper, non-empty, or mismatched accounts. |
+| Paper verification fails      | Authorization remains off. Use the error fingerprint with local Tiger SDK diagnostics; never substitute a live account.                                 |
+| Runtime stays stopped         | Check the persisted operation phase, then `./alta service logs`.                                                                                        |
+| Runtime is live but not ready | Inspect heartbeat and dependency posture; do not force a research cycle.                                                                                |
+| No events appear              | Verify `/health/ready`, PostgreSQL health, and the current event cursor. An idle system may validly emit no new opportunity.                            |
+| Port is in use                | Stop the conflicting process; use foreground mode with `--port` only for development.                                                                   |
+| Console says reconnecting     | Wait for automatic backoff or use **Retry**; controls stay locked until the control channel recovers.                                                   |
+| Power was interrupted         | After login, check both `./alta dashboard status` and `./alta service status`; inspect their separate logs if either is down.                           |
 
 Use `./alta dashboard stop` to stop the managed console. In foreground mode,
 use `Control-C`. Neither action implicitly stops an already running autonomous

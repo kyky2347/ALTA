@@ -135,8 +135,8 @@ sequenceDiagram
 Only structured artifacts cross a hand-off. One shared canonical JSON budget
 registry constrains every durable Agent input and complete prompt. A transient
 deadline, App Server failure, missed active-research requirement, or malformed
-Scout result gets at most one fresh attempt with the same frozen input and
-durable Run identity; the first failure stays append-only. A failed or
+Scout result gets at most two fresh retries with the same frozen input and
+durable Run identity; every prior failure stays append-only. A failed or
 unavailable dependency does not grant the next role more discretion; it narrows
 the outcome to a durable `Wait` or an idle cycle.
 
@@ -150,7 +150,7 @@ the outcome to a durable `Wait` or an idle cycle.
 | Decision     | Company thesis, security readiness, reference class, base rate, must-be-true conditions, and edge half-life remain separate and independently locked                                                                                                                                                 |
 | Ranking      | Both independent inside views must beat their own base rates, diligence must be decision-grade, and the lower expected-Alpha forecast must remain positive after a fixed dispersion reserve                                                                                                          |
 | Agents       | Separate App Server turns, structured contracts, full-prompt byte fitting, no broker tools                                                                                                                                                                                                           |
-| Recovery     | Host restart, process-group cleanup, same-frozen-wake rebuild, one auditable fresh Scout retry, and bounded optional-connector backoff                                                                                                                                                               |
+| Recovery     | Host restart, process-group cleanup, same-frozen-wake rebuild, at most two auditable fresh Scout retries, and bounded optional-connector backoff                                                                                                                                                     |
 | Market data  | Exact quote plus explicitly labeled liquidity proxy; absence resolves to Wait                                                                                                                                                                                                                        |
 | Expression   | Up to three pillar-bound payoffs receive actual market and portfolio tickets; independent Auditor sees no rank and selects one or Wait                                                                                                                                                               |
 | Portfolio    | Synthetic Shadow NAV; research-quality gate, loss, gross, liquidity, Alpha purity, shared factor/catalyst buckets, decay, incumbent competition, rolling Alpha survival, forecast calibration, carrier-specific execution-cost reserve, fail-closed legacy risk, and pre-intent recheck              |

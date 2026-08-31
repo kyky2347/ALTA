@@ -11,6 +11,7 @@ test("operator console keeps the API token server-side and protects mutations", 
   const staticDir = path.join(temporary, "dist");
   fs.mkdirSync(staticDir);
   fs.writeFileSync(path.join(staticDir, "index.html"), "<h1>ALTA</h1>");
+  fs.writeFileSync(path.join(staticDir, "app.js"), "console.log('ALTA')");
   const tokenFile = path.join(temporary, "token");
   fs.writeFileSync(tokenFile, "super-secret-token\n", { mode: 0o600 });
   const actions = [];
@@ -79,12 +80,21 @@ test("operator console keeps the API token server-side and protects mutations", 
   const bootstrapPayload = await bootstrap.json();
   assert.equal(bootstrapPayload.data.safety.capitalMode, "disabled");
   assert(bootstrapPayload.data.csrfToken);
-  assert.equal(bootstrapPayload.data.console.protocolVersion, 2);
+  assert.equal(bootstrapPayload.data.console.protocolVersion, 4);
 
   const ready = await fetch(`${location.origin}/health/ready`);
   assert.deepEqual(await ready.json(), {
-    data: { ready: true, protocolVersion: 2 },
+    data: { ready: true, protocolVersion: 4 },
   });
+
+  const asset = await fetch(`${location.origin}/app.js`);
+  const etag = asset.headers.get("etag");
+  assert.equal(await asset.text(), "console.log('ALTA')");
+  assert(etag);
+  const unchangedAsset = await fetch(`${location.origin}/app.js`, {
+    headers: { "If-None-Match": etag },
+  });
+  assert.equal(unchangedAsset.status, 304);
 
   const proxy = await fetch(`${location.origin}/proxy/api/v1/mvp/status`, {
     headers: { Cookie: cookie },
@@ -200,6 +210,7 @@ test("operator console exposes only safe credential metadata and accepts write-o
   fs.writeFileSync(tokenFile, "server-only-token\n", { mode: 0o600 });
   const secret = "sk-" + "write_only_fixture_12345678901234567890";
   let configured = false;
+  let verified = false;
   const inventory = () => ({
     root: temporary,
     revision: configured ? "bbbbbbbbbbbbbbbb" : "aaaaaaaaaaaaaaaa",
@@ -217,8 +228,28 @@ test("operator console exposes only safe credential metadata and accepts write-o
         sourceKind: configured ? "external" : "missing",
         editable: true,
         fingerprint: configured ? "123456789abc" : null,
+        verification: configured
+          ? {
+              status: verified ? "healthy" : "unverified",
+              reason: verified ? null : "not_checked",
+              checkedAt: verified ? "2026-08-30T12:00:00.000Z" : null,
+              latencyMs: verified ? 42 : null,
+              httpStatus: verified ? 200 : null,
+            }
+          : {
+              status: "not_configured",
+              reason: "credential_missing",
+              checkedAt: null,
+              latencyMs: null,
+              httpStatus: null,
+            },
       },
     ],
+    verification: {
+      checkedAt: verified ? "2026-08-30T12:00:00.000Z" : null,
+      expiresAt: verified ? "2026-08-30T12:15:00.000Z" : null,
+      stale: !verified,
+    },
   });
   const service = {
     stateDir: temporary,
@@ -228,6 +259,10 @@ test("operator console exposes only safe credential metadata and accepts write-o
       assert.equal(slot, "deepseek");
       assert.equal(value, secret);
       configured = true;
+    },
+    async verifyCredentialHealth() {
+      verified = true;
+      return inventory();
     },
     runtimeEnvironment: () => ({ environment: {} }),
     status: async () => ({
@@ -285,6 +320,185 @@ test("operator console exposes only safe credential metadata and accepts write-o
   assert.equal(replaced.status, 200);
   assert.equal(payload.data.slots[0].configured, true);
   assert.equal(JSON.stringify(payload).includes(secret), false);
+
+  const verifiedResponse = await fetch(
+    `${location.origin}/control/credentials/verify`,
+    {
+      method: "POST",
+      headers: {
+        "Cookie": cookie,
+        "Origin": location.origin,
+        "X-ALTA-CSRF": bootstrap.data.csrfToken,
+      },
+    },
+  );
+  const verifiedPayload = await verifiedResponse.json();
+  assert.equal(verifiedResponse.status, 200);
+  assert.equal(verifiedPayload.data.slots[0].verification.status, "healthy");
+  assert.equal(JSON.stringify(verifiedPayload).includes(secret), false);
+});
+
+test("operator console enforces real Tiger Paper authorization boundaries", async (context) => {
+  const temporary = fs.mkdtempSync(
+    path.join(os.tmpdir(), "alta-console-capital-"),
+  );
+  context.after(() => fs.rmSync(temporary, { recursive: true, force: true }));
+  const staticDir = path.join(temporary, "dist");
+  fs.mkdirSync(staticDir);
+  fs.writeFileSync(path.join(staticDir, "index.html"), "<h1>ALTA</h1>");
+  const tokenFile = path.join(temporary, "token");
+  fs.writeFileSync(tokenFile, "server-only-token\n", { mode: 0o600 });
+  let running = false;
+  let enabled = false;
+  let refreshGate = null;
+  let refreshEntered = null;
+  const actions = [];
+  const capital = () => ({
+    version: 1,
+    provider: "Tiger Trade",
+    environment: "PAPER",
+    configured: true,
+    requestedEnabled: enabled,
+    enabled,
+    posture: enabled ? "paper_enabled" : "paper_ready_disabled",
+    accountFingerprint: "0123456789ab",
+    configurationFingerprint: "abcdef012345",
+    mutationPolicy: "one_share_limit_day",
+    instrumentPolicy: "us_stock_only",
+    outsideRegularHours: false,
+    requiresStoppedRuntime: true,
+    lastChangedAt: null,
+    lastPreflightAt: null,
+    configurationError: null,
+    authorizationError: null,
+    snapshotError: null,
+    snapshot: null,
+    audit: [],
+  });
+  const service = {
+    stateDir: temporary,
+    tokenFile,
+    credentialInventory: () => ({
+      revision: "aaaaaaaaaaaaaaaa",
+      configuredSlots: [],
+      slots: [],
+      providerNetwork: [],
+    }),
+    capitalStatus: capital,
+    refreshCapital: async () => {
+      actions.push("refresh");
+      refreshEntered?.();
+      if (refreshGate) await refreshGate;
+      return capital();
+    },
+    setCapitalAuthorization: async (value) => {
+      enabled = value;
+      actions.push(value ? "enable" : "disable");
+      return capital();
+    },
+    runtimeEnvironment: () => ({ environment: {} }),
+    stop: async () => {
+      actions.push("stop");
+      running = false;
+    },
+    status: async () => ({
+      installed: true,
+      ready: running,
+      endpoint: "http://127.0.0.1:9999",
+      capitalMode: enabled ? "tiger_paper_acceptance" : "disabled",
+      host: { processAlive: running },
+      supervisor: { childProcessAlive: running },
+    }),
+  };
+  const operator = createOperatorConsole({
+    host: "127.0.0.1",
+    port: 0,
+    staticDir,
+    service,
+    environmentFactory: () => ({
+      status: async () => ({}),
+      down: async () => actions.push("down"),
+    }),
+  });
+  context.after(() => operator.server.listening && operator.close());
+  const location = await operator.listen();
+  const open = await fetch(location.openUrl, { redirect: "manual" });
+  const cookie = open.headers.get("set-cookie").split(";", 1)[0];
+  const bootstrap = await fetch(`${location.origin}/control/bootstrap`, {
+    headers: { Cookie: cookie },
+  }).then((response) => response.json());
+  const headers = {
+    "Cookie": cookie,
+    "Content-Type": "application/json",
+    "Origin": location.origin,
+    "X-ALTA-CSRF": bootstrap.data.csrfToken,
+  };
+
+  const invalid = await fetch(
+    `${location.origin}/control/capital/authorization`,
+    {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ enabled: true, confirmation: "yes" }),
+    },
+  );
+  assert.equal(invalid.status, 400);
+
+  const authorized = await fetch(
+    `${location.origin}/control/capital/authorization`,
+    {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({
+        enabled: true,
+        confirmation: "ENABLE TIGER PAPER",
+      }),
+    },
+  );
+  assert.equal(authorized.status, 200);
+  assert.equal((await authorized.json()).data.enabled, true);
+
+  let releaseRefresh;
+  refreshGate = new Promise((resolve) => {
+    releaseRefresh = resolve;
+  });
+  const entered = new Promise((resolve) => {
+    refreshEntered = resolve;
+  });
+  const refresh = fetch(`${location.origin}/control/capital/refresh`, {
+    method: "POST",
+    headers,
+  });
+  await entered;
+  const conflictingStart = await fetch(
+    `${location.origin}/control/runtime/start`,
+    { method: "POST", headers },
+  );
+  assert.equal(conflictingStart.status, 409);
+  assert.equal(
+    (await conflictingStart.json()).error.code,
+    "operation_in_progress",
+  );
+  releaseRefresh();
+  assert.equal((await refresh).status, 200);
+  refreshGate = null;
+  refreshEntered = null;
+
+  running = true;
+  const disable = await fetch(
+    `${location.origin}/control/capital/authorization`,
+    {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({
+        enabled: false,
+        confirmation: "DISABLE TIGER PAPER",
+      }),
+    },
+  );
+  assert.equal(disable.status, 200);
+  assert.deepEqual(actions, ["enable", "refresh", "disable", "stop", "down"]);
+  assert.equal(enabled, false);
 });
 
 test("operator console coalesces dependency probes and rejects proxy reads while runtime is down", async (context) => {
@@ -298,17 +512,21 @@ test("operator console coalesces dependency probes and rejects proxy reads while
   const tokenFile = path.join(temporary, "token");
   fs.writeFileSync(tokenFile, "server-only-token\n", { mode: 0o600 });
   let environmentProbes = 0;
+  let runtimeProbes = 0;
   let upstreamCalls = 0;
   const service = {
     stateDir: temporary,
     tokenFile,
     runtimeEnvironment: () => ({ environment: {} }),
-    status: async () => ({
-      installed: true,
-      ready: false,
-      endpoint: "http://127.0.0.1:9999",
-      capitalMode: "disabled",
-    }),
+    status: async () => {
+      runtimeProbes += 1;
+      return {
+        installed: true,
+        ready: false,
+        endpoint: "http://127.0.0.1:9999",
+        capitalMode: "disabled",
+      };
+    },
   };
   const operator = createOperatorConsole({
     host: "127.0.0.1",
@@ -343,6 +561,7 @@ test("operator console coalesces dependency probes and rejects proxy reads while
   });
 
   assert.equal(environmentProbes, 1);
+  assert.equal(runtimeProbes, 1);
   assert.equal(proxy.status, 503);
   assert.equal((await proxy.json()).error.code, "runtime_not_ready");
   assert.equal(upstreamCalls, 0);

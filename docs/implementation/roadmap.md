@@ -1128,6 +1128,43 @@ see Harvey, Liu, and Zhu on
 and the _Review of Financial Studies_ editorial on
 [cross-sectional and time-series research methods](https://academic.oup.com/rfs/article/33/5/1879/5758275).
 
+## B37 — global Opportunity continuity and multidimensional research frontier
+
+Objective: preserve the best unresolved work across multi-week horizons while
+making the independent discovery pool search genuinely different causal lanes.
+
+Implemented controls in the local development tree:
+
+- the live source flow scans up to 32 active non-fixture Opportunities before
+  applying the four-Opportunity prompt bound; deadline-aware research priority
+  is computed globally, so an older high-information test cannot be displaced
+  merely because two newer Opportunities were refreshed more recently;
+- each Opportunity carries the earliest frozen Thesis Ledger deadline when one
+  exists. Queue urgency uses that fixed deadline rather than extending the clock
+  when an Opportunity receives a later version;
+- a replayable Opportunity Continuity snapshot records registry depth, frozen
+  selection, open questions, expiring and stale counts, oldest active age, and
+  the earliest deadline. It is frozen into every isolated Scout snapshot,
+  reconciled during same-wake recovery, and exposed through the local console;
+- Research Attention v2 measures entity concentration plus Alpha-archetype,
+  direction, and short/medium/long-horizon coverage. Each Mind gets an
+  under-covered first-search lane drawn only from its own mandate; this is a
+  route suggestion, not a Candidate quota, confidence adjustment, or ranking
+  input;
+- SEC submissions research accepts a ticker as well as a CIK. Ticker resolution
+  uses the official SEC exchange mapping with a declared User-Agent, a bounded
+  response, one attempt, caching, and the existing source pacing/circuit policy;
+- Scout contract v20 explicitly routes ownership, insider, financing, dilution,
+  covenant, and operational-state questions through relevant primary filing
+  forms while retaining the same citation and counterevidence requirements.
+
+Acceptance is deliberately operational rather than promotional: deterministic
+selection tests prove old urgent work survives recency pressure; point-in-time
+tests prove fixed deadlines do not slide; retrieval tests prove ticker-to-CIK
+resolution and provenance; restart tests prove the frozen portfolio is
+recoverable. None of these controls proves that a diverse or long-lived idea is
+profitable.
+
 ## F1 — sustained forward Shadow evidence
 
 This is the next meaningful stage. It is an observation program, not a one-week
@@ -1161,11 +1198,13 @@ Only after F1 has enough data should ALTA compare:
 The goal is to estimate incremental contribution, not reward Agents for verbose
 artifacts or high confidence.
 
-## F3 — unattended or broader Paper rollout
+## F3 — bounded unattended Paper rollout
 
-The project authorizes only the explicit one-cycle acceptance above. Any
-scheduled, continuous, multi-position, larger-size, options, or portfolio-level
-Paper proposal must be reviewed as a separate capital system with:
+The current operator-authorized path permits at most one exact-account,
+one-share stock/ETF Paper position and preserves the explicit one-cycle
+acceptance command for controlled testing. Any multi-position, larger-size,
+options, or portfolio-level Paper proposal must be reviewed as a separate
+capital system with:
 
 - an isolated process and credential scope;
 - an exact Paper account allowlist with no discovery or fallback;

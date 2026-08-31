@@ -1,15 +1,26 @@
 import argparse
 import hashlib
 import json
+import re
 from decimal import Decimal
 from pathlib import Path
 
 from .paper_trade import PaperOrderRequest, PaperTradeConfig, TigerPaperSession
 
 
+def _safe_error_code(error: Exception) -> str | None:
+    value = getattr(error, "code", None)
+    if value is None:
+        return None
+    candidate = str(value)
+    return candidate if re.fullmatch(r"[A-Za-z0-9_.-]{1,32}", candidate) else None
+
+
 def parser() -> argparse.ArgumentParser:
     value = argparse.ArgumentParser(prog="alta_capitald")
-    value.add_argument("action", choices=("preflight", "open", "close", "flatten"))
+    value.add_argument(
+        "action", choices=("preflight", "snapshot", "open", "close", "flatten")
+    )
     value.add_argument("--config-path", type=Path, required=True)
     value.add_argument("--account-sha256", required=True)
     value.add_argument("--owner-lease-path", type=Path, required=True)
@@ -35,6 +46,8 @@ def main(argv: list[str] | None = None) -> int:
         with TigerPaperSession(config) as session:
             if args.action == "preflight":
                 output = session.preflight()
+            elif args.action == "snapshot":
+                output = session.snapshot()
             else:
                 if args.symbol is None or args.limit_price is None:
                     raise ValueError("order commands require symbol and limit price")
@@ -59,12 +72,14 @@ def main(argv: list[str] | None = None) -> int:
         fingerprint = hashlib.sha256(
             f"{type(error).__module__}.{type(error).__name__}:{error}".encode()
         ).hexdigest()
+        error_code = _safe_error_code(error)
         print(
             json.dumps(
                 {
                     "ok": False,
                     "errorType": type(error).__name__,
                     "errorFingerprint": fingerprint,
+                    **({"errorCode": error_code} if error_code else {}),
                 },
                 separators=(",", ":"),
             )

@@ -116,9 +116,25 @@ def _capital_governance_payload(value: AlphaCapitalGovernance) -> dict[str, Any]
             if value.recent_mean_alpha_bps is not None
             else None
         ),
+        "confidence95LowerAlphaBps": (
+            str(value.confidence95_lower_alpha_bps)
+            if value.confidence95_lower_alpha_bps is not None
+            else None
+        ),
         "confidence95UpperAlphaBps": (
             str(value.confidence95_upper_alpha_bps)
             if value.confidence95_upper_alpha_bps is not None
+            else None
+        ),
+        "researchTrials": value.research_trials,
+        "selectionAdjustedLowerAlphaBps": (
+            str(value.selection_adjusted_lower_alpha_bps)
+            if value.selection_adjusted_lower_alpha_bps is not None
+            else None
+        ),
+        "selectionCriticalZ": (
+            str(value.selection_critical_z)
+            if value.selection_critical_z is not None
             else None
         ),
         "maxDrawdownNavBps": str(value.max_drawdown_nav_bps),
@@ -221,6 +237,47 @@ def _portfolio_risk_payload(
         posture = "risk_constrained"
     else:
         posture = "within_limits"
+    concentration_limits = {
+        "underlying": policy.max_underlying_nav_bps,
+        "alpha_source": policy.max_alpha_source_nav_bps,
+        "catalyst": policy.max_catalyst_nav_bps,
+        "systematic_exposure": policy.max_systematic_exposure_nav_bps,
+    }
+    concentration_rows = [
+        *(
+            ("underlying", item.underlying_key, nav_bps(item.gross_notional))
+            for item in state.underlying_buckets
+        ),
+        *(
+            ("alpha_source", item.source, nav_bps(item.gross_notional))
+            for item in state.alpha_source_buckets
+            if item.source != "legacy_unclassified"
+        ),
+        *(
+            ("catalyst", item.catalyst_key, nav_bps(item.gross_notional))
+            for item in state.catalyst_buckets
+            if item.catalyst_key != "legacy-unclassified"
+        ),
+        *(
+            ("systematic_exposure", item.tag, nav_bps(item.gross_notional))
+            for item in state.exposure_buckets
+            if item.tag not in {"none", "unknown"}
+        ),
+    ]
+    most_constrained = None
+    if concentration_rows:
+        kind, key, gross_bps = max(
+            concentration_rows,
+            key=lambda item: Decimal(item[2]) / concentration_limits[item[0]],
+        )
+        limit_bps = concentration_limits[kind]
+        most_constrained = {
+            "kind": kind,
+            "key": key,
+            "grossNavBps": gross_bps,
+            "limitNavBps": str(limit_bps),
+            "utilization": str(Decimal(gross_bps) / limit_bps),
+        }
     return {
         "policyVersion": policy.version,
         "posture": posture,
@@ -233,6 +290,10 @@ def _portfolio_risk_payload(
         "stressNavBps": nav_bps(state.aggregate_stress_loss),
         "stressLimitNavBps": str(policy.max_portfolio_stress_nav_bps),
         "underlyingLimitNavBps": str(policy.max_underlying_nav_bps),
+        "alphaSourceLimitNavBps": str(policy.max_alpha_source_nav_bps),
+        "catalystLimitNavBps": str(policy.max_catalyst_nav_bps),
+        "systematicExposureLimitNavBps": str(policy.max_systematic_exposure_nav_bps),
+        "mostConstrainedBucket": most_constrained,
         "underlyingBuckets": [
             {
                 "underlyingKey": item.underlying_key,
@@ -242,6 +303,37 @@ def _portfolio_risk_payload(
                 "estimatedStressLoss": str(item.estimated_stress_loss),
             }
             for item in state.underlying_buckets
+        ],
+        "alphaSourceBuckets": [
+            {
+                "alphaSource": item.source,
+                "openPositions": item.open_positions,
+                "grossNotional": str(item.gross_notional),
+                "grossNavBps": nav_bps(item.gross_notional),
+                "estimatedStressLoss": str(item.estimated_stress_loss),
+            }
+            for item in state.alpha_source_buckets
+            if item.source != "legacy_unclassified"
+        ],
+        "catalystBuckets": [
+            {
+                "catalystKey": item.catalyst_key,
+                "openPositions": item.open_positions,
+                "grossNotional": str(item.gross_notional),
+                "grossNavBps": nav_bps(item.gross_notional),
+                "estimatedStressLoss": str(item.estimated_stress_loss),
+            }
+            for item in state.catalyst_buckets
+            if item.catalyst_key != "legacy-unclassified"
+        ],
+        "systematicExposureBuckets": [
+            {
+                "tag": item.tag,
+                "grossNotional": str(item.gross_notional),
+                "grossNavBps": nav_bps(item.gross_notional),
+            }
+            for item in state.exposure_buckets
+            if item.tag not in {"none", "unknown"}
         ],
     }
 
@@ -296,6 +388,13 @@ def alpha_summary(
             GROUP BY event_type, payload->>'action'""",
             (environment,),
         ).fetchall()
+        research_trials = int(
+            connection.execute(
+                """SELECT count(DISTINCT opportunity_id)
+                FROM research.expression WHERE environment = %s""",
+                (environment,),
+            ).fetchone()[0]
+        )
 
     execution_counts = {
         (event_type, action): int(count) for event_type, action, count in execution_rows
@@ -325,7 +424,8 @@ def alpha_summary(
             )
             for row in rows
             if row[1].get("realized_alpha_bps") is not None
-        )
+        ),
+        research_trials=max(research_trials, len(alphas)),
     )
     portfolio_policy = portfolio_policy or PortfolioRiskPolicy()
     capital_governance = alpha_capital_governance(
@@ -333,6 +433,7 @@ def alpha_summary(
         environment,
         reference_nav=portfolio_policy.reference_nav,
         source_portfolio_policy_version=portfolio_policy.version,
+        research_trials=max(research_trials, len(alphas)),
     )
     forecast_calibration = forecast_calibration_governance(
         database,
@@ -492,6 +593,7 @@ def alpha_capital_governance(
     reference_nav: Decimal,
     source_portfolio_policy_version: str,
     policy: AlphaCapitalGovernancePolicy | None = None,
+    research_trials: int | None = None,
 ) -> AlphaCapitalGovernance:
     """Load the bounded rolling capital posture from current-policy outcomes."""
 
@@ -525,6 +627,13 @@ def alpha_capital_governance(
                 policy.window_size,
             ),
         ).fetchall()
+        counted_trials = int(
+            connection.execute(
+                """SELECT count(DISTINCT opportunity_id)
+                FROM research.expression WHERE environment = %s""",
+                (environment,),
+            ).fetchone()[0]
+        )
     observations = tuple(
         CapitalPerformanceObservation(
             position_id=row[0],
@@ -540,6 +649,10 @@ def alpha_capital_governance(
         source_portfolio_policy_version=source_portfolio_policy_version,
         policy=policy,
         total_sample_size=int(rows[0][3]) if rows else 0,
+        research_trials=max(
+            counted_trials if research_trials is None else research_trials,
+            int(rows[0][3]) if rows else 0,
+        ),
     )
 
 

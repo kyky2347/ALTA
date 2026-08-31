@@ -171,6 +171,74 @@ test("internet service fetches, bounds, caches, searches, and crawls", async () 
   service.close();
 });
 
+test("deep research preserves source filters and drops unrelated search noise", async () => {
+  const searches = [];
+  const fetched = [];
+  const service = {
+    recordTool: () => {},
+    search: async (args) => {
+      searches.push(args);
+      return {
+        backend: "fixture",
+        backends: ["fixture"],
+        results: [
+          {
+            url: "https://calendar.example.net/2026",
+            title: "2026 holiday calendar",
+            snippets: ["Dates and translations"],
+            backends: ["fixture"],
+          },
+          {
+            url: "https://www.sec.gov/Archives/acme-10-q",
+            title: "ACME quarterly results 10-Q filing",
+            snippets: ["ACME quarterly revenue and operating income"],
+            backends: ["fixture", "secondary-fixture"],
+          },
+        ],
+      };
+    },
+    fetchPage: async ({ url }) => {
+      fetched.push(url);
+      return {
+        url,
+        title: "Fetched primary record",
+        text: "Auditable primary-source text",
+        metadata: {},
+        reader_used: false,
+      };
+    },
+  };
+  const response = await handleMcpMessage(service, {
+    jsonrpc: "2.0",
+    id: 77,
+    method: "tools/call",
+    params: {
+      name: "alta_web_research",
+      arguments: {
+        queries: ["ACME quarterly revenue 10-Q"],
+        allowed_domains: ["sec.gov", "investor.acme.example"],
+        freshness: "month",
+        language: "en",
+        max_pages: 1,
+      },
+    },
+  });
+
+  assert.deepEqual(searches[0].allowed_domains, [
+    "sec.gov",
+    "investor.acme.example",
+  ]);
+  assert.equal(searches[0].freshness, "month");
+  assert.equal(searches[0].language, "en");
+  assert.deepEqual(fetched, ["https://www.sec.gov/Archives/acme-10-q"]);
+  const result = response.result.structuredContent;
+  assert.equal(result.pages[0].url, fetched[0]);
+  assert.equal(result.sources.length, 1);
+  assert.equal(result.sources[0].url, fetched[0]);
+  assert.equal(result.sources[0].allowed_domain_match, true);
+  assert(result.sources[0].research_quality_score > 0);
+});
+
 test("web fetch rejects redirects into private networks", async () => {
   const service = new InternetService({
     lookup: publicLookup,

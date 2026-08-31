@@ -532,6 +532,75 @@ test("research and archive plugins compose service capabilities", async () => {
   ]);
 });
 
+test("deep research drops unrelated search noise before page retrieval", async () => {
+  let fetches = 0;
+  const service = {
+    recordTool: () => {},
+    search: async () => ({
+      backend: "public",
+      results: [
+        {
+          url: "https://unrelated.example/month-english/",
+          title: "English calendar and translation help",
+          snippets: ["Vocabulary practice."],
+          backends: ["public"],
+        },
+      ],
+    }),
+    fetchPage: async ({ url }) => {
+      fetches += 1;
+      return { url, text: "unrelated page" };
+    },
+  };
+
+  const result = await executeInternetTool(
+    service,
+    "alta_web_research",
+    { queries: ["NVDA Rubin revenue estimate revision"] },
+    {},
+  );
+
+  assert.deepEqual(result.sources, []);
+  assert.deepEqual(result.pages, []);
+  assert.equal(fetches, 0);
+});
+
+test("domain-scoped deep research keeps a direct route during search outage", async () => {
+  const fetched = [];
+  const service = {
+    recordTool: () => {},
+    search: async () => {
+      throw new Error("all search providers unavailable");
+    },
+    fetchPage: async ({ url }) => {
+      fetched.push(url);
+      return {
+        url,
+        title: "Issuer investor relations",
+        text: "Official issuer page.",
+        metadata: {},
+        reader_used: false,
+      };
+    },
+  };
+
+  const result = await executeInternetTool(
+    service,
+    "alta_web_research",
+    {
+      queries: ["issuer operating KPI update"],
+      allowed_domains: ["issuer.example"],
+      max_pages: 1,
+    },
+    {},
+  );
+
+  assert.equal(result.partial, true);
+  assert.equal(result.sources[0].url, "https://issuer.example/");
+  assert.deepEqual(fetched, ["https://issuer.example/"]);
+  assert.equal(result.pages[0].title, "Issuer investor relations");
+});
+
 test("academic plugin federates metadata, deduplicates DOI records, and keeps partial results", async () => {
   const service = {
     openAlexKey: null,
@@ -849,6 +918,13 @@ test("finance data normalizes five login-free public sources", async () => {
             meta: { count: 1 },
           }),
         };
+      if (parsed.pathname === "/files/company_tickers_exchange.json")
+        return {
+          text: JSON.stringify({
+            fields: ["cik", "name", "ticker", "exchange"],
+            data: [[1, "Example Corp", "EXM", "Nasdaq"]],
+          }),
+        };
       if (parsed.hostname === "data.sec.gov")
         return {
           text: JSON.stringify({
@@ -898,7 +974,7 @@ test("finance data normalizes five login-free public sources", async () => {
   const sec = await executeInternetTool(
     service,
     "alta_finance_data",
-    { source: "sec", cik: "1", forms: ["10-K"] },
+    { source: "sec", symbol: "EXM", forms: ["10-K"] },
     {},
   );
 
@@ -916,6 +992,9 @@ test("finance data normalizes five login-free public sources", async () => {
   assert.equal(coinbase.candles.length, 1);
   assert.equal(worldbank.observations[0].country_code, "CHN");
   assert.equal(treasury.records.length, 1);
+  assert.equal(sec.cik, "0000000001");
+  assert.equal(sec.requested_symbol, "EXM");
+  assert.equal(sec.resolved_from, "symbol");
   assert.match(sec.filings[0].url, /example\.htm$/);
 });
 

@@ -4,6 +4,7 @@ from decimal import Decimal
 from alta_asterism.alpha_feedback import (
     AlphaOutcomeObservation,
     build_alpha_feedback,
+    load_alpha_contributors,
 )
 
 
@@ -15,6 +16,8 @@ def observations(count: int) -> tuple[AlphaOutcomeObservation, ...]:
             scout_id="change_event_scout",
             alpha_archetype="revision inflection",
             research_route=("alta_news_search", "alta_finance_data"),
+            research_posture="cross_checked",
+            research_quality_score=Decimal("0.84"),
             known_at=start + timedelta(hours=index),
             net_return_bps=Decimal(index - 10),
             realized_alpha_bps=Decimal(index - 15),
@@ -38,6 +41,9 @@ def test_alpha_feedback_hides_small_sample_performance() -> None:
     assert feedback.research_routes[0].mean_realized_alpha_bps is None
     assert feedback.research_modes[0].research_mode == "explore"
     assert feedback.research_modes[0].mean_realized_alpha_bps is None
+    assert feedback.research_quality[0].research_posture == "cross_checked"
+    assert feedback.research_quality[0].mean_frozen_research_quality == Decimal("0.84")
+    assert feedback.research_quality[0].mean_realized_alpha_bps is None
 
 
 def test_alpha_feedback_unlocks_only_after_mind_and_slice_maturity() -> None:
@@ -52,6 +58,8 @@ def test_alpha_feedback_unlocks_only_after_mind_and_slice_maturity() -> None:
     assert feedback.archetypes[0].mature is True
     assert feedback.research_routes[0].mature is True
     assert feedback.research_modes[0].mature is True
+    assert feedback.research_quality[0].mature is True
+    assert feedback.research_quality[0].mean_realized_alpha_bps == Decimal("-0.5")
     assert len(feedback.snapshot_hash) == 64
 
 
@@ -114,3 +122,60 @@ def test_alpha_feedback_is_order_independent() -> None:
 
     assert reversed_input == chronological
     assert reversed_input.snapshot_hash == chronological.snapshot_hash
+
+
+def test_contributor_freezes_research_quality_for_forward_attribution() -> None:
+    diligence = {
+        "version": "alta-research-diligence-v3",
+        "posture": "cross_checked",
+        "completed_tool_calls": 4,
+        "active_research_calls": 4,
+        "cited_research_calls": 4,
+        "non_news_research_calls": 3,
+        "source_families": ["primary_web", "market_data", "news_locator"],
+        "independent_source_domains": ["a.example", "b.example", "c.example"],
+        "independent_evidence_origins": ["a" * 64, "b" * 64, "c" * 64],
+        "cited_source_count": 4,
+        "source_role_collisions": 0,
+        "evidence_roles": [
+            "primary_fact",
+            "mechanism",
+            "market_context",
+            "counterevidence",
+        ],
+        "counterevidence_source_distinct": True,
+        "beneficiary_path_declared": True,
+        "counterevidence_declared": True,
+        "next_test_declared": True,
+        "reason_codes": [],
+    }
+
+    class Connection:
+        def execute(self, *_args):
+            return self
+
+        def fetchall(self):
+            return [
+                (
+                    "candidate_quality",
+                    "change_event_scout",
+                    "revision inflection",
+                    [
+                        {
+                            "tool_name": "alta_web_batch_fetch",
+                            "status": "completed",
+                        },
+                        {
+                            "tool_name": "alta_finance_data",
+                            "status": "completed",
+                        },
+                    ],
+                    ["revision inflection"],
+                    {"research_mode": "explore", "research_diligence": diligence},
+                )
+            ]
+
+    contributor = load_alpha_contributors(Connection(), ("candidate_quality",))[0]
+
+    assert contributor.research_posture == "cross_checked"
+    assert contributor.research_quality_score == Decimal(1)

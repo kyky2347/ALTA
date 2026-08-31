@@ -392,6 +392,10 @@ def test_full_book_executes_idempotent_alpha_rotation(
     )
     assert calibration["meanRealizedAlphaBps"] == "50.00"
     assert alpha_summary["alphaEvidence"]["posture"] == "insufficient_sample"
+    assert alpha_summary["alphaEvidence"]["researchTrials"] >= 1
+    assert (
+        alpha_summary["alphaEvidence"]["selectionAdjustedConfidence95LowerBps"] is None
+    )
     assert alpha_summary["capitalGovernance"]["posture"] == "collecting"
     assert alpha_summary["capitalGovernance"]["sampleSize"] == 1
     assert alpha_summary["capitalGovernance"]["capitalMultiplier"] == "0.50"
@@ -415,6 +419,11 @@ def test_full_book_executes_idempotent_alpha_rotation(
     assert stock_execution["posture"] == "collecting"
     assert stock_execution["sampleSize"] == 1
     assert stock_execution["alphaReserveBps"] == "0"
+    portfolio_risk = alpha_summary["portfolioRisk"]
+    assert "mostConstrainedBucket" in portfolio_risk
+    assert "alphaSourceBuckets" in portfolio_risk
+    assert "catalystBuckets" in portfolio_risk
+    assert "systematicExposureBuckets" in portfolio_risk
     assert "unproven" in alpha_summary["warning"].lower()
 
 

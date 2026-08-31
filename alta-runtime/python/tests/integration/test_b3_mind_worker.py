@@ -222,10 +222,14 @@ class ParallelNoOpClient:
 class InvalidThenValidClient:
     def __init__(self) -> None:
         self.calls: dict[str, int] = {}
+        self.deadlines: dict[str, list[datetime]] = {}
+        self.prompts: dict[str, list[dict[str, object]]] = {}
 
-    def run(self, spec, _prompt: str, _schema: dict) -> ModelTurn:
+    def run(self, spec, prompt: str, _schema: dict) -> ModelTurn:
         count = self.calls.get(spec.scout.scout_id, 0) + 1
         self.calls[spec.scout.scout_id] = count
+        self.deadlines.setdefault(spec.scout.scout_id, []).append(spec.deadline_at)
+        self.prompts.setdefault(spec.scout.scout_id, []).append(json.loads(prompt))
         response = (
             {"kind": "candidate", "title": "Incomplete"}
             if spec.scout.scout_id == "market_dislocation_scout" and count == 1
@@ -245,6 +249,65 @@ class InvalidThenValidClient:
             latency_ms=1,
             completed_at=spec.frozen_input.known_at,
         )
+
+
+def test_planned_shutdown_cancels_only_running_cycle_work(
+    empty_b3_database: str,
+) -> None:
+    database = Database(empty_b3_database)
+    database.upgrade()
+    frozen_input = seed_frozen_input(database)
+    repository = ScoutRepository(database)
+    job_id = repository.start_batch("batch_planned_shutdown", frozen_input)
+    spec = make_run_spec(
+        run_id="run_planned_shutdown",
+        trace_id="trace_planned_shutdown",
+        scout=SCOUTS[0],
+        frozen_input=frozen_input.for_territories(SCOUTS[0].primary_sources),
+        budget=RunBudget(
+            max_tool_calls=2,
+            max_total_tokens=1_000,
+            max_output_bytes=8_192,
+        ),
+        deadline_at=datetime.now(UTC) + timedelta(seconds=30),
+        model_provider="fixture",
+        model_id="fixture-model",
+    )
+
+    assert repository.start_run(job_id, spec) is True
+    assert repository.cancel_cycle(
+        frozen_input.wake_id,
+        environment="replay",
+    ) == (1, 1)
+
+    # A provider thread may finish unwinding after the signal handler has
+    # committed cancellation.  That late failure must not overwrite the
+    # operator intent or create a misleading failure artifact.
+    repository.fail(
+        spec.run_id,
+        "app_server_error",
+        error=RuntimeError("late provider shutdown"),
+    )
+    repository.finish_batch(job_id, failed=True)
+
+    with database.connect() as connection:
+        run = connection.execute(
+            "SELECT status, error_code FROM research.run WHERE id = %s",
+            (spec.run_id,),
+        ).fetchone()
+        job_status = connection.execute(
+            "SELECT status FROM ops.job WHERE id = %s",
+            (job_id,),
+        ).fetchone()[0]
+        failures = connection.execute(
+            """SELECT count(*) FROM research.run_artifact
+            WHERE run_id = %s AND artifact_kind = 'failure'""",
+            (spec.run_id,),
+        ).fetchone()[0]
+
+    assert run == ("cancelled", "operator_shutdown")
+    assert job_status == "cancelled"
+    assert failures == 0
 
 
 def test_sdk_requests_one_no_tool_finalization_after_empty_provider_response(
@@ -390,8 +453,8 @@ def test_fake_app_server_runs_four_scouts_with_sdk_and_persists_provenance(
     assert all(
         row[5:9]
         == (
-            "alpha-trader-v16",
-            "alta-active-research-v4",
+            "alpha-trader-v21",
+            "alta-active-research-v8",
             "fixture",
             "fixture-model",
         )
@@ -567,6 +630,13 @@ def test_invalid_structured_output_gets_one_bounded_fresh_retry(
         for scout_id, count in client.calls.items()
         if scout_id != "market_dislocation_scout"
     )
+    market_deadlines = client.deadlines["market_dislocation_scout"]
+    assert len(market_deadlines) == 2
+    assert market_deadlines[1] > market_deadlines[0]
+    retry_feedback = client.prompts["market_dislocation_scout"][1]["retry_feedback"]
+    assert retry_feedback["category"] == "schema_validation"
+    assert retry_feedback["previous_error_code"] == "invalid_output"
+    assert retry_feedback["issues"]
     with database.connect() as connection:
         assert connection.execute(
             """SELECT attempt_count FROM research.run
@@ -578,6 +648,14 @@ def test_invalid_structured_output_gets_one_bounded_fresh_retry(
             WHERE r.role = 'market_dislocation_scout'
               AND a.artifact_kind = 'failure'"""
         ).fetchone() == (1,)
+        failure = connection.execute(
+            """SELECT content->'retry_feedback' FROM research.run_artifact a
+            JOIN research.run r ON r.id = a.run_id
+            WHERE r.role = 'market_dislocation_scout'
+              AND a.artifact_kind = 'failure'"""
+        ).fetchone()[0]
+        assert failure["category"] == "schema_validation"
+        assert failure["issues"]
 
 
 def test_tool_discovery_is_promoted_to_append_only_evidence_before_candidate(
@@ -640,6 +718,7 @@ def test_tool_discovery_is_promoted_to_append_only_evidence_before_candidate(
     assert artifact["output"]["tool_evidence_refs"] == [
         {
             "tool_call_id": "tool_change_1",
+            "evidence_role": "primary_fact",
             "source_locator": "https://fixture.invalid/event",
         }
     ]

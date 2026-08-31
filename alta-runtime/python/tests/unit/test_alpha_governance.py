@@ -101,6 +101,20 @@ def test_positive_evidence_restores_normal_but_never_bonus_capital() -> None:
     assert result.posture == "normal"
     assert result.capital_multiplier == Decimal(1)
     assert result.evidence_posture == "positive_signal_requires_external_validation"
+    assert result.selection_adjusted_lower_alpha_bps is not None
+    assert result.selection_adjusted_lower_alpha_bps > 0
+    assert result.reason_codes == ("selection_adjusted_forward_alpha_positive",)
+
+
+def test_mature_but_inconclusive_alpha_stays_on_probation() -> None:
+    result = evaluate(
+        observations(tuple(Decimal(60 if index % 2 else -20) for index in range(30)))
+    )
+
+    assert result.recent_mean_alpha_bps == Decimal("20")
+    assert result.posture == "probation"
+    assert result.capital_multiplier == Decimal("0.50")
+    assert "selection_adjusted_alpha_not_proven" in result.reason_codes
 
 
 def test_duplicate_positions_cannot_inflate_the_governance_sample() -> None:

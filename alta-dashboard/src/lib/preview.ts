@@ -3,6 +3,7 @@ import type {
   ControlState,
   CredentialInventory,
   MvpStatus,
+  PaperCapitalStatus,
   RuntimeDetail,
 } from "./types";
 
@@ -12,7 +13,7 @@ const time = (minutes: number) =>
 
 export const previewControl: ControlState = {
   console: {
-    protocolVersion: 2,
+    protocolVersion: 4,
     instanceId: "synthetic-preview",
     startedAt: time(15),
     uptimeSeconds: 900,
@@ -37,12 +38,18 @@ export const previewControl: ControlState = {
   safety: {
     environment: "shadow",
     capitalMode: "disabled",
+    brokerEnvironment: "PAPER",
     dashboardBinding: "127.0.0.1",
   },
 };
 
 export const previewCredentials: CredentialInventory = {
   revision: "synthetic-preview",
+  verification: {
+    checkedAt: time(2),
+    expiresAt: new Date(now + 13 * 60_000).toISOString(),
+    stale: false,
+  },
   configuredSlots: [
     "deepseek",
     "xai",
@@ -61,7 +68,7 @@ export const previewCredentials: CredentialInventory = {
     ["brave", "Brave Search", "research", false, null],
     ["jina", "Jina Reader", "research", false, null],
     ["openalex", "OpenAlex", "research", false, null],
-  ].map(([slot, label, category, configured, fingerprint]) => ({
+  ].map(([slot, label, category, configured]) => ({
     slot: String(slot),
     label: String(label),
     category: category as CredentialInventory["slots"][number]["category"],
@@ -78,7 +85,41 @@ export const previewCredentials: CredentialInventory = {
     source: configured ? `external credential file (${slot}.key)` : "missing",
     sourceKind: configured ? "external" : "missing",
     editable: true,
-    fingerprint: fingerprint ? String(fingerprint) : null,
+    fingerprint: null,
+    verification: configured
+      ? {
+          status:
+            slot === "finlight"
+              ? ("auth_rejected" as const)
+              : slot === "finnhub"
+                ? ("rate_limited" as const)
+                : ("healthy" as const),
+          reason:
+            slot === "finlight"
+              ? "authentication_rejected"
+              : slot === "finnhub"
+                ? "provider_rate_limited"
+                : null,
+          checkedAt: time(2),
+          latencyMs: slot === "massive" ? 184 : 96,
+          httpStatus:
+            slot === "finlight" ? 401 : slot === "finnhub" ? 429 : 200,
+        }
+      : slot === "jina" || slot === "openalex"
+        ? {
+            status: "not_required" as const,
+            reason: null,
+            checkedAt: time(2),
+            latencyMs: null,
+            httpStatus: null,
+          }
+        : {
+            status: "not_configured" as const,
+            reason: "credential_missing",
+            checkedAt: null,
+            latencyMs: null,
+            httpStatus: null,
+          },
   })),
   providerNetwork: [
     {
@@ -101,9 +142,116 @@ export const previewCredentials: CredentialInventory = {
     editable: false,
     source: "external credential file (tiger-paper.properties)",
     sourceKind: "external",
-    fingerprint: "demo-fp-tiger-paper",
+    fingerprint: null,
     status: "configured_external_capital_disabled",
+    authorizationEnabled: false,
+    authorizationPosture: "paper_ready_disabled",
   },
+};
+
+export const previewCapital: PaperCapitalStatus = {
+  version: 1,
+  provider: "Tiger Trade",
+  environment: "PAPER",
+  configured: true,
+  requestedEnabled: false,
+  enabled: false,
+  posture: "paper_ready_disabled",
+  accountFingerprint: "8f5c2a17d309",
+  configurationFingerprint: "c1287a4359de",
+  mutationPolicy: "one_share_limit_day",
+  instrumentPolicy: "us_stock_only",
+  outsideRegularHours: false,
+  requiresStoppedRuntime: true,
+  lastChangedAt: time(48),
+  lastPreflightAt: time(6),
+  configurationError: null,
+  authorizationError: null,
+  snapshotError: null,
+  snapshot: {
+    paper: true,
+    accountBinding: true,
+    accountFingerprint: "8f5c2a17d309",
+    observedAt: time(6),
+    brokerUpdatedAt: time(7),
+    savedAt: time(6),
+    positionCount: 2,
+    openOrderCount: 0,
+    recentOrderCount: 3,
+    mutationPolicy: "one_share_limit_day",
+    assets: {
+      currency: "USD",
+      cashBalance: "98234.18",
+      cashAvailableForTrade: "97640.00",
+      netLiquidation: "100418.20",
+      grossPositionValue: "2184.02",
+      buyingPower: "195280.00",
+      unrealizedPnl: "42.16",
+      realizedPnl: "18.40",
+      maintenanceMargin: "655.21",
+    },
+    positions: [
+      {
+        symbol: "SPY",
+        securityType: "STK",
+        currency: "USD",
+        quantity: "1",
+        averageCost: "642.10",
+        marketPrice: "643.28",
+        marketValue: "643.28",
+        unrealizedPnl: "1.18",
+        unrealizedPnlPercent: "0.0018",
+        realizedPnl: "0",
+        todayPnl: "1.18",
+        salableQuantity: "1",
+      },
+      {
+        symbol: "QQQ",
+        securityType: "STK",
+        currency: "USD",
+        quantity: "1",
+        averageCost: "585.40",
+        marketPrice: "584.92",
+        marketValue: "584.92",
+        unrealizedPnl: "-0.48",
+        unrealizedPnlPercent: "-0.0008",
+        realizedPnl: "0",
+        todayPnl: "-0.48",
+        salableQuantity: "1",
+      },
+    ],
+    orders: [
+      {
+        reference: "a74f18d2c61b903e",
+        symbol: "SPY",
+        securityType: "STK",
+        side: "BUY",
+        orderType: "LMT",
+        status: "FILLED",
+        quantity: "1",
+        filled: "1",
+        remaining: "0",
+        limitPrice: "642.10",
+        averageFillPrice: "642.10",
+        commission: "0.01",
+        realizedPnl: "0",
+        timeInForce: "DAY",
+        outsideRegularHours: false,
+        createdAt: time(52),
+        updatedAt: time(51),
+        filledAt: time(51),
+      },
+    ],
+  },
+  audit: [
+    {
+      id: "capital-audit-preview",
+      action: "preflight_refreshed",
+      result: "succeeded",
+      knownAt: time(6),
+      accountFingerprint: "8f5c2a17d309",
+    },
+  ],
 };
 
 export const previewRuntime: RuntimeDetail = {
@@ -144,7 +292,7 @@ export const previewRuntime: RuntimeDetail = {
     { source: "sec", cursor: "feed:28419", knownAt: time(3) },
   ],
   researchAttention: {
-    version: "alta-research-attention-v1",
+    version: "alta-research-attention-v2",
     knownAt: time(1),
     observedThrough: time(46),
     maximumWindow: 64,
@@ -156,6 +304,10 @@ export const previewRuntime: RuntimeDetail = {
     topEntityShare: "0.8333",
     concentrationHhi: "0.7222",
     effectiveBreadth: "1.38",
+    uniqueArchetypes: 3,
+    archetypeEffectiveBreadth: "2.57",
+    horizonMix: { short: 2, medium: 3, long: 1 },
+    directionMix: { positive: 3, negative: 2, neutral: 1, unknown: 0 },
     posture: "concentrated",
     continuationScoutId: "change_event_scout",
     assignments: [
@@ -163,6 +315,8 @@ export const previewRuntime: RuntimeDetail = {
         scoutId: "change_event_scout",
         mode: "continue_lead",
         deprioritizedEntities: [],
+        targetArchetype: "operating artifact inflection",
+        targetHorizonBucket: "medium",
         directive: "Retain the single NVDA continuation seat.",
       },
       ...[
@@ -173,11 +327,108 @@ export const previewRuntime: RuntimeDetail = {
         scoutId,
         mode: "expand_coverage" as const,
         deprioritizedEntities: ["NVDA"],
+        targetArchetype: "policy second-order beneficiary",
+        targetHorizonBucket: "long" as const,
         directive: "Expand independent entity coverage beyond NVDA.",
       })),
     ],
     warning:
       "Research attention is concentrated; one continuation seat is preserved while the remaining Trader Minds expand entity coverage.",
+  },
+  opportunityContinuity: {
+    version: "alta-opportunity-continuity-v2",
+    knownAt: time(1),
+    scanLimit: 32,
+    frozenLimit: 4,
+    registryActive: 7,
+    scannedActive: 7,
+    frozenActive: 4,
+    pendingQuestions: 3,
+    deferredQuestions: 6,
+    nextResearchDueAt: time(-360),
+    expiringActive: 2,
+    staleActive: 0,
+    oldestActiveDays: 41,
+    earliestDecisionDeadlineAt: time(-96),
+    selectedOpportunityIds: [
+      "opportunity-pricing",
+      "opportunity-policy",
+      "opportunity-flow",
+      "opportunity-quality",
+    ],
+    priorityOpportunityIds: ["opportunity-pricing", "opportunity-policy"],
+    selectionTruncated: true,
+    registryScanSaturated: false,
+    posture: "expiring",
+    warning:
+      "Two active Opportunities are inside their next fourteen-day decision window.",
+  },
+  researchOperations: {
+    version: "alta-research-operations-v4",
+    posture: "cross_checked",
+    windowRuns: 16,
+    candidateRuns: 5,
+    noOpRuns: 11,
+    failedRuns: 0,
+    completedToolCalls: 57,
+    failedToolCalls: 1,
+    uniqueSourceDomains: 23,
+    independentEvidenceOrigins: 39,
+    citedSources: 51,
+    sourceRoleCollisions: 2,
+    sourceFamilies: ["discovery", "market_data", "primary_web", "social"],
+    crossCheckedRuns: 4,
+    screenGradeRuns: 3,
+    retriedRuns: 3,
+    retryRecoveredRuns: 2,
+    contractRejectedRuns: 1,
+    deadlineFailedRuns: 0,
+    followUpAssignedRuns: 4,
+    followUpExecutedRuns: 4,
+    followUpNoOpRuns: 3,
+    totalTokens: 42680,
+    averageLatencyMs: 18420,
+    minds: [
+      ["change_event_scout", "cross_checked", 17, 4],
+      ["market_dislocation_scout", "active", 12, 4],
+      ["causal_policy_scout", "screen_grade", 15, 3],
+      ["expectation_gap_scout", "cross_checked", 14, 4],
+    ].map(([scoutId, posture, calls, domains], index) => ({
+      scoutId: String(scoutId),
+      posture: posture as "active" | "cross_checked" | "screen_grade",
+      lastRunAt: time(4 + index * 3),
+      latestStatus: "succeeded",
+      latestErrorCode: null,
+      windowRuns: 4,
+      candidateRuns: index < 2 ? 2 : index === 2 ? 0 : 1,
+      noOpRuns: index < 2 ? 2 : index === 2 ? 4 : 3,
+      failedRuns: 0,
+      completedToolCalls: Number(calls),
+      failedToolCalls: index === 2 ? 1 : 0,
+      uniqueSourceDomains: Number(domains),
+      independentEvidenceOrigins: Number(domains) + 5,
+      citedSources: 12 + index,
+      sourceRoleCollisions: index === 2 ? 2 : 0,
+      sourceFamilies: ["discovery", "market_data", "primary_web"],
+      evidenceRoles:
+        index === 1
+          ? ["primary_fact", "mechanism", "market_context"]
+          : ["primary_fact", "mechanism", "market_context", "counterevidence"],
+      crossCheckedRuns: index === 0 || index === 3 ? 2 : 0,
+      screenGradeRuns: index === 2 ? 3 : 0,
+      retriedRuns: index < 3 ? 1 : 0,
+      retryRecoveredRuns: index < 2 ? 1 : 0,
+      contractRejectedRuns: index === 2 ? 1 : 0,
+      deadlineFailedRuns: 0,
+      followUpAssignedRuns: index < 2 ? 2 : 0,
+      followUpExecutedRuns: index < 2 ? 2 : 0,
+      followUpNoOpRuns: index === 0 ? 1 : index === 1 ? 2 : 0,
+      latestAttemptCount: index < 3 ? 2 : 1,
+      totalTokens: 9800 + index * 580,
+      averageLatencyMs: 16200 + index * 940,
+    })),
+    disclosure:
+      "Saved tool provenance and diligence outcomes only; queries, arguments, credentials, source text, and private reasoning are not exposed.",
   },
   alpha: {
     measurement: "realized_shadow_cost_adjusted",
@@ -193,6 +444,11 @@ export const previewRuntime: RuntimeDetail = {
       meanAlphaBps: "18.40",
       confidence95LowerBps: "-41.20",
       confidence95UpperBps: "78.00",
+      researchTrials: 86,
+      selectionPolicyVersion: "alta-research-selection-v1",
+      selectionCriticalZ: "3.44",
+      selectionAdjustedConfidence95LowerBps: "-86.10",
+      selectionAdjustedLowerBoundAboveZero: false,
     },
     capitalGovernance: {
       posture: "collecting",
@@ -200,6 +456,11 @@ export const previewRuntime: RuntimeDetail = {
       sampleSize: 12,
       windowSize: 12,
       recentMeanAlphaBps: "18.40",
+      confidence95LowerAlphaBps: "-41.20",
+      confidence95UpperAlphaBps: "78.00",
+      researchTrials: 86,
+      selectionAdjustedLowerAlphaBps: "-86.10",
+      selectionCriticalZ: "3.44",
       maxDrawdownNavBps: "21.50",
       evidencePosture: "insufficient_sample",
     },
@@ -300,6 +561,16 @@ export const previewRuntime: RuntimeDetail = {
       stressNavBps: "44.5",
       stressLimitNavBps: "100",
       underlyingLimitNavBps: "150",
+      alphaSourceLimitNavBps: "300",
+      catalystLimitNavBps: "200",
+      systematicExposureLimitNavBps: "200",
+      mostConstrainedBucket: {
+        kind: "systematic_exposure",
+        key: "growth_duration",
+        grossNavBps: "144",
+        limitNavBps: "200",
+        utilization: "0.72",
+      },
       underlyingBuckets: [
         {
           underlyingKey: "MSFT",
@@ -314,6 +585,43 @@ export const previewRuntime: RuntimeDetail = {
           grossNotional: "8000",
           grossNavBps: "80",
           estimatedStressLoss: "2000",
+        },
+      ],
+      alphaSourceBuckets: [
+        {
+          alphaSource: "earnings_revision",
+          openPositions: 1,
+          grossNotional: "9800",
+          grossNavBps: "98",
+          estimatedStressLoss: "2450",
+        },
+        {
+          alphaSource: "relative_value",
+          openPositions: 1,
+          grossNotional: "8000",
+          grossNavBps: "80",
+          estimatedStressLoss: "2000",
+        },
+      ],
+      catalystBuckets: [
+        {
+          catalystKey: "msft-q1-cloud-mix",
+          openPositions: 1,
+          grossNotional: "9800",
+          grossNavBps: "98",
+          estimatedStressLoss: "2450",
+        },
+      ],
+      systematicExposureBuckets: [
+        {
+          tag: "growth_duration",
+          grossNotional: "14400",
+          grossNavBps: "144",
+        },
+        {
+          tag: "market_beta",
+          grossNotional: "12800",
+          grossNavBps: "128",
         },
       ],
     },

@@ -3,12 +3,13 @@ import json
 from collections import defaultdict
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .contracts import Environment
 from .research_agenda import ResearchMode
+from .research_diligence import ResearchDiligence, research_quality_components
 from .trader_mind import ACTIVE_RESEARCH_TOOLS
 
 MIN_MIND_BENCHMARKED_POSITIONS = 30
@@ -16,8 +17,10 @@ MIN_SLICE_BENCHMARKED_POSITIONS = 10
 MAX_ARCHETYPE_SLICES = 8
 MAX_RESEARCH_ROUTE_SLICES = 2
 MAX_RESEARCH_MODE_SLICES = 2
+MAX_RESEARCH_QUALITY_SLICES = 4
 ALPHA_FEEDBACK_MODE = "mature_pit_non_evidence"
 ALPHA_LOWER_BOUND_Z = Decimal("2.241")
+ResearchPosture = Literal["cross_checked", "screen_grade", "no_op", "legacy_unassessed"]
 
 
 def _canonical_hash(value: Any) -> str:
@@ -90,6 +93,8 @@ class AlphaContributor(BaseModel):
     alpha_archetype: str = Field(min_length=3, max_length=96)
     research_mode: ResearchMode = "explore"
     research_route: tuple[str, ...] = Field(default=(), max_length=12)
+    research_posture: ResearchPosture = "legacy_unassessed"
+    research_quality_score: Decimal | None = Field(default=None, ge=0, le=1)
 
     @field_validator("research_route")
     @classmethod
@@ -111,6 +116,8 @@ class AlphaOutcomeObservation(BaseModel):
     alpha_archetype: str = Field(min_length=3, max_length=96)
     research_mode: ResearchMode = "explore"
     research_route: tuple[str, ...] = Field(default=(), max_length=12)
+    research_posture: ResearchPosture = "legacy_unassessed"
+    research_quality_score: Decimal | None = Field(default=None, ge=0, le=1)
     known_at: datetime
     net_return_bps: Decimal
     realized_alpha_bps: Decimal | None = None
@@ -157,6 +164,21 @@ class ResearchModeFeedback(BaseModel):
     worst_realized_alpha_bps: Decimal | None = None
 
 
+class ResearchQualityFeedback(BaseModel):
+    """Forward outcome slice for the research process frozen at entry."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    research_posture: ResearchPosture
+    closed_positions: int = Field(ge=1)
+    benchmarked_positions: int = Field(ge=0)
+    mature: bool
+    mean_frozen_research_quality: Decimal | None = Field(default=None, ge=0, le=1)
+    mean_realized_alpha_bps: Decimal | None = None
+    positive_alpha_rate: Decimal | None = Field(default=None, ge=0, le=1)
+    worst_realized_alpha_bps: Decimal | None = None
+
+
 class TraderMindAlphaFeedback(BaseModel):
     """Outcome feedback for one Mind; never Evidence or an allocation rule."""
 
@@ -182,6 +204,9 @@ class TraderMindAlphaFeedback(BaseModel):
     )
     research_modes: tuple[ResearchModeFeedback, ...] = Field(
         default=(), max_length=MAX_RESEARCH_MODE_SLICES
+    )
+    research_quality: tuple[ResearchQualityFeedback, ...] = Field(
+        default=(), max_length=MAX_RESEARCH_QUALITY_SLICES
     )
     snapshot_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
 
@@ -279,6 +304,40 @@ def _research_mode_feedback(
     return tuple(feedback)
 
 
+def _research_quality_feedback(
+    grouped: dict[ResearchPosture, dict[str, AlphaOutcomeObservation]],
+    *,
+    mind_mature: bool,
+    minimum_slice_positions: int,
+) -> tuple[ResearchQualityFeedback, ...]:
+    feedback = []
+    for posture, positions in sorted(grouped.items()):
+        values = tuple(positions.values())
+        alphas = _alpha_values(values)
+        quality_scores = tuple(
+            item.research_quality_score
+            for item in values
+            if item.research_quality_score is not None
+        )
+        mature = mind_mature and len(alphas) >= minimum_slice_positions
+        mean_alpha, positive_rate, worst_alpha = _mature_alpha_metrics(
+            alphas, mature=mature
+        )
+        feedback.append(
+            ResearchQualityFeedback(
+                research_posture=posture,
+                closed_positions=len(values),
+                benchmarked_positions=len(alphas),
+                mature=mature,
+                mean_frozen_research_quality=_mean(quality_scores),
+                mean_realized_alpha_bps=mean_alpha,
+                positive_alpha_rate=positive_rate,
+                worst_realized_alpha_bps=worst_alpha,
+            )
+        )
+    return tuple(feedback[:MAX_RESEARCH_QUALITY_SLICES])
+
+
 def _feedback_payload(
     *,
     scout_id: str,
@@ -297,6 +356,8 @@ def _feedback_payload(
                     value.alpha_archetype,
                     value.research_mode,
                     value.research_route,
+                    value.research_posture,
+                    str(value.research_quality_score),
                 ),
             )
         }.values()
@@ -313,9 +374,13 @@ def _feedback_payload(
         dict
     )
     by_mode: dict[ResearchMode, dict[str, AlphaOutcomeObservation]] = defaultdict(dict)
+    by_quality: dict[ResearchPosture, dict[str, AlphaOutcomeObservation]] = defaultdict(
+        dict
+    )
     for item in observations:
         by_archetype[item.alpha_archetype].setdefault(item.position_id, item)
         by_mode[item.research_mode].setdefault(item.position_id, item)
+        by_quality[item.research_posture].setdefault(item.position_id, item)
         if item.research_route:
             by_route[item.research_route].setdefault(item.position_id, item)
 
@@ -353,6 +418,11 @@ def _feedback_payload(
             mind_mature=mind_mature,
             minimum_slice_positions=minimum_slice_positions,
         ),
+        "research_quality": _research_quality_feedback(
+            by_quality,
+            mind_mature=mind_mature,
+            minimum_slice_positions=minimum_slice_positions,
+        ),
     }
 
 
@@ -367,7 +437,17 @@ def build_alpha_feedback(
     if minimum_slice_positions > minimum_mind_positions:
         raise ValueError("slice maturity cannot exceed Mind maturity")
     by_scout: dict[str, list[AlphaOutcomeObservation]] = defaultdict(list)
-    seen: set[tuple[str, str, str, ResearchMode, tuple[str, ...]]] = set()
+    seen: set[
+        tuple[
+            str,
+            str,
+            str,
+            ResearchMode,
+            tuple[str, ...],
+            ResearchPosture,
+            str,
+        ]
+    ] = set()
     for item in sorted(
         observations,
         key=lambda value: (
@@ -377,6 +457,8 @@ def build_alpha_feedback(
             value.alpha_archetype,
             value.research_mode,
             value.research_route,
+            value.research_posture,
+            str(value.research_quality_score),
         ),
     ):
         identity = (
@@ -385,6 +467,8 @@ def build_alpha_feedback(
             item.alpha_archetype,
             item.research_mode,
             item.research_route,
+            item.research_posture,
+            str(item.research_quality_score),
         )
         if identity in seen:
             continue
@@ -409,6 +493,9 @@ def build_alpha_feedback(
             ],
             "research_modes": [
                 item.model_dump(mode="json") for item in payload["research_modes"]
+            ],
+            "research_quality": [
+                item.model_dump(mode="json") for item in payload["research_quality"]
             ],
         }
         feedback.append(
@@ -469,6 +556,20 @@ def load_alpha_contributors(
                 and item.get("tool_name") in ACTIVE_RESEARCH_TOOLS
             )
         )[:12]
+        research_posture: ResearchPosture = "legacy_unassessed"
+        research_quality_score: Decimal | None = None
+        if isinstance(foundry_snapshot, dict):
+            raw_diligence = foundry_snapshot.get("research_diligence")
+            if isinstance(raw_diligence, dict):
+                try:
+                    diligence = ResearchDiligence.model_validate(raw_diligence)
+                except ValueError:
+                    pass
+                else:
+                    research_posture = diligence.posture
+                    research_quality_score = research_quality_components(diligence)[
+                        "research_quality"
+                    ]
         contributors.append(
             AlphaContributor(
                 candidate_id=candidate_id,
@@ -476,6 +577,8 @@ def load_alpha_contributors(
                 alpha_archetype=alpha_archetype,
                 research_mode=research_mode,
                 research_route=route,
+                research_posture=research_posture,
+                research_quality_score=research_quality_score,
             )
         )
     return tuple(contributors)
@@ -546,6 +649,8 @@ class AlphaFeedbackProjector:
                         alpha_archetype=contributor.alpha_archetype,
                         research_mode=contributor.research_mode,
                         research_route=contributor.research_route,
+                        research_posture=contributor.research_posture,
+                        research_quality_score=contributor.research_quality_score,
                         known_at=known_at,
                         net_return_bps=net_return,
                         realized_alpha_bps=realized_alpha,

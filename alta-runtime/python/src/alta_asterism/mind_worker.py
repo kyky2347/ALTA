@@ -23,6 +23,7 @@ from .scouts import (
 RESEARCH_BUDGET_EXEMPT_CONTROL_TOOLS = frozenset(
     {"list_mcp_resources", "list_mcp_resource_templates"}
 )
+MAX_DISCOVERED_EVIDENCE = 40
 
 
 class ScoutDeadlineExceeded(Exception):
@@ -53,6 +54,7 @@ class ToolEvidenceDiscovery:
     source_locator: str
     content: dict[str, Any]
     content_hash: str
+    origin_fingerprint: str = ""
 
 
 class MindClient(Protocol):
@@ -106,12 +108,14 @@ def _source_locators(value: Any) -> tuple[str, ...]:
                 visit(child)
         elif isinstance(item, str):
             for match in re.finditer(r"https://[^\s\"'<>\\]+", item):
+                if len(found) >= 10:
+                    return
                 locator = _canonical_tool_locator(match.group(0))
-                if locator is not None:
+                if locator is not None and locator not in found:
                     found.append(locator)
 
     visit(value)
-    return tuple(dict.fromkeys(found))
+    return tuple(found)
 
 
 def _utf8_prefix(value: str, maximum_bytes: int) -> str:
@@ -119,6 +123,34 @@ def _utf8_prefix(value: str, maximum_bytes: int) -> str:
     if len(encoded) <= maximum_bytes:
         return value
     return encoded[:maximum_bytes].decode(errors="ignore")
+
+
+def _matching_source_payload(value: Any, locator: str) -> Any | None:
+    """Return the smallest structured result node that directly owns a URL."""
+
+    if isinstance(value, dict):
+        for child in value.values():
+            if not isinstance(child, str):
+                continue
+            child_locator = _canonical_tool_locator(child)
+            if child_locator == locator:
+                return value
+        for child in value.values():
+            matched = _matching_source_payload(child, locator)
+            if matched is not None:
+                return matched
+    elif isinstance(value, list):
+        for child in value:
+            matched = _matching_source_payload(child, locator)
+            if matched is not None:
+                return matched
+    return None
+
+
+def _source_scoped_result(value: Any, locator: str) -> Any:
+    """Keep durable Evidence attributable to one source, not a call-wide prefix."""
+
+    return _matching_source_payload(value, locator) or value
 
 
 def _strict_schema_node(value: Any) -> Any:
@@ -157,7 +189,7 @@ def _strict_output_schema(value: dict[str, Any]) -> dict[str, Any]:
 
 
 def _tool_evidence(items: Sequence[Any]) -> tuple[ToolEvidenceDiscovery, ...]:
-    result: list[ToolEvidenceDiscovery] = []
+    per_call: list[list[ToolEvidenceDiscovery]] = []
     for item in items:
         root = getattr(item, "root", item)
         body = root.model_dump(mode="json", by_alias=True)
@@ -182,23 +214,57 @@ def _tool_evidence(items: Sequence[Any]) -> tuple[ToolEvidenceDiscovery, ...]:
             ),
             2_000,
         )
+        discoveries = []
         for locator in _source_locators(redacted_result):
+            source_payload = _source_scoped_result(redacted_result, locator)
+            source_text = _utf8_prefix(
+                json.dumps(
+                    source_payload,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                ),
+                4_000,
+            )
+            origin_fingerprint = _canonical_hash(
+                {
+                    "tool_name": tool_name,
+                    "source_locator": locator,
+                    "source_payload": source_text,
+                }
+            )
             content = {
                 "tool_call_id": tool_call_id,
                 "tool_name": tool_name,
                 "source_locator": locator,
-                "result_text": result_text,
+                "result_text": source_text or result_text,
+                "origin_fingerprint": origin_fingerprint,
             }
-            result.append(
+            discoveries.append(
                 ToolEvidenceDiscovery(
                     tool_call_id=tool_call_id,
                     tool_name=tool_name,
                     source_locator=locator,
                     content=content,
                     content_hash=_canonical_hash(content),
+                    origin_fingerprint=origin_fingerprint,
                 )
             )
-    return tuple(result[:20])
+        if discoveries:
+            per_call.append(discoveries)
+
+    # Preserve evidence from every completed research step before taking more
+    # URLs from an early broad search. Without round-robin allocation, a first
+    # deep-search call could consume the whole evidence window and silently
+    # discard later market-context or counterevidence calls.
+    result: list[ToolEvidenceDiscovery] = []
+    for locator_index in range(10):
+        for discoveries in per_call:
+            if locator_index < len(discoveries):
+                result.append(discoveries[locator_index])
+                if len(result) >= MAX_DISCOVERED_EVIDENCE:
+                    return tuple(result)
+    return tuple(result)
 
 
 def _tool_provenance(items: Sequence[Any]) -> tuple[ToolProvenance, ...]:

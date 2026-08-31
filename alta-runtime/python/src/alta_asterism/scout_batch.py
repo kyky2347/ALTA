@@ -37,6 +37,62 @@ class ActiveResearchRequired(Exception):
     pass
 
 
+SCOUT_RETRY_ISSUE_LIMIT = 2
+
+
+def _bounded_issue_part(value: object, maximum: int = 96) -> str:
+    normalized = "_".join(str(value).strip().split())
+    return normalized[:maximum] or "unknown"
+
+
+def build_scout_retry_feedback(error_code: str, error: Exception) -> dict[str, object]:
+    """Return bounded correction metadata without replaying model output."""
+
+    issues: list[dict[str, str]] = []
+    if isinstance(error, ValidationError):
+        category = "schema_validation"
+        for item in error.errors()[:SCOUT_RETRY_ISSUE_LIMIT]:
+            location = ".".join(_bounded_issue_part(part, 32) for part in item["loc"])
+            issues.append(
+                {
+                    "path": location[:64] or "$",
+                    "code": _bounded_issue_part(item.get("type"), 40),
+                }
+            )
+    elif isinstance(error, json.JSONDecodeError):
+        category = "json_contract"
+        issues.append({"path": "$", "code": "invalid_json"})
+    elif isinstance(error, ActiveResearchRequired):
+        category = "active_research"
+        issues.append({"path": "tool_calls", "code": "active_research_required"})
+    else:
+        message = str(error).casefold()
+        category = "semantic_contract"
+        semantic_codes = (
+            ("decision-complete", "decision_fields_incomplete"),
+            ("thesis pillar", "thesis_pillar_invalid"),
+            ("research attention seat", "attention_seat_violation"),
+            ("alpha_archetype", "alpha_archetype_invalid"),
+            ("evidence outside", "evidence_scope_violation"),
+            ("tool evidence", "tool_evidence_binding_invalid"),
+            ("assigned opportunity", "follow_up_parent_invalid"),
+            ("assigned research question", "follow_up_question_invalid"),
+            ("freshness_at", "freshness_invalid"),
+            ("finance market context", "market_context_required"),
+            ("expectation posture", "market_context_required"),
+        )
+        code = next(
+            (value for fragment, value in semantic_codes if fragment in message),
+            "semantic_contract_invalid",
+        )
+        issues.append({"path": "$", "code": code})
+    return {
+        "previous_error_code": _bounded_issue_part(error_code, 64),
+        "category": category,
+        "issues": issues,
+    }
+
+
 def tools_within_scout_territory(
     turn: ModelTurn, allowed_tools: tuple[str, ...]
 ) -> bool:
@@ -179,19 +235,28 @@ class MindWorker:
         return spec, self.repository.start_run(job_id, spec)
 
     def _run_one(self, job_id: str, spec: ScoutRunSpec) -> ScoutRunOutcome:
+        retry_feedback: dict[str, object] | None = None
         while True:
             turn: ModelTurn | None = None
             try:
-                turn = self.client.run(spec, build_prompt(spec), output_schema())
+                turn = self.client.run(
+                    spec, build_prompt(spec, retry_feedback), output_schema()
+                )
                 self._validate_budget(spec, turn)
                 available_tool_evidence = {
                     (item.tool_call_id, item.source_locator)
                     for item in turn.discovered_evidence
                 }
+                market_context_evidence = {
+                    (item.tool_call_id, item.source_locator)
+                    for item in turn.discovered_evidence
+                    if item.tool_name == "alta_finance_data"
+                }
                 output = parse_output(
                     turn.final_response,
                     spec,
                     available_tool_evidence,
+                    market_context_evidence,
                 )
                 output = self.repository.collect_tool_evidence(spec, turn, output)
                 self.repository.complete(spec, turn, output)
@@ -216,28 +281,46 @@ class MindWorker:
             except ScoutBudgetExceeded as error:
                 return self._failed(spec, "budget_exceeded", turn, error)
             except ActiveResearchRequired as error:
-                outcome = self._failed(spec, "active_research_required", turn, error)
-                if self._retry(job_id, spec):
+                retry_feedback = build_scout_retry_feedback(
+                    "active_research_required", error
+                )
+                outcome = self._failed(
+                    spec,
+                    "active_research_required",
+                    turn,
+                    error,
+                    retry_feedback,
+                )
+                retry_spec = self._retry(job_id, spec)
+                if retry_spec is not None:
+                    spec = retry_spec
                     continue
                 return outcome
             except (ValidationError, ValueError, json.JSONDecodeError) as error:
-                outcome = self._failed(spec, "invalid_output", turn, error)
-                if self._retry(job_id, spec):
+                retry_feedback = build_scout_retry_feedback("invalid_output", error)
+                outcome = self._failed(
+                    spec, "invalid_output", turn, error, retry_feedback
+                )
+                retry_spec = self._retry(job_id, spec)
+                if retry_spec is not None:
+                    spec = retry_spec
                     continue
                 return outcome
             except Exception as error:
                 outcome = self._failed(spec, "app_server_error", turn, error)
-                if self._retry(job_id, spec):
+                retry_spec = self._retry(job_id, spec)
+                if retry_spec is not None:
+                    spec = retry_spec
                     continue
                 return outcome
 
-    def _retry(self, job_id: str, spec: ScoutRunSpec) -> bool:
+    def _retry(self, job_id: str, spec: ScoutRunSpec) -> ScoutRunSpec | None:
         retry_spec = spec.model_copy(
             update={
                 "deadline_at": self.clock() + timedelta(seconds=self.deadline_seconds)
             }
         )
-        return self.repository.start_run(job_id, retry_spec)
+        return retry_spec if self.repository.start_run(job_id, retry_spec) else None
 
     def _validate_budget(self, spec: ScoutRunSpec, turn: ModelTurn) -> None:
         if budget_charge_tool_calls(turn) > spec.budget.max_tool_calls:
@@ -262,8 +345,15 @@ class MindWorker:
         error_code: str,
         turn: ModelTurn | None,
         error: Exception,
+        retry_feedback: dict[str, object] | None = None,
     ) -> ScoutRunOutcome:
-        self.repository.fail(spec.run_id, error_code, turn, error)
+        self.repository.fail(
+            spec.run_id,
+            error_code,
+            turn,
+            error,
+            retry_feedback=retry_feedback,
+        )
         return ScoutRunOutcome(
             run_id=spec.run_id,
             scout_id=spec.scout.scout_id,

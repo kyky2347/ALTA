@@ -2,6 +2,7 @@ import hashlib
 import re
 import time
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Literal
@@ -31,6 +32,86 @@ def _decimal(value: object) -> Decimal:
 def _order_status(value: object) -> str:
     raw = getattr(value, "value", value)
     return str(raw).rsplit(".", maxsplit=1)[-1].upper()
+
+
+def _optional_decimal(value: object) -> str | None:
+    if value is None:
+        return None
+    try:
+        result = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+    return format(result, "f") if result.is_finite() else None
+
+
+def _known_at(value: object) -> str | None:
+    try:
+        timestamp = int(value)
+    except (TypeError, ValueError):
+        return None
+    if timestamp <= 0:
+        return None
+    if timestamp > 10_000_000_000:
+        timestamp /= 1000
+    try:
+        return datetime.fromtimestamp(timestamp, tz=UTC).isoformat()
+    except (OSError, OverflowError, ValueError):
+        return None
+
+
+def _contract_symbol(value: object) -> str:
+    symbol = str(getattr(value, "symbol", "")).upper()
+    return symbol if SYMBOL_PATTERN.fullmatch(symbol) else "UNKNOWN"
+
+
+def _contract_type(value: object) -> str:
+    raw = getattr(value, "sec_type", "STK")
+    return str(getattr(raw, "value", raw)).rsplit(".", maxsplit=1)[-1].upper()[:16]
+
+
+def _position_summary(position: object) -> dict[str, object]:
+    contract = getattr(position, "contract", None)
+    return {
+        "symbol": _contract_symbol(contract),
+        "securityType": _contract_type(contract),
+        "currency": str(getattr(contract, "currency", "USD"))[:8],
+        "quantity": _optional_decimal(getattr(position, "quantity", None)),
+        "averageCost": _optional_decimal(getattr(position, "average_cost", None)),
+        "marketPrice": _optional_decimal(getattr(position, "market_price", None)),
+        "marketValue": _optional_decimal(getattr(position, "market_value", None)),
+        "unrealizedPnl": _optional_decimal(getattr(position, "unrealized_pnl", None)),
+        "unrealizedPnlPercent": _optional_decimal(
+            getattr(position, "unrealized_pnl_percent", None)
+        ),
+        "realizedPnl": _optional_decimal(getattr(position, "realized_pnl", None)),
+        "todayPnl": _optional_decimal(getattr(position, "today_pnl", None)),
+        "salableQuantity": _optional_decimal(getattr(position, "salable_qty", None)),
+    }
+
+
+def _order_summary(order: object) -> dict[str, object]:
+    contract = getattr(order, "contract", None)
+    reference = str(getattr(order, "id", "unavailable"))
+    return {
+        "reference": hashlib.sha256(reference.encode()).hexdigest()[:16],
+        "symbol": _contract_symbol(contract),
+        "securityType": _contract_type(contract),
+        "side": str(getattr(order, "action", "UNKNOWN")).upper()[:8],
+        "orderType": str(getattr(order, "order_type", "UNKNOWN")).upper()[:16],
+        "status": _order_status(getattr(order, "status", "UNKNOWN")),
+        "quantity": _optional_decimal(getattr(order, "quantity", None)),
+        "filled": _optional_decimal(getattr(order, "filled", None)),
+        "remaining": _optional_decimal(getattr(order, "remaining", None)),
+        "limitPrice": _optional_decimal(getattr(order, "limit_price", None)),
+        "averageFillPrice": _optional_decimal(getattr(order, "avg_fill_price", None)),
+        "commission": _optional_decimal(getattr(order, "commission", None)),
+        "realizedPnl": _optional_decimal(getattr(order, "realized_pnl", None)),
+        "timeInForce": str(getattr(order, "time_in_force", ""))[:12],
+        "outsideRegularHours": getattr(order, "outside_rth", None) is True,
+        "createdAt": _known_at(getattr(order, "order_time", None)),
+        "updatedAt": _known_at(getattr(order, "update_time", None)),
+        "filledAt": _known_at(getattr(order, "trade_time", None)),
+    }
 
 
 @dataclass(frozen=True)
@@ -176,6 +257,63 @@ class TigerPaperSession:
             "positionCount": len(positions),
             "openOrderCount": len(open_orders),
             "mutationPolicy": "one_share_limit_day",
+        }
+
+    def snapshot(self) -> dict[str, object]:
+        client, account = self._ready()
+        assets = client.get_prime_assets(account=account)
+        if assets is None or str(getattr(assets, "account", "")) != account:
+            raise PaperBoundaryError("Paper asset response crossed account binding")
+        positions = client.get_positions(account=account) or []
+        open_orders = client.get_open_orders(account=account) or []
+        recent_orders = (
+            client.get_orders(
+                account=account,
+                limit=100,
+                is_brief=True,
+            )
+            or []
+        )
+        if any(str(getattr(item, "account", "")) != account for item in positions):
+            raise PaperBoundaryError("Paper position response crossed account binding")
+        if any(str(getattr(item, "account", "")) != account for item in open_orders):
+            raise PaperBoundaryError("Paper order response crossed account binding")
+        if any(str(getattr(item, "account", "")) != account for item in recent_orders):
+            raise PaperBoundaryError("Paper order history crossed account binding")
+        segments = getattr(assets, "segments", {}) or {}
+        stock = segments.get("S") if isinstance(segments, dict) else None
+        asset_summary = {
+            "currency": str(getattr(stock, "currency", "USD"))[:8],
+            "cashBalance": _optional_decimal(getattr(stock, "cash_balance", None)),
+            "cashAvailableForTrade": _optional_decimal(
+                getattr(stock, "cash_available_for_trade", None)
+            ),
+            "netLiquidation": _optional_decimal(
+                getattr(stock, "net_liquidation", None)
+            ),
+            "grossPositionValue": _optional_decimal(
+                getattr(stock, "gross_position_value", None)
+            ),
+            "buyingPower": _optional_decimal(getattr(stock, "buying_power", None)),
+            "unrealizedPnl": _optional_decimal(getattr(stock, "unrealized_pl", None)),
+            "realizedPnl": _optional_decimal(getattr(stock, "realized_pl", None)),
+            "maintenanceMargin": _optional_decimal(
+                getattr(stock, "maintain_margin", None)
+            ),
+        }
+        return {
+            "paper": True,
+            "accountBinding": True,
+            "accountFingerprint": hashlib.sha256(account.encode()).hexdigest()[:12],
+            "observedAt": datetime.now(tz=UTC).isoformat(),
+            "brokerUpdatedAt": _known_at(getattr(assets, "update_timestamp", None)),
+            "positionCount": len(positions),
+            "openOrderCount": len(open_orders),
+            "recentOrderCount": len(recent_orders),
+            "mutationPolicy": "one_share_limit_day",
+            "assets": asset_summary,
+            "positions": [_position_summary(item) for item in positions],
+            "orders": [_order_summary(item) for item in recent_orders],
         }
 
     def position(self, symbol: str) -> Decimal:

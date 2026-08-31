@@ -106,6 +106,9 @@ def test_database_source_flow_normalizes_raw_and_enforces_point_in_time(
     assert frozen.research_attention_portfolio is not None
     assert frozen.research_attention_portfolio.posture == "insufficient_sample"
     assert len(frozen.research_attention_portfolio.assignments) == len(SCOUTS)
+    assert frozen.opportunity_continuity is not None
+    assert frozen.opportunity_continuity.posture == "empty"
+    assert frozen.opportunity_continuity.scanned_active == 0
     assert postures == {"finlight": "healthy"}
     assert recovered.evidence == frozen.evidence
     assert repeated.evidence == frozen.evidence
@@ -824,6 +827,53 @@ class FakeAutonomousRuntime:
         return None
 
 
+class StoppingAutonomousRuntime:
+    def __init__(self, stop: threading.Event) -> None:
+        self.stop = stop
+        self.orchestrator = self
+        self.closed = False
+
+    def run(self, _cycle_id: str, _wake_at: datetime) -> None:
+        self.stop.set()
+        raise RuntimeError("provider interrupted by planned shutdown")
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def test_autonomous_runner_treats_planned_interrupt_as_cancellation(
+    live_database: str,
+) -> None:
+    database = Database(live_database)
+    database.upgrade()
+    settings = Settings(
+        DATABASE_URL=live_database,
+        REDIS_URL="redis://127.0.0.1:1/0",
+        ALTA_ENVIRONMENT="shadow",
+    )
+    stop = threading.Event()
+    states: list[tuple[str, dict]] = []
+    runtime = StoppingAutonomousRuntime(stop)
+    runner = AutonomousRunner(
+        database,
+        settings,
+        runtime_factory=lambda _db, _config: runtime,
+        state_callback=lambda status, detail: states.append((status, detail)),
+    )
+
+    assert runner.run(stop, once=True) == 0
+    assert runtime.closed is True
+    assert states[-1][0] == "stopping"
+    assert states[-1][1]["cycle_result"] == "cancelled"
+    assert states[-1][1]["consecutive_failures"] == 0
+    with database.connect() as connection:
+        failures = connection.execute(
+            """SELECT count(*) FROM ops.event
+            WHERE event_type = 'mvp.pipeline.failed'"""
+        ).fetchone()[0]
+    assert failures == 0
+
+
 def test_autonomous_runner_is_single_owner_and_records_redacted_failure(
     live_database: str,
 ) -> None:
@@ -976,7 +1026,8 @@ def test_autonomous_runner_recovers_after_more_than_three_failures(
     assert len(set(cycle_ids)) == 1
     assert len(closed) == 5
     assert [status for status, _detail in states].count("degraded") >= 4
-    assert states[-1][0] == "waiting"
+    assert states[-1][0] == "stopping"
+    assert states[-1][1]["cycle_result"] == "MVP_IDLE"
     with database.connect() as connection:
         failures = connection.execute(
             """SELECT payload FROM ops.event

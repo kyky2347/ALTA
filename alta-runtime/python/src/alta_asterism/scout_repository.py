@@ -25,6 +25,7 @@ from .research_attention import (
 from .scouts import (
     CandidateOutput,
     FrozenScoutInput,
+    SCOUTS,
     SCOUT_OUTPUT_ADAPTER,
     ScoutOutput,
     ScoutRunSpec,
@@ -71,6 +72,7 @@ class ScoutRepository:
                     status=item.status,
                     known_at=item.known_at,
                     horizon_days=item.horizon_days,
+                    decision_deadline_at=item.decision_deadline_at,
                     research_questions=item.research_questions,
                 )
                 for item in frozen_input.prior_opportunities
@@ -231,6 +233,7 @@ class ScoutRepository:
                 frozen_input.universe,
                 tuple(item.scout_id for item in expected_attention.assignments),
                 frozen_input.known_at,
+                {item.scout_id: item.alpha_archetypes for item in SCOUTS},
             )
             if projected_attention != expected_attention:
                 raise ValueError(
@@ -282,6 +285,39 @@ class ScoutRepository:
                   ) RETURNING j.id"""
             ).fetchall()
         return len(run_ids), len(jobs)
+
+    def cancel_cycle(
+        self,
+        cycle_id: str,
+        *,
+        environment: str = "shadow",
+        error_code: str = "operator_shutdown",
+    ) -> tuple[int, int]:
+        """Cancel only in-flight work for one frozen cycle.
+
+        Planned service shutdown is an operational cancellation, not an App
+        Server failure.  The cycle identity keeps this transition from touching
+        unrelated replay or manual work.
+        """
+
+        with self.database.connect() as connection:
+            rows = connection.execute(
+                """UPDATE research.run SET status = 'cancelled', error_code = %s
+                WHERE environment = %s AND cycle_id = %s AND status = 'running'
+                RETURNING job_id""",
+                (error_code[:64], environment, cycle_id),
+            ).fetchall()
+            job_ids = sorted({row[0] for row in rows if row[0] is not None})
+            jobs = (
+                connection.execute(
+                    """UPDATE ops.job SET status = 'cancelled'
+                    WHERE id = ANY(%s) AND status = 'running' RETURNING id""",
+                    (job_ids,),
+                ).fetchall()
+                if job_ids
+                else []
+            )
+        return len(rows), len(jobs)
 
     def start_batch(self, batch_id: str, frozen_input: FrozenScoutInput) -> str:
         job_id = "job_" + hashlib.sha256(batch_id.encode()).hexdigest()[:32]
@@ -434,7 +470,7 @@ class ScoutRepository:
             output=output,
         )
         artifact = {
-            "schema": "alta.scout-output.v4",
+            "schema": "alta.scout-output.v5",
             "output": output.model_dump(mode="json"),
             "research_diligence": diligence.model_dump(mode="json"),
         }
@@ -461,7 +497,7 @@ class ScoutRepository:
                 connection,
                 spec,
                 artifact_kind="scout_output",
-                schema_version="alta.scout-output.v4",
+                schema_version="alta.scout-output.v5",
                 content=artifact,
             )
             if isinstance(output, CandidateOutput):
@@ -671,22 +707,25 @@ class ScoutRepository:
         error_code: str,
         turn: ModelTurn | None = None,
         error: Exception | None = None,
+        *,
+        retry_feedback: dict[str, object] | None = None,
     ) -> None:
         provenance = (
             [item.model_dump(mode="json") for item in turn.tools] if turn else []
         )
         with self.database.connect() as connection:
             row = connection.execute(
-                """SELECT environment::text, known_at, role, attempt_count
+                """SELECT environment::text, known_at, role, attempt_count, status
                 FROM research.run WHERE id = %s""",
                 (run_id,),
             ).fetchone()
             if row is None:
                 raise ValueError("failed Scout run does not exist")
-            connection.execute(
+            updated = connection.execute(
                 """UPDATE research.run SET status = 'failed', error_code = %s,
                 tool_provenance = %s, thread_id = %s, turn_id = %s,
-                actual_usage = %s, latency_ms = %s WHERE id = %s""",
+                actual_usage = %s, latency_ms = %s
+                WHERE id = %s AND status = 'running' RETURNING id""",
                 (
                     error_code,
                     Jsonb(provenance),
@@ -696,7 +735,11 @@ class ScoutRepository:
                     turn.latency_ms if turn else None,
                     run_id,
                 ),
-            )
+            ).fetchone()
+            if updated is None:
+                if row[4] == "cancelled":
+                    return
+                raise ValueError("Scout failure is not in running state")
             content = {
                 "schema": "alta.scout-failure.v1",
                 "error_code": error_code,
@@ -715,6 +758,7 @@ class ScoutRepository:
                 "bounded_final_response": (
                     _utf8_prefix(redact(turn.final_response), 6_000) if turn else None
                 ),
+                "retry_feedback": retry_feedback,
                 "usage": turn.usage if turn else {},
             }
             version = row[3]
@@ -784,6 +828,6 @@ class ScoutRepository:
     def finish_batch(self, job_id: str, failed: bool) -> None:
         with self.database.connect() as connection:
             connection.execute(
-                "UPDATE ops.job SET status = %s WHERE id = %s",
+                "UPDATE ops.job SET status = %s WHERE id = %s AND status = 'running'",
                 ("failed" if failed else "succeeded", job_id),
             )

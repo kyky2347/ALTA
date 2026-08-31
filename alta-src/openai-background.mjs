@@ -5,9 +5,7 @@ const LOCAL_ONLY_SETTINGS = [
   "features.remote_plugin=false",
   "analytics.enabled=false",
 ];
-const UNAUTHENTICATED_SETTINGS = [
-  'cli_auth_credentials_store="ephemeral"',
-];
+const UNAUTHENTICATED_SETTINGS = ['cli_auth_credentials_store="ephemeral"'];
 
 function jwtExpiry(token) {
   try {

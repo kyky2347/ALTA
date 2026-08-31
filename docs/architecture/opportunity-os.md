@@ -35,6 +35,8 @@ flowchart TB
   sources["Finlight · Massive · bounded public sources"]
   evidence[("PostgreSQL<br/>append-only Raw · Evidence · artifacts")]
   wake["Point-in-time frozen wake"]
+  attention["Research Attention v2<br/>entity · archetype · direction · horizon"]
+  continuity["Opportunity Continuity<br/>global active registry · fixed deadlines"]
 
   subgraph discovery["Autonomous discovery"]
     scouts["Four isolated Scouts<br/>candidate or no-op"]
@@ -64,6 +66,8 @@ flowchart TB
   api["Read-only API and SSE"]
 
   scheduler --> sources --> evidence --> wake --> scouts --> ledger --> foundry --> registry
+  registry --> attention -. under-covered first-search lane .-> wake
+  registry --> continuity -. deadline-prioritized open tests .-> wake
   registry --> thesis
   registry --> disconfirm
   thesis --> odds
@@ -113,7 +117,12 @@ isolated deterministic executor after research, audit, market, and risk gates.
 Research quality follows the same evidence boundary. A completed search call is
 observable, but it earns source-diversity or cross-check credit only when the
 Candidate binds the exact validated call and canonical source locator, or cites
-frozen Evidence already in its wake. At implementation time, deterministic code
+frozen Evidence already in its wake. Decision-grade cross-checking requires two
+cited non-news calls and three independently frozen source records across three
+domains. A repeated source record or one source reused for several roles remains
+visible, but does not create independent corroboration. Durable tool Evidence is
+source-scoped so each URL retains its own bounded excerpt and origin fingerprint.
+At implementation time, deterministic code
 projects comparable time-adjusted Alpha dollars, Alpha per stress dollar, and
 execution-reserve headroom for each market-valid payoff. The Auditor uses those
 figures as decision inputs rather than an automatic score, and the final guarded
@@ -124,8 +133,12 @@ version and the latest measurement for each closed Shadow position. It never
 uses open PnL, model confidence, reconstructed forecasts, or duplicate events.
 Collecting and probation postures cap size at 50%; a 100 bp synthetic-NAV
 drawdown or a mature 30-close window whose descriptive 95% upper Alpha bound is
-non-positive caps size at 10%. Positive evidence can restore the ordinary risk
-budget after old observations roll out, but can never grant bonus leverage.
+non-positive caps size at 10%. Every distinct Opportunity persisted at the
+expression boundary counts as a research trial. A Bonferroni family-wise lower
+bound penalizes the many-opportunity search; mature evidence that does not clear
+that adjusted floor remains on 50% probation. Only selection-adjusted positive
+evidence can restore the ordinary risk budget after old observations roll out,
+and it can never grant bonus leverage.
 
 ## Agent society
 
@@ -142,8 +155,8 @@ The discovery layer uses four pairwise distinct Trader Mind configurations:
 
 Each Trader Mind runs in a separate App Server turn with a role-specific
 read-only tool catalog, budget, deadline, frozen input, and durable result. All
-four share a core active surface—Web search and research, global news, public
-social search, and public finance data—while specialist tools remain aligned to
+four share a core active surface—Web search and research, independent-source
+batch fetch, global news, public social search, and public finance data—while specialist tools remain aligned to
 their Alpha archetype. The production runtime rejects a turn that never attempts
 active research, even when passive Evidence was supplied. Trader Minds use
 `deepseek-v4-flash` with high reasoning; judgment roles are routed separately.
@@ -152,6 +165,19 @@ autonomous tool use comes from ALTA's bounded internal MCP research surface. A
 run may return a Candidate or an explicit no-op. One invalid or failed Scout is
 retried once against the same frozen identity; failure after that remains
 isolated from successful siblings.
+
+The Scout v5 research contract binds every cited retrieval to one institutional
+research role: changed primary fact, causal mechanism, market/expectations
+context, or counterevidence. Cross-checked posture requires all four roles, a
+distinct counter-source, at least three cited active calls, multiple domains,
+and non-news depth. Deep research carries optional domain, recency, and language
+scopes through every federated query, composes multiple domain scopes with OR
+semantics, and ranks retrievable primary records ahead of topically unrelated
+generic results. Returned hosts are revalidated locally even when an upstream
+engine ignores the scope. The gateway returns the remaining call budget with every
+result, and evidence collection round-robins across calls before admitting more
+URLs from an early broad search. This preserves late market-context and
+counterevidence work without increasing the five-call base budget.
 
 After a completed turn, deterministic code evolves one bounded experience
 state. It keeps capped Candidate/no-op, explore/follow-up, and tool-use counts
@@ -171,6 +197,30 @@ work. Follow-up output must copy the exact frozen parent ID and question; an
 invented lineage fails validation. Candidate and no-op both retain the mode, so
 failed follow-up work remains visible instead of being rewritten as exploration.
 The question itself is never Evidence, priority, rank, or a capital instruction.
+
+Long-horizon research uses a separate Opportunity Continuity projection. Before
+constructing a bounded Scout prompt, deterministic code scans the global active
+registry and ranks open questions against fixed Thesis Ledger deadlines. The
+highest-value unresolved tests are retained first, then the remaining prompt
+slots are filled from recent active Opportunities. Stale work remains visible
+for audit but cannot re-enter a fresh capital decision merely because the parent
+Opportunity was refreshed. The frozen snapshot is identical across the four
+role runs and is reconstructed from durable run artifacts after interruption.
+
+Breadth is also multidimensional. Research Attention v2 measures the recent
+production mix by entity, Alpha archetype, direction, and short/medium/long
+horizon. It assigns each Mind an under-covered first-search lane that remains
+inside that Mind's immutable archetype mandate. The model may abandon the lane
+when contradictory evidence is stronger and may always return no-op. The target
+does not validate facts, raise confidence, alter rank, or require a Candidate.
+
+For filing-led clues, `alta_finance_data` accepts either an SEC CIK or a listed
+ticker. The ticker path uses the official SEC company/exchange mapping before
+retrieving the bounded submissions record with a declared User-Agent. Relevant
+Form 4, SC 13D/13G, 8-K, 10-Q/10-K, S-3, and 424B records can locate ownership,
+incentive, financing, dilution, covenant, and operating-state changes, but a
+filing becomes thesis Evidence only when the current turn retrieves and binds
+the exact record to a causal claim.
 
 Outcome learning is a separate, slower loop. A production Candidate must select
 one Alpha archetype from the originating Mind's frozen mandate. At Shadow entry,
@@ -375,9 +425,12 @@ Old prices are never backfilled as Shadow fills. Missing forward quotes produce
 an explainable no-fill. Shadow accounting uses append-only double-entry ledger
 events and conservative side-of-spread pricing.
 
-Tiger is disabled in normal Replay, Shadow, service, and `autonomous --once`
-operation. The explicit acceptance path can mirror one share only after every
-research and deterministic gate passes. The isolated capital process:
+Tiger is disabled in Replay and by default in Shadow, service, and
+`autonomous --once` operation. An authenticated operator may authorize the
+exact Paper account only while the runtime is stopped; the next service start
+can then mirror one share only after every research and deterministic gate
+passes. The explicit acceptance command remains available for bounded lifecycle
+testing. The isolated capital process:
 
 - resolves an owner-only, non-symlink config inside an approved root;
 - requires a 17-digit Paper account and an exact SHA-256 account binding;

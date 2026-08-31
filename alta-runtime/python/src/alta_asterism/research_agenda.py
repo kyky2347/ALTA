@@ -37,6 +37,10 @@ MAX_DRIVE_IDLE_STREAK = 12
 MAX_DRIVE_PRIORITY_OPPORTUNITIES = 2
 MAX_DRIVE_FOLLOW_UP_SCOUTS = 2
 MAX_RESEARCH_QUEUE_ITEMS = 2
+FOLLOW_UP_URGENT_COOLDOWN = timedelta(hours=1)
+FOLLOW_UP_NEAR_COOLDOWN = timedelta(hours=6)
+FOLLOW_UP_MEDIUM_COOLDOWN = timedelta(days=1)
+FOLLOW_UP_LONG_COOLDOWN = timedelta(days=3)
 
 
 class OpenResearchQuestion(BaseModel):
@@ -58,6 +62,7 @@ class ResearchQueueInput(BaseModel):
     status: Literal["forming", "ranked", "shadow", "closed", "rejected"]
     known_at: datetime
     horizon_days: int = Field(ge=1, le=365)
+    decision_deadline_at: datetime | None = None
     research_questions: tuple[OpenResearchQuestion, ...] = Field(
         default=(), max_length=MAX_OPEN_RESEARCH_QUESTIONS
     )
@@ -69,6 +74,13 @@ class ResearchQueueInput(BaseModel):
             raise ValueError(
                 "research queue Opportunity known_at must be timezone-aware"
             )
+        return value
+
+    @field_validator("decision_deadline_at")
+    @classmethod
+    def deadline_is_timezone_aware(cls, value: datetime | None) -> datetime | None:
+        if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+            raise ValueError("research queue deadline must be timezone-aware")
         return value
 
 
@@ -246,6 +258,24 @@ def _urgency(remaining_days: int) -> tuple[int, ResearchPriorityReason]:
     return 10, "open"
 
 
+def next_follow_up_at(*, attempted_at: datetime, deadline_at: datetime) -> datetime:
+    """Schedule the next exact thesis test without turning cadence into Evidence."""
+
+    for value in (attempted_at, deadline_at):
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("follow-up cadence timestamps must be timezone-aware")
+    remaining = deadline_at - attempted_at
+    if remaining <= timedelta(days=3):
+        cooldown = FOLLOW_UP_URGENT_COOLDOWN
+    elif remaining <= timedelta(days=14):
+        cooldown = FOLLOW_UP_NEAR_COOLDOWN
+    elif remaining <= timedelta(days=45):
+        cooldown = FOLLOW_UP_MEDIUM_COOLDOWN
+    else:
+        cooldown = FOLLOW_UP_LONG_COOLDOWN
+    return min(deadline_at, attempted_at + cooldown)
+
+
 def build_research_queue(
     *,
     wake_at: datetime,
@@ -259,7 +289,9 @@ def build_research_queue(
     for opportunity in opportunities:
         if opportunity.status not in _STATUS_WEIGHT or opportunity.known_at >= wake_at:
             continue
-        expires_at = opportunity.known_at + timedelta(days=opportunity.horizon_days)
+        expires_at = opportunity.decision_deadline_at or (
+            opportunity.known_at + timedelta(days=opportunity.horizon_days)
+        )
         remaining_seconds = (expires_at - wake_at).total_seconds()
         if remaining_seconds <= 0:
             continue

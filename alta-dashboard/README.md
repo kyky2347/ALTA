@@ -19,6 +19,14 @@ The operator console keeps the backend bearer token outside the browser and
 protects lifecycle and credential mutations with a local HttpOnly session,
 same-origin validation, and CSRF.
 
+Production UI work is split by operator view: heavy views, record detail, and
+global search load on demand and prefetch on navigation intent. Live reads are
+single-flight, parallel after bootstrap, render-suppressed when unchanged, and
+cadence-aware (foreground, active operation, and hidden tab). Operational use
+also benefits from the Python service's pooled event-invalidated projections and
+the console's in-memory immutable asset cache; none of these caches store raw
+credentials.
+
 The Credentials view reports only safe provider metadata and supports
 write-only replacement while the research runtime is stopped. Secrets are
 stored outside the repository with owner-only permissions and are never read

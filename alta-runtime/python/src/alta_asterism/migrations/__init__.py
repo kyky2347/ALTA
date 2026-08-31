@@ -13,6 +13,7 @@ from . import (
     b12_0010,
     b13_0011,
     b14_0012,
+    b15_0013,
 )
 
 MIGRATIONS = (
@@ -28,6 +29,7 @@ MIGRATIONS = (
     b12_0010,
     b13_0011,
     b14_0012,
+    b15_0013,
 )
 LATEST_REVISION = MIGRATIONS[-1].REVISION
 CURRENT_TABLES = (*b1_0001.TABLES, *b7_0005.TABLES)

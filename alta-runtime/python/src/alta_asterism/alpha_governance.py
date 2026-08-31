@@ -23,7 +23,10 @@ class CapitalPerformanceObservation:
 @dataclass(frozen=True)
 class _GovernanceMetrics:
     recent_mean_alpha_bps: Decimal | None
+    confidence95_lower_alpha_bps: Decimal | None
     confidence95_upper_alpha_bps: Decimal | None
+    selection_adjusted_lower_alpha_bps: Decimal | None
+    selection_critical_z: Decimal | None
     max_drawdown_nav_bps: Decimal
     evidence_posture: str
 
@@ -65,7 +68,11 @@ class AlphaCapitalGovernance(FrozenContract):
     sample_size: int = Field(ge=0)
     window_size: int = Field(ge=0)
     recent_mean_alpha_bps: Decimal | None = None
+    confidence95_lower_alpha_bps: Decimal | None = None
     confidence95_upper_alpha_bps: Decimal | None = None
+    research_trials: int = Field(default=0, ge=0)
+    selection_adjusted_lower_alpha_bps: Decimal | None = None
+    selection_critical_z: Decimal | None = Field(default=None, gt=0)
     max_drawdown_nav_bps: Decimal = Field(ge=0)
     evidence_posture: str = Field(min_length=1, max_length=96)
     observed_through: datetime | None = None
@@ -126,6 +133,7 @@ def _window_metrics(
     *,
     reference_nav: Decimal,
     policy: AlphaCapitalGovernancePolicy,
+    research_trials: int,
 ) -> _GovernanceMetrics:
     alphas = tuple(item.realized_alpha_bps for item in window)
     recent_mean = sum(alphas, Decimal(0)) / Decimal(len(alphas)) if alphas else None
@@ -140,15 +148,34 @@ def _window_metrics(
             for item in window
         ),
         minimum_sample=policy.minimum_evidence_sample,
+        research_trials=research_trials,
+    )
+    lower = (
+        Decimal(str(evidence["confidence95LowerBps"]))
+        if evidence["confidence95LowerBps"] is not None
+        else None
     )
     upper = (
         Decimal(str(evidence["confidence95UpperBps"]))
         if evidence["confidence95UpperBps"] is not None
         else None
     )
+    selection_lower = (
+        Decimal(str(evidence["selectionAdjustedConfidence95LowerBps"]))
+        if evidence["selectionAdjustedConfidence95LowerBps"] is not None
+        else None
+    )
+    selection_critical_z = (
+        Decimal(str(evidence["selectionCriticalZ"]))
+        if evidence["selectionCriticalZ"] is not None
+        else None
+    )
     return _GovernanceMetrics(
         recent_mean_alpha_bps=recent_mean,
+        confidence95_lower_alpha_bps=lower,
         confidence95_upper_alpha_bps=upper,
+        selection_adjusted_lower_alpha_bps=selection_lower,
+        selection_critical_z=selection_critical_z,
         max_drawdown_nav_bps=drawdown_nav_bps,
         evidence_posture=str(evidence["posture"]),
     )
@@ -175,6 +202,11 @@ def _reason_codes(
         and metrics.recent_mean_alpha_bps < 0
     ):
         reasons.append("recent_mean_alpha_negative")
+    if sample_size >= policy.minimum_evidence_sample and (
+        metrics.selection_adjusted_lower_alpha_bps is None
+        or metrics.selection_adjusted_lower_alpha_bps <= 0
+    ):
+        reasons.append("selection_adjusted_alpha_not_proven")
     return reasons
 
 
@@ -191,10 +223,12 @@ def _capital_posture(
         return "preservation", policy.capital_preservation_multiplier
     if "recent_mean_alpha_negative" in reasons:
         return "probation", policy.probation_multiplier
+    if "selection_adjusted_alpha_not_proven" in reasons:
+        return "probation", policy.probation_multiplier
     if sample_size < policy.minimum_evidence_sample:
         reasons.append("forward_alpha_sample_collecting")
         return "collecting", policy.collecting_multiplier
-    reasons.append("forward_alpha_not_negative")
+    reasons.append("selection_adjusted_forward_alpha_positive")
     return "normal", Decimal(1)
 
 
@@ -205,6 +239,7 @@ def evaluate_alpha_capital_governance(
     source_portfolio_policy_version: str,
     policy: AlphaCapitalGovernancePolicy | None = None,
     total_sample_size: int | None = None,
+    research_trials: int | None = None,
 ) -> AlphaCapitalGovernance:
     """Throttle but never lever up from bounded rolling forward Shadow evidence."""
 
@@ -216,10 +251,15 @@ def evaluate_alpha_capital_governance(
         policy=policy,
         total_sample_size=total_sample_size,
     )
+    total_sample = len(ordered) if total_sample_size is None else total_sample_size
+    research_trials = total_sample if research_trials is None else research_trials
+    if research_trials < total_sample:
+        raise ValueError("research trials cannot be smaller than the total sample")
     metrics = _window_metrics(
         window,
         reference_nav=reference_nav,
         policy=policy,
+        research_trials=research_trials,
     )
     reason_codes = _reason_codes(
         metrics,
@@ -240,7 +280,11 @@ def evaluate_alpha_capital_governance(
         sample_size=(len(ordered) if total_sample_size is None else total_sample_size),
         window_size=len(window),
         recent_mean_alpha_bps=metrics.recent_mean_alpha_bps,
+        confidence95_lower_alpha_bps=metrics.confidence95_lower_alpha_bps,
         confidence95_upper_alpha_bps=metrics.confidence95_upper_alpha_bps,
+        research_trials=research_trials,
+        selection_adjusted_lower_alpha_bps=(metrics.selection_adjusted_lower_alpha_bps),
+        selection_critical_z=metrics.selection_critical_z,
         max_drawdown_nav_bps=metrics.max_drawdown_nav_bps,
         evidence_posture=metrics.evidence_posture,
         observed_through=window[-1].known_at if window else None,

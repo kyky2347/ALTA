@@ -15,14 +15,16 @@ from .investment_thesis import pillar_research_question
 from .massive import MassiveDataset
 from .market_research_projection import MarketResearchAgendaProjector
 from .opportunity_memory import PriorOpportunitySnapshot
+from .opportunity_continuity import (
+    MAX_ACTIVE_OPPORTUNITY_SCAN,
+    build_opportunity_continuity,
+)
 from .portfolio_construction import PortfolioConstructor
 from .portfolio_intelligence import build_portfolio_research_mandate
 from .research_agenda import (
-    MAX_DRIVE_PRIORITY_OPPORTUNITIES,
-    ResearchQueueInput,
     build_open_research_questions,
     build_opportunity_drive,
-    build_research_queue,
+    next_follow_up_at,
 )
 from .research_incentive import build_research_incentives
 from .research_attention import (
@@ -253,7 +255,12 @@ class DatabaseSourceFlow:
                 ),
             ).fetchall()
             rows = _balanced_rows(rows, self.max_evidence)
-            prior_opportunities = self._prior_opportunities(connection, wake_at)
+            (
+                active_opportunities,
+                registry_active,
+                deferred_questions,
+                next_research_due_at,
+            ) = self._prior_opportunities(connection, wake_at)
             idle_streak = self._idle_streak(connection, wake_at)
             trader_mind_memories = self._trader_mind_memories(connection, wake_at)
             postures = self._record_postures(connection, cycle_id, wake_at, rows)
@@ -271,10 +278,18 @@ class DatabaseSourceFlow:
             self.universe,
             scout_ids,
             wake_at,
+            {item.scout_id: item.alpha_archetypes for item in SCOUTS},
         )
         market_research_agenda = apply_research_attention_to_market_agenda(
             self.market_research.at(self.environment, self.universe, wake_at),
             research_attention_portfolio,
+        )
+        continuity_selection = build_opportunity_continuity(
+            wake_at=wake_at,
+            opportunities=active_opportunities,
+            registry_active=registry_active,
+            deferred_questions=deferred_questions,
+            next_research_due_at=next_research_due_at,
         )
         snapshots = tuple(
             EvidenceSnapshot(
@@ -291,7 +306,8 @@ class DatabaseSourceFlow:
         )
         posture = "available" if snapshots else "unavailable"
         evidence = snapshots
-        prior = prior_opportunities
+        prior = continuity_selection.frozen_opportunities
+        continuity = continuity_selection.portfolio
         memories = trader_mind_memories
         feedback = alpha_feedback
         incentives = build_research_incentives(feedback, scout_ids=scout_ids)
@@ -302,19 +318,7 @@ class DatabaseSourceFlow:
             drive = build_opportunity_drive(
                 cycle_id=cycle_id,
                 idle_streak=idle_streak,
-                research_queue=build_research_queue(
-                    wake_at=wake_at,
-                    opportunities=tuple(
-                        ResearchQueueInput(
-                            opportunity_id=item.opportunity_id,
-                            status=item.status,
-                            known_at=item.known_at,
-                            horizon_days=item.horizon_days,
-                            research_questions=item.research_questions,
-                        )
-                        for item in prior
-                    ),
-                ),
+                research_queue=continuity_selection.research_queue,
                 scout_ids=scout_ids,
             )
             try:
@@ -325,6 +329,7 @@ class DatabaseSourceFlow:
                     universe=self.universe,
                     evidence=evidence,
                     prior_opportunities=prior,
+                    opportunity_continuity=continuity,
                     opportunity_drive=drive,
                     market_research_agenda=agenda,
                     trader_mind_memories=memories,
@@ -353,6 +358,15 @@ class DatabaseSourceFlow:
             )
             if removable_prior is not None:
                 prior = prior[:removable_prior] + prior[removable_prior + 1 :]
+                continuity = continuity.model_copy(
+                    update={
+                        "frozen_active": len(prior),
+                        "selected_opportunity_ids": tuple(
+                            item.opportunity_id for item in prior
+                        ),
+                        "selection_truncated": continuity.scanned_active > len(prior),
+                    }
+                )
             elif memories:
                 memories = ()
             elif feedback or incentives:
@@ -366,8 +380,17 @@ class DatabaseSourceFlow:
                 agenda = None
             elif evidence:
                 evidence = evidence[:-1]
-            elif prior:
+            elif prior and not priority_ids:
                 prior = prior[:-1]
+                continuity = continuity.model_copy(
+                    update={
+                        "frozen_active": len(prior),
+                        "selected_opportunity_ids": tuple(
+                            item.opportunity_id for item in prior
+                        ),
+                        "selection_truncated": continuity.scanned_active > len(prior),
+                    }
+                )
             else:
                 raise ValueError("live frozen input cannot fit its hard byte budget")
 
@@ -412,11 +435,25 @@ class DatabaseSourceFlow:
         rows = connection.execute(
             """SELECT o.id, o.version, o.known_at, o.title, o.entity_key,
             o.direction, o.status, o.thesis, o.horizon_days, o.snapshot_hash,
+            deadline.decision_deadline_at,
             (SELECT jsonb_agg(c.foundry_snapshot ORDER BY c.id)
              FROM research.candidate c
              WHERE c.id = ANY(o.member_candidate_ids)
-               AND c.foundry_snapshot IS NOT NULL)
+               AND c.foundry_snapshot IS NOT NULL),
+            count(*) OVER ()
             FROM research.opportunity o
+            LEFT JOIN LATERAL (
+                SELECT min((pillar->>'due_at')::timestamptz)
+                       AS decision_deadline_at
+                FROM research.candidate candidate,
+                     LATERAL jsonb_array_elements(
+                         coalesce(candidate.foundry_snapshot->'thesis_pillars',
+                                  '[]'::jsonb)
+                     ) pillar
+                WHERE candidate.id = ANY(o.member_candidate_ids)
+                  AND pillar->>'due_at' ~
+                      '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}'
+            ) deadline ON true
             WHERE o.environment = %s AND foundry_state = 'active' AND o.known_at < %s
               AND cardinality(o.evidence_ids) > 0
               AND NOT EXISTS (
@@ -426,31 +463,89 @@ class DatabaseSourceFlow:
                 WHERE lower(r.source) LIKE '%%fixture%%'
                    OR coalesce(r.body->>'fixture','false') = 'true'
               )
-            ORDER BY o.known_at DESC, o.id LIMIT %s""",
+            ORDER BY
+              (coalesce(deadline.decision_deadline_at,
+                        o.known_at + make_interval(days => o.horizon_days)) <= %s),
+              coalesce(deadline.decision_deadline_at,
+                       o.known_at + make_interval(days => o.horizon_days)),
+              o.known_at DESC, o.id
+            LIMIT %s""",
             (
                 self.environment.value,
                 wake_at,
-                MAX_DRIVE_PRIORITY_OPPORTUNITIES,
+                wake_at,
+                MAX_ACTIVE_OPPORTUNITY_SCAN,
             ),
         ).fetchall()
-        snapshots = []
-        for row in rows:
-            assessment_rows = connection.execute(
-                """SELECT assessor, missing_evidence
-                FROM research.assessment
-                WHERE opportunity_id = %s AND snapshot_hash = %s
-                  AND assessment_kind = 'private' AND locked_at < %s
-                ORDER BY assessor""",
-                (row[0], row[9], wake_at),
+        opportunity_ids = [row[0] for row in rows]
+        follow_up_attempt_rows = (
+            connection.execute(
+                """SELECT DISTINCT ON (assigned->>'opportunity_id',
+                                               assigned->>'question_id')
+                assigned->>'opportunity_id', assigned->>'question_id',
+                run.known_at,
+                run.frozen_input->'input'->'prior_opportunities'->0
+                  ->>'snapshot_hash'
+                FROM research.run run
+                JOIN research.run_artifact artifact ON artifact.run_id = run.id
+                  AND artifact.environment = run.environment
+                  AND artifact.artifact_kind = 'scout_output'
+                CROSS JOIN LATERAL (
+                    SELECT run.frozen_input->'input'->'opportunity_drive'
+                      ->'assigned_research' AS assigned
+                ) assignment
+                WHERE run.environment = %s AND run.status = 'succeeded'
+                  AND run.known_at < %s
+                  AND assigned->>'opportunity_id' = ANY(%s)
+                  AND run.frozen_input->'input'->'opportunity_drive'
+                        ->>'assigned_mode' = 'follow_up'
+                  AND artifact.content->'output'->>'research_mode' = 'follow_up'
+                ORDER BY assigned->>'opportunity_id', assigned->>'question_id',
+                         run.known_at DESC, run.id DESC""",
+                (self.environment.value, wake_at, opportunity_ids),
             ).fetchall()
+            if opportunity_ids
+            else []
+        )
+        follow_up_attempts = {
+            (row[0], row[1]): (row[2], row[3]) for row in follow_up_attempt_rows
+        }
+        assessment_rows = (
+            connection.execute(
+                """SELECT assessment.opportunity_id, assessment.assessor,
+                assessment.missing_evidence
+                FROM research.assessment assessment
+                JOIN research.opportunity opportunity
+                  ON opportunity.id = assessment.opportunity_id
+                 AND opportunity.environment = assessment.environment
+                 AND opportunity.snapshot_hash = assessment.snapshot_hash
+                WHERE assessment.opportunity_id = ANY(%s)
+                  AND assessment.environment = %s
+                  AND assessment.assessment_kind = 'private'
+                  AND assessment.locked_at < %s
+                ORDER BY assessment.opportunity_id, assessment.assessor""",
+                (opportunity_ids, self.environment.value, wake_at),
+            ).fetchall()
+            if opportunity_ids
+            else []
+        )
+        assessments_by_opportunity: dict[str, list[tuple[str, tuple[str, ...]]]] = {}
+        for opportunity_id, assessor, questions in assessment_rows:
+            assessments_by_opportunity.setdefault(opportunity_id, []).append(
+                (assessor, questions)
+            )
+        snapshots = []
+        deferred_questions = 0
+        next_research_due_at: datetime | None = None
+        for row in rows:
             assessor_questions = tuple(
                 (assessor, question)
-                for assessor, questions in assessment_rows
+                for assessor, questions in assessments_by_opportunity.get(row[0], ())
                 for question in questions
             )
             candidate_snapshots = (
-                tuple(item for item in row[10] if isinstance(item, dict))
-                if isinstance(row[10], list)
+                tuple(item for item in row[11] if isinstance(item, dict))
+                if isinstance(row[11], list)
                 else ()
             )
             next_test = next(
@@ -475,6 +570,32 @@ class DatabaseSourceFlow:
                 for pillar in item.get("thesis_pillars", ())
                 if isinstance(pillar, dict)
             )[:2]
+            questions = build_open_research_questions(
+                opportunity_id=row[0],
+                next_test=next_test,
+                first_rejection=first_rejection,
+                assessor_questions=assessor_questions,
+                thesis_questions=thesis_questions,
+            )
+            due_questions = []
+            deadline_at = row[10] or row[2] + timedelta(days=row[8])
+            for question in questions:
+                attempt = follow_up_attempts.get((row[0], question.question_id))
+                if attempt is None or attempt[1] != row[9]:
+                    due_questions.append(question)
+                    continue
+                eligible_at = next_follow_up_at(
+                    attempted_at=attempt[0], deadline_at=deadline_at
+                )
+                if eligible_at <= wake_at:
+                    due_questions.append(question)
+                    continue
+                deferred_questions += 1
+                next_research_due_at = (
+                    eligible_at
+                    if next_research_due_at is None
+                    else min(next_research_due_at, eligible_at)
+                )
             snapshots.append(
                 PriorOpportunitySnapshot(
                     opportunity_id=row[0],
@@ -485,18 +606,19 @@ class DatabaseSourceFlow:
                     direction=row[5],
                     status=row[6],
                     horizon_days=row[8],
+                    decision_deadline_at=row[10],
                     summary=_text_prefix(row[7], maximum_bytes=240),
                     snapshot_hash=row[9],
-                    research_questions=build_open_research_questions(
-                        opportunity_id=row[0],
-                        next_test=next_test,
-                        first_rejection=first_rejection,
-                        assessor_questions=assessor_questions,
-                        thesis_questions=thesis_questions,
-                    ),
+                    research_questions=tuple(due_questions),
                 )
             )
-        return tuple(snapshots)
+        registry_active = int(rows[0][12]) if rows else 0
+        return (
+            tuple(snapshots),
+            registry_active,
+            deferred_questions,
+            next_research_due_at,
+        )
 
     def _record_wake(self, connection, cycle_id: str, wake_at: datetime) -> None:
         for event_type, aggregate_type in (

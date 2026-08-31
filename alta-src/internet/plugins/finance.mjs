@@ -68,7 +68,9 @@ const SOURCE_DEADLINES = {
   coinbase: 10_000,
   worldbank: 12_000,
   treasury: 12_000,
-  sec: 12_000,
+  // A cold ticker request is deliberately sequential: official ticker mapping,
+  // then submissions. Keep the pair inside one bounded but realistic deadline.
+  sec: 30_000,
   finnhub: 15_000,
   ...MACRO_DEADLINES,
   ...REGULATORY_DEADLINES,
@@ -343,8 +345,74 @@ async function treasury(service, args, maximum, options) {
   };
 }
 
+async function secIdentity(service, args, options) {
+  if (args.cik) {
+    return {
+      cik: requiredText(args.cik, "cik", /^\d{1,10}$/, 10).padStart(10, "0"),
+      resolved_from: "cik",
+    };
+  }
+  const symbol = requiredText(
+    args.symbol,
+    "symbol or cik",
+    /^[A-Za-z0-9.^-]{1,20}$/,
+    20,
+  ).toUpperCase();
+  const mappingUrl = "https://www.sec.gov/files/company_tickers_exchange.json";
+  const mapping = await readJson(
+    service,
+    {
+      url: mappingUrl,
+      accept: "application/json",
+      headers: { "User-Agent": service.secUserAgent },
+      max_chars: 2_000_000,
+      cache_namespace: "finance-sec-ticker-map",
+      attempts: 1,
+    },
+    options,
+  );
+  const fields = Array.isArray(mapping.fields) ? mapping.fields : [];
+  const rows = Array.isArray(mapping.data) ? mapping.data : [];
+  const cikIndex = fields.indexOf("cik");
+  const nameIndex = fields.indexOf("name");
+  const tickerIndex = fields.indexOf("ticker");
+  const exchangeIndex = fields.indexOf("exchange");
+  const match = rows.find(
+    (row) =>
+      Array.isArray(row) &&
+      tickerIndex >= 0 &&
+      String(row[tickerIndex] ?? "").toUpperCase() === symbol,
+  );
+  if (!match || cikIndex < 0)
+    throw Object.assign(
+      new Error(`SEC ticker mapping has no ${symbol} entry`),
+      {
+        status: 404,
+        code: "alta_finance_sec_symbol_not_found",
+      },
+    );
+  const cik = String(match[cikIndex] ?? "").replace(/\D/g, "");
+  if (!cik)
+    throw Object.assign(
+      new Error(`SEC ticker mapping has no CIK for ${symbol}`),
+      {
+        status: 502,
+        code: "alta_finance_sec_mapping_invalid",
+      },
+    );
+  return {
+    cik: cik.padStart(10, "0"),
+    symbol,
+    company: nameIndex >= 0 ? match[nameIndex] : undefined,
+    exchange: exchangeIndex >= 0 ? match[exchangeIndex] : undefined,
+    resolved_from: "symbol",
+    mapping_url: mappingUrl,
+  };
+}
+
 async function sec(service, args, maximum, options) {
-  const cik = requiredText(args.cik, "cik", /^\d{1,10}$/, 10).padStart(10, "0");
+  const identity = await secIdentity(service, args, options);
+  const { cik } = identity;
   const forms = uniqueStrings(args.forms, 10, 20).map((form) =>
     form.toUpperCase(),
   );
@@ -380,6 +448,8 @@ async function sec(service, args, maximum, options) {
   return {
     source: "sec",
     cik,
+    requested_symbol: identity.symbol,
+    resolved_from: identity.resolved_from,
     company: value.name,
     tickers: value.tickers ?? [],
     exchanges: value.exchanges ?? [],
@@ -388,6 +458,13 @@ async function sec(service, args, maximum, options) {
       "U.S. Securities and Exchange Commission",
       sourceUrl,
     ),
+    identity_provenance:
+      identity.resolved_from === "symbol"
+        ? provenance(
+            "U.S. Securities and Exchange Commission",
+            identity.mapping_url,
+          )
+        : undefined,
   };
 }
 
@@ -578,13 +655,17 @@ async function financeData(service, args, options) {
       .replace(/\D/g, "")
       .slice(0, 10);
     const cik = cikDigits ? cikDigits.padStart(10, "0") : "";
+    const symbol = String(args.symbol ?? "")
+      .replace(/[^A-Za-z0-9.^-]/g, "")
+      .slice(0, 20)
+      .toUpperCase();
     const forms = uniqueStrings(args.forms, 10, 20).join(" OR ");
     const xbrl = [args.taxonomy, args.concept, args.xbrl_period]
       .filter(Boolean)
       .join(" ");
     const fallback = await service.search(
       {
-        query: `SEC EDGAR${cik ? ` CIK ${cik}` : ""}${forms ? ` (${forms})` : ""}${xbrl ? ` ${xbrl}` : ""}`,
+        query: `SEC EDGAR${symbol ? ` ${symbol}` : ""}${cik ? ` CIK ${cik}` : ""}${forms ? ` (${forms})` : ""}${xbrl ? ` ${xbrl}` : ""}`,
         allowed_domains: ["sec.gov"],
         max_results: maximum,
         depth: "quick",
@@ -595,6 +676,7 @@ async function financeData(service, args, options) {
     return {
       source,
       cik,
+      ...(symbol ? { symbol } : {}),
       ...(source === "sec" ? { filings: [] } : { facts: [] }),
       fallback_results: (fallback.results ?? []).map((item) => ({
         title: item.title,
@@ -692,7 +774,11 @@ export const financePlugin = {
           key: { type: "string" },
           from_period: { type: "string" },
           to_period: { type: "string" },
-          cik: { type: "string" },
+          cik: {
+            type: "string",
+            description:
+              "SEC CIK. For source=sec, pass either cik or symbol; ticker resolution uses the official SEC mapping.",
+          },
           forms: {
             type: "array",
             maxItems: 10,

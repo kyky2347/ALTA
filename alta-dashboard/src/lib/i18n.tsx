@@ -31,6 +31,86 @@ const en = {
   systemOverview: "System overview",
   agentDesk: "Agent desk",
   shadowBook: "Shadow book",
+  capitalDesk: "Capital desk",
+  brokerCapital: "Tiger Paper capital",
+  paperCapitalSubtitle:
+    "A bounded, fail-closed authorization path for simulated brokerage execution.",
+  tigerPaper: "Tiger Trade · Paper",
+  capitalAuthorization: "Trading authorization",
+  authorizationArmed: "Paper execution authorized",
+  authorizationDisarmed: "Paper execution locked",
+  authorizePaper: "Authorize Paper execution",
+  revokeAuthorization: "Revoke authorization",
+  capitalGateDetail:
+    "This switch changes the durable backend authorization. It never enables a live account.",
+  capitalRuntimeStopRequired:
+    "Stop the runtime before enabling so account identity and emptiness can be proven atomically.",
+  capitalConfigRequired:
+    "Configure the external Tiger Paper credential file before authorization.",
+  lastVerified: "Last verified",
+  accountBinding: "Account binding",
+  configurationBinding: "Configuration binding",
+  executionPolicy: "Execution policy",
+  oneShareLimitDay: "1-share limit · DAY",
+  usStocksOnly: "US stocks only",
+  regularHoursOnly: "Regular hours only",
+  brokerSnapshot: "Broker snapshot",
+  refreshBrokerSnapshot: "Refresh broker snapshot",
+  refreshingBroker: "Verifying Tiger Paper…",
+  assets: "Assets",
+  netLiquidation: "Net liquidation",
+  availableCash: "Available cash",
+  buyingPower: "Buying power",
+  grossPosition: "Gross position",
+  unrealizedPnl: "Unrealized P&L",
+  realizedPnl: "Realized P&L",
+  positions: "Positions",
+  orders: "Orders",
+  capitalAuditTrail: "Authorization audit",
+  noBrokerSnapshot: "No verified broker snapshot yet",
+  noBrokerSnapshotDetail:
+    "Run a read-only verification to prove Paper mode, account binding, positions, and open orders.",
+  noPaperPositions: "No positions in the verified Paper account.",
+  noRecentOrders: "No recent Paper orders were returned.",
+  noCapitalAudit: "No capital authorization events have been recorded.",
+  symbol: "Symbol",
+  marketValue: "Market value",
+  averageCost: "Average cost",
+  lastPrice: "Last price",
+  pnl: "P&L",
+  side: "Side",
+  orderType: "Order type",
+  filled: "Filled",
+  limitPrice: "Limit price",
+  updated: "Updated",
+  action: "Action",
+  result: "Result",
+  confirmPaperAuthorization: "Authorize Tiger Paper execution?",
+  confirmPaperAuthorizationDetail:
+    "ALTA will perform a fresh broker verification and authorize only an exact 17-digit Paper account with no positions or open orders. Autonomous execution remains bounded to one-share US-stock DAY limit orders during regular hours.",
+  confirmPaperPhrase: "Type TIGER PAPER to continue",
+  confirmPaperPlaceholder: "TIGER PAPER",
+  confirmEnable: "Verify and authorize",
+  confirmRevoke: "Revoke and stop safely",
+  confirmRevokeTitle: "Revoke Paper execution?",
+  confirmRevokeDetail:
+    "Authorization is revoked before any running ALTA service is stopped. Existing broker positions are never hidden or discarded.",
+  paperBoundary: "Paper account only",
+  paperCapitalBoundaryDetail:
+    "No live-account route exists. Account numbers, configuration paths, private keys, and raw broker order IDs never reach this browser.",
+  capitalOperationFailed: "Capital operation was rejected",
+  refreshCapitalHelp:
+    "This is an explicit read from Tiger Paper and is not part of the 2.5-second console polling loop.",
+  configurationChanged: "Configuration changed · authorization invalidated",
+  capitalEnabled: "Paper capital enabled",
+  capitalDisabledSafe: "Paper capital disabled",
+  accountFingerprint: "Account {{fingerprint}}",
+  configFingerprint: "Config {{fingerprint}}",
+  openOrdersCount: "{{count}} open",
+  recentOrdersCount: "{{count}} recent",
+  positionsCountShort: "{{count}} positions",
+  protectedReference: "Protected ref {{reference}}",
+  neverLive: "Never live",
   researchOnly: "Research only",
   shadowEnvironment: "Shadow environment",
   capitalDisabled: "Capital disabled",
@@ -126,7 +206,8 @@ const en = {
   evidence: "Evidence",
   record: "Record",
   normalizedJson: "Normalized JSON",
-  researchBoundary: "Research-only · shadow environment · capital disabled",
+  researchBoundary:
+    "Research record · shadow decision context · no private chain-of-thought",
   decisionPacket: "Decision packet",
   noPublicBrief: "No public brief has been saved for this record.",
   independentAssessments: "Independent assessments",
@@ -214,6 +295,10 @@ const en = {
   calibrationReached:
     "Minimum calibration sample reached; rolling evidence now governs forecasts.",
   meanRealizedAlpha: "Mean realized Alpha",
+  selectionAdjustedAlpha: "Selection-adjusted Alpha floor",
+  selectionAdjustedDetail:
+    "Mean {{mean}} · unadjusted 95% interval {{interval}}.",
+  researchTrialsConsidered: "{{count}} audited opportunity trials included.",
   forecastMae: "Forecast MAE",
   forecastMaeDetail: "Absolute error on comparable direct-stock forecasts.",
   directionalHitRate: "Directional hit rate",
@@ -231,10 +316,12 @@ const en = {
   grossResearchExposure: "Gross research exposure",
   aggregateStressBudget: "Aggregate stress budget",
   largestUnderlying: "Largest underlying",
+  tightestRiskCluster: "Tightest risk cluster",
   openRiskUnits: "Open risk units",
   noCurrentConcentration: "No current concentration",
   crossCarrierAggregation: "Cross-carrier aggregation",
   underlyingBuckets: "Underlying concentration buckets",
+  riskClusters: "Cross-book concentration clusters",
   positionsCount: "{{count}} positions",
   executionQuality: "Execution quality",
   executionQualityDetail:
@@ -280,6 +367,32 @@ const en = {
   sourcePosture: "Source posture",
   observed: "observed",
   noSourcePosture: "No source posture has been recorded.",
+  researchOperations: "Research operations",
+  researchOperationsDetail:
+    "A bounded audit of recent retrieval work: completed calls, independently frozen source records, evidence-role coverage, and failed routes across every Trader Mind.",
+  researchOperationsWaiting:
+    "Research operations will appear after the first autonomous production research run.",
+  recentResearchRuns: "Recent runs",
+  completedRetrievals: "Completed retrievals",
+  independentDomains: "Independent domains",
+  independentEvidenceOrigins: "Independent evidence records",
+  crossCheckedRuns: "Cross-checked",
+  retryRecoveredRuns: "Retries recovered",
+  contractRejectedRuns: "Contract rejects",
+  followUpAssignedRuns: "Follow-ups assigned",
+  followUpExecutedRuns: "Follow-ups completed",
+  followUpNoOpRuns: "Follow-ups closed no-op",
+  retryRecoveredMind: "{{count}} retried runs recovered",
+  callsShort: "calls",
+  domainsShort: "domains",
+  originsShort: "source records",
+  candidatesShort: "candidates",
+  followUpsShort: "follow-ups",
+  sourceRoleReuse: "{{count}} source-role reuse bindings retained for review",
+  evidenceRolesPending: "Evidence roles pending",
+  notRunYet: "Not run yet",
+  researchOperationsBoundary:
+    "Saved process evidence only · no credentials, source text, private reasoning, or hidden prompts are exposed",
   researchAttention: "Research attention portfolio",
   researchAttentionDetail:
     "Point-in-time seat allocation preserves one informed continuation while directing independent minds toward broader entity coverage.",
@@ -289,6 +402,11 @@ const en = {
   uniqueEntities: "Unique entities",
   topEntityShare: "Top entity share",
   effectiveBreadth: "Effective breadth",
+  uniqueArchetypes: "Alpha archetypes",
+  archetypeBreadth: "Archetype breadth",
+  shortHorizon: "Short-horizon trials",
+  longHorizon: "Long-horizon trials",
+  horizon: "horizon",
   continueLeadDetail:
     "Continue {{entity}} only through a new fact or causal test.",
   expandCoverageDetail: "Explore beyond {{entity}} for an independent setup.",
@@ -297,6 +415,28 @@ const en = {
   noDominantEntity: "the current lead",
   researchAttentionBoundary:
     "Research allocation only · not Evidence, rank, capital, or permission to trade",
+  opportunityContinuity: "Opportunity continuity",
+  opportunityContinuityDetail:
+    "A durable, deadline-aware research registry keeps older theses visible before selecting a bounded context for the next autonomous wake.",
+  opportunityContinuityWaiting:
+    "Continuity state will appear after the first autonomous production wake freezes its registry view.",
+  activeRegistry: "Active registry",
+  frozenForResearch: "Frozen for next wake",
+  openQuestions: "Tests due now",
+  deferredResearch: "Tests in cooldown",
+  nextResearchWindow: "Next research window",
+  noDeferredResearch: "No deferred test",
+  researchCadenceDetail:
+    "Completed tests cool down by evidence horizon; a changed Opportunity snapshot becomes eligible immediately.",
+  expiringOpportunities: "Inside 14-day window",
+  staleOpportunities: "Past decision deadline",
+  oldestActiveAge: "Oldest active age",
+  daysCount: "{{count}} days",
+  earliestDecisionDeadline: "Earliest decision deadline",
+  priorityFollowUps: "Priority follow-ups",
+  noPriorityFollowUps: "No deadline-priority test",
+  opportunityContinuityBoundary:
+    "Durable process memory only · deadlines allocate research and never validate a thesis or authorize capital",
   traderMinds: "Trader minds",
   minds: "{{count}} minds",
   noRollingSummarySaved: "No rolling summary saved",
@@ -314,17 +454,36 @@ const en = {
   configured: "Configured",
   supported: "Supported",
   operational: "Available",
+  verified: "Ready",
+  needsAttention: "Attention",
   refresh: "Refresh",
+  verifyApis: "Verify APIs",
+  verifyingApis: "Verifying…",
   credentialChangesLocked: "Credential changes are locked while ALTA runs",
   stopBeforeCredentialChange:
     "Stop the research runtime before replacing a credential. This prevents mixed provider state inside an active cycle.",
   credentialCenterUnavailable: "Credential center needs attention",
-  credentialRefreshFailed: "The credential inventory could not be refreshed.",
+  credentialRefreshFailed:
+    "Provider verification could not complete. Existing credentials were not changed.",
   credentialSaveFailed: "The credential was not saved.",
   credentialStored: "Credential stored",
   credentialMissing: "Credential required",
   availableWithoutKey: "Available · no key required",
   optionalEnhancement: "Optional credential",
+  apiVerified: "API verified",
+  apiExpiredOrRejected: "Expired or rejected",
+  apiRateLimited: "Rate limited",
+  apiUnavailable: "Temporarily unavailable",
+  apiNotVerified: "Not verified",
+  credentialHealthAttentionTitle: "Provider access needs attention",
+  credentialHealthAttentionDetail:
+    "{{providers}} could not be verified. Select a provider for the safe status code and replace its token if authentication was rejected.",
+  credentialHealthStaleTitle: "Provider status is due for verification",
+  credentialHealthStaleDetail:
+    "ALTA is checking the configured APIs now. The previous result remains visible until the bounded verification finishes.",
+  credentialVerifiedAt: "Checked {{time}}",
+  credentialNeverVerified: "No live verification has completed yet",
+  stale: "Stale",
   trading: "Trading",
   paperExecutionDisabled: "Paper execution disabled",
   paperConfigStoredExecutionDisabled:
@@ -353,7 +512,7 @@ const en = {
   selectProvider: "Select a provider to inspect its safe configuration state.",
   paperBoundaryTitle: "Trading remains behind a separate Paper-only boundary",
   paperBoundaryDetail:
-    "This console never accepts broker private keys. It only detects an owner-only external Tiger Paper configuration, while the general autonomous runtime remains capital-disabled.",
+    "This page never accepts broker private keys. Paper authorization is controlled separately in Capital desk and remains disabled by default.",
   builtInProviderNetwork: "Built-in public provider network",
   builtInProviderNetworkDetail:
     "These bounded read-only sources work without secrets and remain available when an optional provider key is absent.",
@@ -392,6 +551,83 @@ const zhCN: Record<MessageKey, string> = {
   systemOverview: "系统总览",
   agentDesk: "Agent 工作台",
   shadowBook: "影子账簿",
+  capitalDesk: "资本控制台",
+  brokerCapital: "Tiger 模拟盘资金",
+  paperCapitalSubtitle: "面向模拟券商执行的有界、故障关闭式授权通道。",
+  tigerPaper: "Tiger Trade · 模拟盘",
+  capitalAuthorization: "交易权限",
+  authorizationArmed: "模拟盘执行已授权",
+  authorizationDisarmed: "模拟盘执行已锁定",
+  authorizePaper: "授权模拟盘执行",
+  revokeAuthorization: "撤销授权",
+  capitalGateDetail: "此开关会真正修改后端持久化授权；它永远不会启用实盘账户。",
+  capitalRuntimeStopRequired:
+    "启用前必须停止运行时，系统才能原子验证账户身份和空仓状态。",
+  capitalConfigRequired: "授权前请先配置外部 Tiger 模拟盘凭证文件。",
+  lastVerified: "最近验证",
+  accountBinding: "账户绑定",
+  configurationBinding: "配置绑定",
+  executionPolicy: "执行策略",
+  oneShareLimitDay: "1 股限价单 · 当日有效",
+  usStocksOnly: "仅限美股",
+  regularHoursOnly: "仅限正常交易时段",
+  brokerSnapshot: "券商快照",
+  refreshBrokerSnapshot: "刷新券商快照",
+  refreshingBroker: "正在验证 Tiger 模拟盘…",
+  assets: "资产",
+  netLiquidation: "账户净值",
+  availableCash: "可交易现金",
+  buyingPower: "购买力",
+  grossPosition: "持仓总市值",
+  unrealizedPnl: "未实现盈亏",
+  realizedPnl: "已实现盈亏",
+  positions: "持仓",
+  orders: "订单",
+  capitalAuditTrail: "授权审计",
+  noBrokerSnapshot: "尚无已验证的券商快照",
+  noBrokerSnapshotDetail:
+    "执行一次只读验证，以证明模拟盘模式、账户绑定、持仓和挂单状态。",
+  noPaperPositions: "已验证的模拟盘账户中没有持仓。",
+  noRecentOrders: "Tiger 未返回近期模拟盘订单。",
+  noCapitalAudit: "尚未记录资金授权事件。",
+  symbol: "标的",
+  marketValue: "市值",
+  averageCost: "平均成本",
+  lastPrice: "最新价",
+  pnl: "盈亏",
+  side: "方向",
+  orderType: "订单类型",
+  filled: "已成交",
+  limitPrice: "限价",
+  updated: "更新时间",
+  action: "操作",
+  result: "结果",
+  confirmPaperAuthorization: "授权 Tiger 模拟盘执行？",
+  confirmPaperAuthorizationDetail:
+    "ALTA 会重新验证券商，并且只会授权一个准确绑定的 17 位模拟盘空账户，且不得存在挂单。自主执行仍被限制为正常交易时段内、单股、1 股、DAY 限价单。",
+  confirmPaperPhrase: "输入 TIGER PAPER 以继续",
+  confirmPaperPlaceholder: "TIGER PAPER",
+  confirmEnable: "验证并授权",
+  confirmRevoke: "撤权并安全停止",
+  confirmRevokeTitle: "撤销模拟盘执行权限？",
+  confirmRevokeDetail:
+    "系统会先撤销授权，再停止任何正在运行的 ALTA 服务；已有券商持仓不会被隐藏或丢弃。",
+  paperBoundary: "仅限模拟盘账户",
+  paperCapitalBoundaryDetail:
+    "系统不存在实盘通道。账户号码、配置路径、私钥和券商原始订单号均不会进入浏览器。",
+  capitalOperationFailed: "资金操作被拒绝",
+  refreshCapitalHelp:
+    "这是对 Tiger 模拟盘的显式读取，不会加入控制台每 2.5 秒一次的轮询。",
+  configurationChanged: "配置已变化 · 原授权自动失效",
+  capitalEnabled: "模拟盘资金已启用",
+  capitalDisabledSafe: "模拟盘资金已禁用",
+  accountFingerprint: "账户 {{fingerprint}}",
+  configFingerprint: "配置 {{fingerprint}}",
+  openOrdersCount: "{{count}} 个挂单",
+  recentOrdersCount: "近期 {{count}} 个",
+  positionsCountShort: "{{count}} 个持仓",
+  protectedReference: "受保护引用 {{reference}}",
+  neverLive: "绝不接触实盘",
   researchOnly: "仅限研究",
   shadowEnvironment: "影子环境",
   capitalDisabled: "资金已禁用",
@@ -483,7 +719,7 @@ const zhCN: Record<MessageKey, string> = {
   evidence: "证据",
   record: "原始记录",
   normalizedJson: "标准化 JSON",
-  researchBoundary: "仅限研究 · 影子环境 · 资金已禁用",
+  researchBoundary: "研究记录 · Shadow 决策上下文 · 不含私有思维链",
   decisionPacket: "决策数据包",
   noPublicBrief: "此记录尚未保存公开摘要。",
   independentAssessments: "独立评估",
@@ -567,6 +803,9 @@ const zhCN: Record<MessageKey, string> = {
   moreBeforeCalibration: "再积累 {{count}} 个样本后，校准才可影响预测。",
   calibrationReached: "已达到最低校准样本量；滚动证据现已约束预测。",
   meanRealizedAlpha: "平均已实现 Alpha",
+  selectionAdjustedAlpha: "选择偏差调整后 Alpha 下界",
+  selectionAdjustedDetail: "平均值 {{mean}} · 未调整的 95% 区间 {{interval}}。",
+  researchTrialsConsidered: "已计入 {{count}} 个经审计的机会试验。",
   forecastMae: "预测平均绝对误差",
   forecastMaeDetail: "可比股票直接表达预测的绝对误差。",
   directionalHitRate: "方向命中率",
@@ -582,10 +821,12 @@ const zhCN: Record<MessageKey, string> = {
   grossResearchExposure: "研究总暴露",
   aggregateStressBudget: "组合压力预算",
   largestUnderlying: "最大底层标的",
+  tightestRiskCluster: "最紧风险簇",
   openRiskUnits: "开放风险单元",
   noCurrentConcentration: "当前没有集中暴露",
   crossCarrierAggregation: "跨载体合并计算",
   underlyingBuckets: "底层标的集中度分组",
+  riskClusters: "全组合集中度风险簇",
   positionsCount: "{{count}} 个持仓",
   executionQuality: "执行质量",
   executionQualityDetail:
@@ -630,6 +871,31 @@ const zhCN: Record<MessageKey, string> = {
   sourcePosture: "数据源姿态",
   observed: "已观察",
   noSourcePosture: "尚未记录数据源姿态。",
+  researchOperations: "研究作业审计",
+  researchOperationsDetail:
+    "对近期真实检索作业进行有界审计：展示每个 Trader 思维的已完成调用、独立冻结来源记录、证据角色覆盖和失败路径。",
+  researchOperationsWaiting: "首次自主生产研究运行后，此处将显示研究作业。",
+  recentResearchRuns: "近期运行",
+  completedRetrievals: "完成检索",
+  independentDomains: "独立来源域",
+  independentEvidenceOrigins: "独立证据记录",
+  crossCheckedRuns: "交叉验证",
+  retryRecoveredRuns: "重试挽救",
+  contractRejectedRuns: "契约拒绝",
+  followUpAssignedRuns: "已分配跟进",
+  followUpExecutedRuns: "已完成跟进",
+  followUpNoOpRuns: "跟进后无机会",
+  retryRecoveredMind: "{{count}} 次重试后成功收束",
+  callsShort: "次调用",
+  domainsShort: "个域名",
+  originsShort: "条来源记录",
+  candidatesShort: "个候选",
+  followUpsShort: "次跟进",
+  sourceRoleReuse: "保留 {{count}} 个来源角色复用绑定供复核",
+  evidenceRolesPending: "等待证据角色",
+  notRunYet: "尚未运行",
+  researchOperationsBoundary:
+    "仅展示已保存的过程证据 · 不暴露凭据、来源正文、私有推理或隐藏提示词",
   researchAttention: "研究注意力组合",
   researchAttentionDetail:
     "基于时点数据分配研究席位：保留一个知情的连续研究席位，同时让其余独立思维扩大标的覆盖。",
@@ -639,12 +905,39 @@ const zhCN: Record<MessageKey, string> = {
   uniqueEntities: "独立标的数",
   topEntityShare: "首要标的占比",
   effectiveBreadth: "有效研究广度",
+  uniqueArchetypes: "Alpha 原型数",
+  archetypeBreadth: "原型有效广度",
+  shortHorizon: "短周期试验",
+  longHorizon: "长周期试验",
+  horizon: "周期",
   continueLeadDetail: "仅在出现新事实或新因果检验时继续研究 {{entity}}。",
   expandCoverageDetail: "跳出 {{entity}}，寻找独立的新机会。",
   unconstrainedDetail: "当前没有成熟的集中风险，可独立探索。",
   noDominantEntity: "当前首要标的",
   researchAttentionBoundary:
     "只分配研究容量 · 不构成证据、排序、资本或交易许可",
+  opportunityContinuity: "机会连续性",
+  opportunityContinuityDetail:
+    "持久化、期限感知的研究登记簿会先保留长期机会，再为下一次自主唤醒选择有界上下文，避免旧机会被最新信息挤掉。",
+  opportunityContinuityWaiting:
+    "首次自主生产唤醒冻结机会登记簿后，此处会显示连续性状态。",
+  activeRegistry: "活跃机会登记簿",
+  frozenForResearch: "下轮冻结机会",
+  openQuestions: "当前到期检验",
+  deferredResearch: "冷却中的检验",
+  nextResearchWindow: "下一研究窗口",
+  noDeferredResearch: "没有延期检验",
+  researchCadenceDetail:
+    "已完成的检验按证据期限进入冷却；机会快照一旦变化会立即恢复研究资格。",
+  expiringOpportunities: "进入 14 天窗口",
+  staleOpportunities: "已过决策期限",
+  oldestActiveAge: "最老活跃机会",
+  daysCount: "{{count}} 天",
+  earliestDecisionDeadline: "最早决策期限",
+  priorityFollowUps: "优先跟进",
+  noPriorityFollowUps: "当前无期限优先检验",
+  opportunityContinuityBoundary:
+    "仅为持久化流程记忆 · 期限只分配研究容量，不验证论点，也不授权资本",
   traderMinds: "Trader 思维",
   minds: "{{count}} 个思维",
   noRollingSummarySaved: "未保存滚动摘要",
@@ -662,17 +955,35 @@ const zhCN: Record<MessageKey, string> = {
   configured: "已配置",
   supported: "已支持",
   operational: "可使用",
+  verified: "可使用",
+  needsAttention: "需处理",
   refresh: "刷新",
+  verifyApis: "验证 API",
+  verifyingApis: "正在验证…",
   credentialChangesLocked: "ALTA 运行期间已锁定凭据修改",
   stopBeforeCredentialChange:
     "更换凭据前请先停止研究运行时，避免同一活动周期混用不同供应商状态。",
   credentialCenterUnavailable: "凭据中心需要处理",
-  credentialRefreshFailed: "无法刷新凭据目录。",
+  credentialRefreshFailed: "供应商验证未能完成；已有凭据没有被修改。",
   credentialSaveFailed: "凭据未保存。",
   credentialStored: "凭据已保存",
   credentialMissing: "需要凭据",
   availableWithoutKey: "可使用 · 无需密钥",
   optionalEnhancement: "可选增强凭据",
+  apiVerified: "API 已验证",
+  apiExpiredOrRejected: "已过期或被拒绝",
+  apiRateLimited: "供应商限流",
+  apiUnavailable: "暂时不可用",
+  apiNotVerified: "尚未验证",
+  credentialHealthAttentionTitle: "供应商访问需要处理",
+  credentialHealthAttentionDetail:
+    "无法验证 {{providers}}。选择供应商可查看脱敏状态码；如果鉴权被拒绝，请更换 Token。",
+  credentialHealthStaleTitle: "供应商状态需要重新验证",
+  credentialHealthStaleDetail:
+    "ALTA 正在检查已配置的 API；在受限验证完成前，仍显示上一次结果。",
+  credentialVerifiedAt: "检查于 {{time}}",
+  credentialNeverVerified: "尚未完成实时验证",
+  stale: "已过期",
   trading: "交易",
   paperExecutionDisabled: "模拟盘执行已禁用",
   paperConfigStoredExecutionDisabled: "模拟盘配置已保存 · 执行已禁用",
@@ -699,7 +1010,7 @@ const zhCN: Record<MessageKey, string> = {
   selectProvider: "选择一个供应商，查看其安全配置状态。",
   paperBoundaryTitle: "交易仍隔离在独立的模拟盘安全边界之后",
   paperBoundaryDetail:
-    "本控制台绝不接收券商私钥，只检测仓库外、仅当前用户可读的 Tiger 模拟盘配置；常规自主运行时仍保持资金禁用。",
+    "本页面绝不接收券商私钥；模拟盘授权由资本控制台单独管理，并且默认始终关闭。",
   builtInProviderNetwork: "内置公共供应商网络",
   builtInProviderNetworkDetail:
     "这些受限、只读的数据源无需密钥；即使可选供应商未配置，仍可继续使用。",
@@ -806,7 +1117,10 @@ const domainZh: Record<string, string> = {
 
 const exactDomainZh: Record<string, string> = {
   "append only": "仅追加",
+  "alpha source": "Alpha 来源",
   "capital disabled": "资金已禁用",
+  "authorization invalid": "授权状态无效",
+  "configuration changed": "配置已变化",
   "committee moderator": "委员会主持",
   "defined risk options": "风险限定期权",
   "direct stock": "直接持有股票",
@@ -825,6 +1139,13 @@ const exactDomainZh: Record<string, string> = {
   "latency ms": "延迟（毫秒）",
   "market neutral basket": "市场中性篮子",
   "market data": "行情数据",
+  "systematic exposure": "系统性暴露",
+  "underlying": "底层标的",
+  "catalyst": "催化剂",
+  "growth duration": "增长久期",
+  "market beta": "市场 Beta",
+  "earnings revision": "盈利预期修正",
+  "relative value": "相对价值",
   "market and regulatory": "市场与监管",
   "news and discovery": "新闻与发现",
   "research and social": "研究与社交",
@@ -839,6 +1160,9 @@ const exactDomainZh: Record<string, string> = {
   "model id": "模型标识",
   "model provider": "模型供应商",
   "not measured": "尚未衡量",
+  "not configured": "尚未配置",
+  "paper enabled": "模拟盘权限已生效",
+  "paper ready disabled": "模拟盘就绪但未授权",
   "rationale": "理由",
   "recommendation": "建议",
   "runtime ready": "运行时就绪",
@@ -852,6 +1176,7 @@ const exactDomainZh: Record<string, string> = {
   "short dated skew normalization": "短期期权偏斜回归",
   "structural flow": "结构性资金流",
   "status": "状态",
+  "snapshot invalid": "券商快照无效",
   "symbol": "标的",
   "under review": "评审中",
   "unconstrained": "自由探索席位",
@@ -914,11 +1239,37 @@ const systemMessageZh: Record<string, string> = {
   "The secure console session is not ready yet": "安全控制台会话尚未就绪",
   "Alpha is unproven: the forward Shadow sample is below the minimum.":
     "Alpha 尚未得到证明：前瞻影子样本量低于最低要求。",
+  "The unadjusted Alpha interval is positive, but it does not survive the opportunity-search selection correction.":
+    "未调整的 Alpha 区间为正，但未能通过机会搜索选择偏差校正。",
+  "The selection-adjusted confidence bound remains forward Shadow evidence; regime dependence and non-normal returns still require external validation.":
+    "选择偏差调整后的置信下界仍只是前瞻 Shadow 证据；市场状态依赖与非正态收益仍需外部验证。",
   "Execution quality is unavailable until a position has a complete forward open and close fill.":
     "只有持仓完成前向开仓与平仓成交后，才能衡量执行质量。",
   "Execution TCA is based on forward Shadow quotes and modeled fills; it is not live-market capacity or broker performance.":
     "执行 TCA 基于前向 Shadow 报价和模型成交，不代表真实市场容量或经纪商执行表现。",
 };
+
+function localizeSystemMessage(message: string, locale: Locale) {
+  const tiger = message.match(
+    /^Tiger Paper preflight failed: ([A-Za-z0-9_.-]+)(?:\[([A-Za-z0-9_.-]+)\])?:([a-f0-9]{16,64})$/,
+  );
+  if (tiger) {
+    const [, errorType, brokerCode, fingerprint] = tiger;
+    if (locale === "zh-CN") {
+      const reason =
+        brokerCode === "1000"
+          ? "券商拒绝了公共参数校验；请检查 Tiger ID、模拟盘账户、系统时间和已登记公钥对应的私钥"
+          : "券商拒绝了模拟盘验证请求";
+      return `${reason}（错误 ${brokerCode ?? errorType}，诊断指纹 ${fingerprint.slice(0, 16)}）`;
+    }
+    const reason =
+      brokerCode === "1000"
+        ? "The broker rejected common-parameter validation; check Tiger ID, the Paper account, system time, and the private key paired with the registered public key"
+        : "The broker rejected the Paper verification request";
+    return `${reason} (error ${brokerCode ?? errorType}, diagnostic fingerprint ${fingerprint.slice(0, 16)})`;
+  }
+  return locale === "zh-CN" ? (systemMessageZh[message] ?? message) : message;
+}
 
 type I18nContextValue = {
   locale: Locale;
@@ -1001,9 +1352,7 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
       },
       systemMessage: (message) => {
         if (!message) return null;
-        return locale === "zh-CN"
-          ? (systemMessageZh[message] ?? message)
-          : message;
+        return localizeSystemMessage(message, locale);
       },
     };
   }, [locale, toggleLocale]);

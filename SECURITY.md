@@ -61,9 +61,11 @@ Broker credentials are not accepted by this surface.
   Redis, market-data, and broker secrets.
 - Tiger is Paper-only. The system does not enumerate accounts, fall back to
   `paper=false`, or expose an HTTP order-mutation API.
-- Capital code is isolated from the research runtime. Mutation is disabled by
-  default and reachable only through the explicit acceptance command after all
-  research and deterministic gates pass.
+- Capital code is an isolated locked package. Mutation is disabled by default
+  and becomes reachable only after an authenticated operator authorizes the
+  exact Paper account while the runtime is stopped, or through the explicit
+  bounded acceptance command. Every expression must still pass the research,
+  deterministic risk, and independent-audit gates.
 - The acceptance executor requires an owner-only non-symlink config, exact
   17-digit Paper account SHA-256 binding, empty starting account, one-share DAY
   limit orders, fill reconciliation, confirmed cancellation, and final

@@ -8,6 +8,7 @@ from .research_agenda import ResearchMode
 CORE_ACTIVE_RESEARCH_TOOLS = (
     "alta_web_search",
     "alta_web_research",
+    "alta_web_batch_fetch",
     "alta_news_search",
     "alta_social_search",
     "alta_finance_data",
@@ -58,7 +59,7 @@ class ScoutConfig(BaseModel):
 SCOUTS = (
     ScoutConfig(
         scout_id="change_event_scout",
-        version="alpha-v5",
+        version="alpha-v7",
         mission=(
             "Identify newly changed facts whose causal earnings, cash-flow, or "
             "positioning implications may still be propagating into listed prices."
@@ -71,9 +72,10 @@ SCOUTS = (
         ),
         research_sequence=(
             "Search recent primary disclosures and versioned news for a changed fact.",
-            "Search non-news operating artifacts such as product pages, pricing, hiring, procurement, public release notes, traffic proxies, and ecosystem releases for a measurable state change.",
+            "Search non-news operating artifacts such as product pages, pricing, hiring, procurement, public release notes, traffic proxies, and ecosystem releases for a measurable state change; use feeds, sitemaps, and bounded archives to detect version changes that a headline missed.",
+            "Query SEC submissions by ticker for Form 4, SC 13D/13G, 8-K, 10-Q/10-K, S-3, and 424B clues when ownership, incentives, financing, or operational disclosures could carry the change.",
             "Use public social discussion only to locate claims or narrative shifts, never as proof by itself.",
-            "Fetch the strongest primary page and verify the causal earnings or cash-flow path.",
+            "Batch-fetch the strongest independent primary pages and verify the causal earnings or cash-flow path.",
             "Check market data to determine whether price and expectations already absorbed the change.",
         ),
         skepticism=(
@@ -87,12 +89,13 @@ SCOUTS = (
             "alta_web_fetch",
             "alta_social_read",
             "alta_web_crawl",
+            "alta_web_feed",
             "alta_web_archive",
         ),
     ),
     ScoutConfig(
         scout_id="market_dislocation_scout",
-        version="alpha-v4",
+        version="alpha-v6",
         mission=(
             "Identify price, volume, volatility, breadth, or cross-asset "
             "dislocations with a testable non-technical catalyst or mechanism."
@@ -106,7 +109,8 @@ SCOUTS = (
         ),
         research_sequence=(
             "Scan price, volume, volatility, options surface, breadth, ETF/peer-relative behavior, and cross-asset data for an anomaly or forced flow.",
-            "Search news and the open web for a non-technical mechanism that can explain or contradict it.",
+            "Search news and the open web for a non-technical mechanism that can explain or contradict it, including index/ETF methodology, corporate actions, lockups, financing, borrow, and scheduled rebalances when publicly auditable.",
+            "Batch-fetch the strongest independent mechanism and counterevidence sources before deciding the move is idiosyncratic.",
             "Search public social sources for positioning or narrative evidence and verify any claim elsewhere.",
             "Test whether the move is factor beta, stale data, or a genuinely idiosyncratic repricing gap.",
         ),
@@ -125,7 +129,7 @@ SCOUTS = (
     ),
     ScoutConfig(
         scout_id="causal_policy_scout",
-        version="alpha-v4",
+        version="alpha-v6",
         mission=(
             "Trace underappreciated first- and second-order listed-equity effects "
             "from official policy, regulation, rates, commodities, and macro changes."
@@ -138,8 +142,9 @@ SCOUTS = (
             "supply-chain transmission mismatch",
         ),
         research_sequence=(
-            "Search official policy, regulatory, macro, and central-bank sources for a changed rule or state.",
+            "Search official policy, regulatory, macro, and central-bank sources for a changed rule or state, then inspect agency dockets, procurement awards, grant notices, enforcement calendars, technical standards, and implementation feeds for the less obvious timing clue.",
             "Use academic and industry research to map first- and second-order transmission mechanisms.",
+            "Batch-fetch independent official and issuer-level sources that can prove or reject the transmission path.",
             "Search news and public social discussion for affected entities, disputed assumptions, and implementation friction.",
             "Use market data to separate an underpriced equity effect from an obvious macro or sector factor move.",
         ),
@@ -154,12 +159,14 @@ SCOUTS = (
             "alta_web_fetch",
             "alta_social_read",
             "alta_academic_search",
+            "alta_web_crawl",
+            "alta_web_feed",
             "alta_web_archive",
         ),
     ),
     ScoutConfig(
         scout_id="expectation_gap_scout",
-        version="alpha-v4",
+        version="alpha-v6",
         mission=(
             "Find a measurable gap between market expectations and emerging "
             "fundamental evidence, including evidence that supports a short thesis."
@@ -172,7 +179,8 @@ SCOUTS = (
             "alternative-data KPI inflection",
         ),
         research_sequence=(
-            "Search filings, estimate primitives, product or pricing changes, public social narratives, web artifacts, and ecosystem data for a disputed expectation; news is only one possible locator.",
+            "Search filings, estimate primitives, product or pricing changes, public social narratives, web artifacts, and ecosystem data for a disputed expectation; use bounded archive and crawl comparisons for quiet pricing, packaging, availability, release-note, partner, or disclosure drift. News is only one possible locator.",
+            "Batch-fetch the strongest independent primary and counterevidence pages rather than relying on search snippets.",
             "Find a source-backed KPI, estimate path, cash-flow line, or catalyst that can resolve the dispute.",
             "Search explicitly for disconfirming evidence and the strongest reason consensus may be right.",
             "Use market data to test whether the proposed gap is already reflected in price, volatility, or peer valuation.",
@@ -188,6 +196,8 @@ SCOUTS = (
             "alta_web_fetch",
             "alta_social_read",
             "alta_academic_search",
+            "alta_web_crawl",
+            "alta_web_archive",
         ),
     ),
 )

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { setTimeout as delay } from "node:timers/promises";
 import { BackendHealth } from "../internet/backend-health.mjs";
-import { executeSearch } from "../internet/search.mjs";
+import { executeSearch, filteredQuery } from "../internet/search.mjs";
 import { InternetService } from "../internet/service.mjs";
 import {
   runSource,
@@ -10,6 +10,65 @@ import {
 } from "../internet/plugins/source-runtime.mjs";
 
 const publicLookup = async () => [{ address: "93.184.216.34", family: 4 }];
+
+test("multi-domain primary-source scopes use OR semantics", () => {
+  assert.equal(
+    filteredQuery({
+      query: "issuer earnings filing",
+      allowed: ["sec.gov", "investor.example.com"],
+      excluded: [],
+    }),
+    "issuer earnings filing (site:sec.gov OR site:investor.example.com)",
+  );
+  assert.equal(
+    filteredQuery({
+      query: "issuer earnings filing",
+      allowed: [],
+      excluded: ["wikipedia.org"],
+    }),
+    "issuer earnings filing -site:wikipedia.org",
+  );
+});
+
+test("domain scopes are enforced again after an upstream search response", async () => {
+  const result = await executeSearch(
+    {
+      xaiSearch: async () => ({
+        output: [
+          {
+            type: "message",
+            content: [
+              {
+                type: "output_text",
+                text: [
+                  "Allowed https://www.sec.gov/Archives/acme-10-q",
+                  "Ignored https://investor.acme.example/results",
+                ].join("\n"),
+              },
+            ],
+          },
+        ],
+      }),
+      backendHealth: new BackendHealth(),
+    },
+    {
+      query: "ACME filing",
+      maximum: 10,
+      depth: "deep",
+      allowed: ["sec.gov"],
+      excluded: [],
+      freshness: "",
+      language: "en",
+      backend: "xai",
+    },
+  );
+
+  assert.deepEqual(
+    result.results.map((item) => item.url),
+    ["https://www.sec.gov/Archives/acme-10-q"],
+  );
+  assert.equal(result.answer, "");
+});
 
 function serviceSettings(overrides = {}) {
   return {

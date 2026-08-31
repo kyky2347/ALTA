@@ -10,8 +10,9 @@ opportunities under point-in-time evidence constraints.
 - independent assessment, discussion, ranking, and expression auditing;
 - replayable Shadow positions and cost-aware performance measurement;
 - bounded, read-only public information and market-data adapters;
-- observability artifacts for future research dashboards;
-- one explicitly invoked, one-share Tiger Paper engineering acceptance cycle.
+- a local authenticated observability and control dashboard;
+- an operator-authorized, one-share Tiger Paper engineering mirror with
+  explicit account/configuration binding and fail-closed startup.
 
 ## Explicitly out of scope
 
@@ -22,11 +23,15 @@ opportunities under point-in-time evidence constraints.
 - redistribution of third-party market data beyond its license.
 
 The default capital mode is disabled. Tiger integration is limited to an
-isolated Paper-only executor that can be reached only by the explicit bounded
-acceptance command. It is not available to Agents, the read API, or the normal
-autonomous service. Do not connect live brokerage credentials or use ALTA as an
-OMS. A successful Paper entry/exit is engineering evidence, not investment or
-Alpha evidence.
+isolated Paper-only executor reached only after local operator authorization.
+The stopped runtime must first prove the exact 17-digit Paper account, matching
+configuration, an empty position book, and zero open orders. Once authorized,
+the autonomous service can mirror only an already-audited stock expression
+through the one-share DAY-limit regular-hours boundary; Agents never receive a
+broker tool or credential. The console exposes sanitized holdings and order
+state but no manual order entry. Do not connect live brokerage credentials or
+use ALTA as an OMS. A successful Paper entry/exit is engineering evidence, not
+investment or Alpha evidence.
 
 Model output is untrusted research material. A Candidate or Opportunity is a
 hypothesis, not a fact. `Wait` and `MVP_IDLE` are valid outcomes, and Alpha

@@ -14,12 +14,19 @@ function normalizeDomains(values) {
   ].slice(0, 5);
 }
 
-function filteredQuery(args) {
+export function filteredQuery(args) {
+  const allowedScope = args.allowed.length
+    ? args.allowed.length === 1
+      ? `site:${args.allowed[0]}`
+      : `(${args.allowed.map((domain) => `site:${domain}`).join(" OR ")})`
+    : "";
   return [
     args.query,
-    ...args.allowed.map((domain) => `site:${domain}`),
+    allowedScope,
     ...args.excluded.map((domain) => `-site:${domain}`),
-  ].join(" ");
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 function xaiText(value) {
@@ -310,6 +317,40 @@ const SEARCHERS = {
   bing: bingSearch,
 };
 
+function domainMatches(hostname, domain) {
+  const normalizedHost = hostname.toLowerCase().replace(/\.$/, "");
+  const normalizedDomain = domain.toLowerCase().replace(/^\.+|\.$/g, "");
+  return (
+    normalizedHost === normalizedDomain ||
+    normalizedHost.endsWith(`.${normalizedDomain}`)
+  );
+}
+
+function enforceResultDomains(value, args) {
+  if (!args.allowed.length && !args.excluded.length) return value;
+  const results = (value.results ?? []).filter((item) => {
+    try {
+      const hostname = new URL(item.url).hostname;
+      if (
+        args.allowed.length &&
+        !args.allowed.some((domain) => domainMatches(hostname, domain))
+      )
+        return false;
+      return !args.excluded.some((domain) => domainMatches(hostname, domain));
+    } catch {
+      return false;
+    }
+  });
+  return {
+    ...value,
+    // Provider prose can include citations that an upstream engine ignored.
+    // Under an explicit domain scope, exact filtered result records are the
+    // only admissible output.
+    answer: "",
+    results,
+  };
+}
+
 function candidateBackends(context, includePublic) {
   return [
     context.braveKey && "brave",
@@ -327,7 +368,10 @@ async function runBackend(context, backend, args, signal, force = false) {
   )
     return null;
   try {
-    const value = await SEARCHERS[backend](context, args, signal);
+    const value = enforceResultDomains(
+      await SEARCHERS[backend](context, args, signal),
+      args,
+    );
     if (!value) return null;
     if (!value.results?.length && !String(value.answer ?? "").trim())
       throw Object.assign(new Error(`${backend} returned no search evidence`), {

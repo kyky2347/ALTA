@@ -52,6 +52,7 @@ def recover_frozen_wake(
     incentives = []
     seen_incentives = {}
     research_attention = None
+    opportunity_continuity = None
     market_agenda = None
     market_agenda_base = None
     market_seeds = []
@@ -125,6 +126,14 @@ def recover_frozen_wake(
                     "Scout snapshots disagree on research attention portfolio"
                 )
             research_attention = attention
+        continuity = by_role[role].opportunity_continuity
+        if continuity is not None:
+            if (
+                opportunity_continuity is not None
+                and opportunity_continuity != continuity
+            ):
+                raise ValueError("Scout snapshots disagree on Opportunity continuity")
+            opportunity_continuity = continuity
         agenda = by_role[role].market_research_agenda
         if agenda is not None:
             agenda_base = agenda.model_copy(update={"seeds": ()})
@@ -185,6 +194,7 @@ def recover_frozen_wake(
             "alpha_feedback": tuple(feedback),
             "research_incentives": tuple(incentives),
             "research_attention_portfolio": research_attention,
+            "opportunity_continuity": opportunity_continuity,
             "opportunity_drive": opportunity_drive,
             "market_research_agenda": market_agenda,
         }

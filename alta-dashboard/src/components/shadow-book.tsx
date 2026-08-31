@@ -78,15 +78,42 @@ export function ShadowBook({
   const stockExecution = alpha?.executionCostGovernance?.stock;
   const risk = alpha?.portfolioRisk;
   const underlyingBuckets = risk?.underlyingBuckets ?? [];
-  const largestUnderlying = underlyingBuckets.reduce<
-    (typeof underlyingBuckets)[number] | null
-  >(
-    (largest, current) =>
-      !largest || Number(current.grossNavBps) > Number(largest.grossNavBps)
-        ? current
-        : largest,
-    null,
-  );
+  const riskClusters = [
+    ...underlyingBuckets.map((bucket) => ({
+      kind: "underlying",
+      key: bucket.underlyingKey,
+      grossNavBps: bucket.grossNavBps,
+      limitNavBps: risk?.underlyingLimitNavBps,
+    })),
+    ...(risk?.alphaSourceBuckets ?? []).map((bucket) => ({
+      kind: "alpha_source",
+      key: bucket.alphaSource,
+      grossNavBps: bucket.grossNavBps,
+      limitNavBps: risk?.alphaSourceLimitNavBps,
+    })),
+    ...(risk?.catalystBuckets ?? []).map((bucket) => ({
+      kind: "catalyst",
+      key: bucket.catalystKey,
+      grossNavBps: bucket.grossNavBps,
+      limitNavBps: risk?.catalystLimitNavBps,
+    })),
+    ...(risk?.systematicExposureBuckets ?? []).map((bucket) => ({
+      kind: "systematic_exposure",
+      key: bucket.tag,
+      grossNavBps: bucket.grossNavBps,
+      limitNavBps: risk?.systematicExposureLimitNavBps,
+    })),
+  ]
+    .map((bucket) => ({
+      ...bucket,
+      utilization:
+        Number(bucket.limitNavBps) > 0
+          ? Number(bucket.grossNavBps) / Number(bucket.limitNavBps)
+          : 0,
+    }))
+    .sort((left, right) => right.utilization - left.utilization);
+  const mostConstrained =
+    risk?.mostConstrainedBucket ?? riskClusters[0] ?? null;
   const sampleSize = evidence?.sampleSize ?? alpha?.closedPositions ?? 0;
   const minimumSample =
     evidence?.minimumSample ?? calibration?.minimumSample ?? 30;
@@ -115,6 +142,11 @@ export function ShadowBook({
           formatNumber,
         )}`
       : t("awaitingIndependentCloses");
+  const selectionLower =
+    evidence?.selectionAdjustedConfidence95LowerBps ??
+    capital?.selectionAdjustedLowerAlphaBps;
+  const researchTrials =
+    evidence?.researchTrials ?? capital?.researchTrials ?? sampleSize;
 
   return (
     <section className="shadow-book">
@@ -149,12 +181,20 @@ export function ShadowBook({
                     count: minimumSample - sampleSize,
                   })
                 : t("calibrationReached")}
+              <span className="alpha-trials">
+                {t("researchTrialsConsidered", { count: researchTrials })}
+              </span>
             </p>
           </div>
           <div className="alpha-measure">
-            <span>{t("meanRealizedAlpha")}</span>
-            <strong>{bps(alpha?.meanRealizedAlphaBps, formatNumber)}</strong>
-            <p>{interval}</p>
+            <span>{t("selectionAdjustedAlpha")}</span>
+            <strong>{bps(selectionLower, formatNumber)}</strong>
+            <p>
+              {t("selectionAdjustedDetail", {
+                mean: bps(alpha?.meanRealizedAlphaBps, formatNumber),
+                interval,
+              })}
+            </p>
           </div>
           <div className="alpha-measure">
             <span>{t("forecastMae")}</span>
@@ -223,17 +263,21 @@ export function ShadowBook({
               </strong>
             </div>
             <div>
-              <span>{t("largestUnderlying")}</span>
-              <strong>{largestUnderlying?.underlyingKey ?? "—"}</strong>
+              <span>{t("tightestRiskCluster")}</span>
+              <strong>
+                {mostConstrained
+                  ? `${domain(mostConstrained.kind)} · ${domain(mostConstrained.key)}`
+                  : "—"}
+              </strong>
               <small>
-                {largestUnderlying
+                {mostConstrained
                   ? `${magnitudeBps(
-                      largestUnderlying.grossNavBps,
+                      mostConstrained.grossNavBps,
                       formatNumber,
                     )} / ${magnitudeBps(
-                      risk?.underlyingLimitNavBps,
+                      mostConstrained.limitNavBps,
                       formatNumber,
-                    )}`
+                    )} · ${rate(mostConstrained.utilization, formatNumber)}`
                   : t("noCurrentConcentration")}
               </small>
             </div>
@@ -243,16 +287,13 @@ export function ShadowBook({
               <small>{t("crossCarrierAggregation")}</small>
             </div>
           </div>
-          {underlyingBuckets.length > 0 && (
-            <div
-              className="underlying-buckets"
-              aria-label={t("underlyingBuckets")}
-            >
-              {underlyingBuckets.map((bucket) => (
-                <span key={bucket.underlyingKey}>
-                  <strong>{bucket.underlyingKey}</strong>
-                  {magnitudeBps(bucket.grossNavBps, formatNumber)} ·{" "}
-                  {t("positionsCount", { count: bucket.openPositions })}
+          {riskClusters.length > 0 && (
+            <div className="underlying-buckets" aria-label={t("riskClusters")}>
+              {riskClusters.slice(0, 10).map((bucket) => (
+                <span key={`${bucket.kind}:${bucket.key}`}>
+                  <small>{domain(bucket.kind)}</small>
+                  <strong>{domain(bucket.key)}</strong>
+                  {rate(bucket.utilization, formatNumber)}
                 </span>
               ))}
             </div>

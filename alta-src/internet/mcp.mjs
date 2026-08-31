@@ -10,7 +10,7 @@ const LEGACY_PROTOCOL = "2025-06-18";
 // Each result must leave room for the frozen input, stable instructions, and
 // later tool calls inside the same bounded Scout turn. Research packs put
 // fetched primary-source text first so this compact preview stays useful.
-const MAX_TOOL_RESULT_BYTES = 3_000;
+const MAX_TOOL_RESULT_BYTES = 9_000;
 const MAX_TOOL_ERROR_BYTES = 900;
 const TRUNCATION_NOTICE =
   "\n...[ALTA truncated this result; narrow the request or fetch sources individually]";
@@ -29,13 +29,19 @@ function error(id, code, message, data) {
   };
 }
 
-function toolResult(value) {
+function toolResult(value, researchBudget) {
   const serialized = JSON.stringify(value, null, 2);
   const originalBytes = Buffer.byteLength(serialized);
-  const truncated = originalBytes > MAX_TOOL_RESULT_BYTES;
-  const text = truncated
-    ? `${utf8Prefix(serialized, MAX_TOOL_RESULT_BYTES - Buffer.byteLength(TRUNCATION_NOTICE))}${TRUNCATION_NOTICE}`
-    : serialized;
+  const budgetNotice = researchBudget
+    ? `[ALTA research budget: ${researchBudget.remaining} of ${researchBudget.limit} tool calls remain after this call${researchBudget.remaining === 0 ? "; finalize now without another tool call" : ""}]\n`
+    : "";
+  const contentBudget = MAX_TOOL_RESULT_BYTES - Buffer.byteLength(budgetNotice);
+  const truncated = originalBytes > contentBudget;
+  const text = `${budgetNotice}${
+    truncated
+      ? `${utf8Prefix(serialized, contentBudget - Buffer.byteLength(TRUNCATION_NOTICE))}${TRUNCATION_NOTICE}`
+      : serialized
+  }`;
   return {
     resultType: "complete",
     content: [{ type: "text", text }],
@@ -138,7 +144,7 @@ export async function handleMcpMessage(service, message, options = {}) {
         message.params?.arguments ?? {},
         options,
       );
-      return response(message.id, toolResult(value));
+      return response(message.id, toolResult(value, options.researchBudget));
     } catch (cause) {
       return response(message.id, toolError(cause));
     }

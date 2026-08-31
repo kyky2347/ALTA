@@ -282,6 +282,9 @@ def _score(
         "research_source_breadth": _rounded(research_quality["source_breadth"]),
         "research_route_diversity": _rounded(research_quality["route_diversity"]),
         "research_non_news_depth": _rounded(research_quality["non_news_depth"]),
+        "research_origin_independence": _rounded(
+            research_quality["origin_independence"]
+        ),
     }
     score = (
         variant_edge_strength * Decimal("0.05")

@@ -19,6 +19,7 @@ class PriorOpportunitySnapshot(BaseModel):
     direction: Literal["positive", "negative", "neutral", "unknown"]
     status: Literal["forming", "ranked", "shadow", "closed", "rejected"]
     horizon_days: int = Field(ge=1, le=365)
+    decision_deadline_at: datetime | None = None
     summary: str = Field(min_length=1, max_length=480)
     snapshot_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
     research_questions: tuple[OpenResearchQuestion, ...] = Field(
@@ -30,4 +31,11 @@ class PriorOpportunitySnapshot(BaseModel):
     def known_at_is_timezone_aware(cls, value: datetime) -> datetime:
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("prior Opportunity known_at must be timezone-aware")
+        return value
+
+    @field_validator("decision_deadline_at")
+    @classmethod
+    def deadline_is_timezone_aware(cls, value: datetime | None) -> datetime | None:
+        if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+            raise ValueError("Opportunity decision deadline must be timezone-aware")
         return value

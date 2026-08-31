@@ -3,6 +3,13 @@
 packages:
   - alta-dashboard
 
+# Keep the install layout deterministic across operator machines.  In
+# particular, do not inherit a user's global `node-linker=hoisted` setting:
+# that can leave workspace-local executable links pointing at a missing
+# virtual store and make the one-command dashboard bootstrap fail.
+nodeLinker: isolated
+shamefullyHoist: false
+
 minimumReleaseAge: 10080
 minimumReleaseAgeExclude: []
 

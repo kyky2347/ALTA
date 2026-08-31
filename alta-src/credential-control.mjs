@@ -176,7 +176,7 @@ function slotDefinition(slot) {
   };
 }
 
-function loadedValues(env) {
+export function loadCredentialSecrets(env = process.env) {
   const providers = loadCredentials(env);
   const resources = loadResourceCredentials(env);
   return {
@@ -274,7 +274,7 @@ function tigerPaperInventory(root, env) {
 
 export function credentialInventory(env = process.env) {
   const root = externalCredentialRoot(env);
-  const loaded = loadedValues(env);
+  const loaded = loadCredentialSecrets(env);
   const trading = tigerPaperInventory(root, env);
   return {
     root,
@@ -317,7 +317,7 @@ export function replaceCredential(slotValue, secret, env = process.env) {
     value,
   });
   try {
-    const loaded = loadedValues(env);
+    const loaded = loadCredentialSecrets(env);
     if (loaded.values[slot] !== value)
       throw new Error(`ALTA could not verify the replaced ${slot} credential`);
     return {

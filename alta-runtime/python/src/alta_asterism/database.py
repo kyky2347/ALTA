@@ -3,6 +3,7 @@ from decimal import Decimal
 from typing import Any
 
 import psycopg
+from psycopg_pool import ConnectionPool
 from psycopg.types.json import Jsonb
 
 from .alpha_governance import (
@@ -26,8 +27,10 @@ from .execution_quality import ExecutionCostGovernance, ExecutionCostPolicy
 from .investment_thesis import pillar_research_question
 from .implementation import PortfolioRiskPolicy
 from .migrations import CURRENT_TABLES, LATEST_REVISION, MIGRATIONS
+from .opportunity_continuity import load_latest_opportunity_continuity
 from .research_agenda import build_open_research_questions
 from .research_diligence import ResearchDiligence, strongest_diligence
+from .research_operations import load_research_operations
 from .research_attention import ResearchAttentionProjector
 from .trader_mind import SCOUTS
 
@@ -219,11 +222,31 @@ def _opportunity_detail_payload(
 
 
 class Database:
-    def __init__(self, dsn: str) -> None:
+    def __init__(self, dsn: str, *, pool_size: int = 0) -> None:
+        if pool_size < 0:
+            raise ValueError("database pool size cannot be negative")
         self.dsn = dsn
+        self._pool = (
+            ConnectionPool(
+                conninfo=dsn,
+                min_size=0,
+                max_size=pool_size,
+                timeout=3,
+                kwargs={"connect_timeout": 3},
+                check=ConnectionPool.check_connection,
+            )
+            if pool_size
+            else None
+        )
 
     def connect(self):
+        if self._pool is not None:
+            return self._pool.connection()
         return psycopg.connect(self.dsn, connect_timeout=3)
+
+    def close(self) -> None:
+        if self._pool is not None:
+            self._pool.close()
 
     def current(self) -> str:
         with self.connect() as connection:
@@ -681,9 +704,18 @@ class Database:
                     environment,
                     universe,
                     tuple(item.scout_id for item in SCOUTS),
+                    {item.scout_id: item.alpha_archetypes for item in SCOUTS},
                 )
                 if universe
                 else None
+            ),
+            "opportunityContinuity": load_latest_opportunity_continuity(
+                self, environment
+            ),
+            "researchOperations": load_research_operations(
+                self,
+                environment,
+                tuple(item.scout_id for item in SCOUTS),
             ),
         }
 
@@ -924,6 +956,15 @@ class Database:
             "payload",
         )
         return [dict(zip(keys, row, strict=True)) for row in rows]
+
+    def event_cursor(self, environment: str) -> int:
+        """Return the durable change cursor used to invalidate read projections."""
+        with self.connect() as connection:
+            return connection.execute(
+                """SELECT COALESCE(max(sequence), 0) FROM ops.event
+                WHERE environment = %s""",
+                (environment,),
+            ).fetchone()[0]
 
     def events_before(
         self, cursor: int, limit: int = 100, environment: str | None = None

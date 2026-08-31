@@ -1,9 +1,11 @@
 import {
   Activity,
   Bot,
+  CalendarClock,
   Database,
   FileSearch2,
   Focus,
+  Network,
   Radar,
   ShieldCheck,
   Waypoints,
@@ -24,6 +26,8 @@ export function SystemOverview({
 }) {
   const { domain, number, relative, t } = useI18n();
   const attention = runtime?.researchAttention;
+  const continuity = runtime?.opportunityContinuity;
+  const research = runtime?.researchOperations;
   const percent = (value?: string | null) => {
     const parsed = value === null || value === undefined ? NaN : Number(value);
     return Number.isFinite(parsed)
@@ -88,6 +92,142 @@ export function SystemOverview({
           {!status.sources.length && <p>{t("noSourcePosture")}</p>}
         </div>
       </div>
+      <div className="overview-wide research-operations">
+        <div className="overview-wide-head">
+          <span>
+            <Network /> {t("researchOperations")}
+          </span>
+          <StatusPill status={research?.posture ?? "waiting"} />
+        </div>
+        <p className="research-operations-intro">
+          {research
+            ? t("researchOperationsDetail")
+            : t("researchOperationsWaiting")}
+        </p>
+        {research ? (
+          <>
+            <div className="research-operations-metrics">
+              <div>
+                <small>{t("recentResearchRuns")}</small>
+                <strong>{number(research.windowRuns)}</strong>
+              </div>
+              <div>
+                <small>{t("completedRetrievals")}</small>
+                <strong>{number(research.completedToolCalls)}</strong>
+              </div>
+              <div>
+                <small>{t("independentEvidenceOrigins")}</small>
+                <strong>{number(research.independentEvidenceOrigins)}</strong>
+              </div>
+              <div>
+                <small>{t("crossCheckedRuns")}</small>
+                <strong>{number(research.crossCheckedRuns)}</strong>
+              </div>
+              <div>
+                <small>{t("retryRecoveredRuns")}</small>
+                <strong>{number(research.retryRecoveredRuns)}</strong>
+              </div>
+              <div>
+                <small>{t("contractRejectedRuns")}</small>
+                <strong>{number(research.contractRejectedRuns)}</strong>
+              </div>
+              <div>
+                <small>{t("followUpAssignedRuns")}</small>
+                <strong>{number(research.followUpAssignedRuns)}</strong>
+              </div>
+              <div>
+                <small>{t("followUpExecutedRuns")}</small>
+                <strong>{number(research.followUpExecutedRuns)}</strong>
+              </div>
+              <div>
+                <small>{t("followUpNoOpRuns")}</small>
+                <strong>{number(research.followUpNoOpRuns)}</strong>
+              </div>
+            </div>
+            <div className="research-mind-list">
+              {research.minds.map((mind) => (
+                <button
+                  key={mind.scoutId}
+                  type="button"
+                  onClick={() =>
+                    onSelect({
+                      kind: "event",
+                      id: `research-operations:${mind.scoutId}`,
+                      label: `${domain(mind.scoutId)} · ${domain(mind.posture)}`,
+                      summary: mind as unknown as Record<string, unknown>,
+                    })
+                  }
+                >
+                  <span className="research-mind-heading">
+                    <span>
+                      <strong>{domain(mind.scoutId)}</strong>
+                      <small>
+                        {mind.lastRunAt
+                          ? relative(mind.lastRunAt)
+                          : t("notRunYet")}
+                      </small>
+                    </span>
+                    <StatusPill status={mind.posture} />
+                  </span>
+                  <span className="research-mind-stats">
+                    <span>
+                      {number(mind.completedToolCalls)} {t("callsShort")}
+                    </span>
+                    <span>
+                      {number(mind.uniqueSourceDomains)} {t("domainsShort")}
+                    </span>
+                    <span>
+                      {number(mind.independentEvidenceOrigins)}{" "}
+                      {t("originsShort")}
+                    </span>
+                    <span>
+                      {number(mind.candidateRuns)} {t("candidatesShort")}
+                    </span>
+                    {mind.followUpAssignedRuns ? (
+                      <span>
+                        {number(mind.followUpExecutedRuns)}/
+                        {number(mind.followUpAssignedRuns)}{" "}
+                        {t("followUpsShort")}
+                      </span>
+                    ) : null}
+                  </span>
+                  <span className="evidence-role-list">
+                    {mind.evidenceRoles.length ? (
+                      mind.evidenceRoles.map((role) => (
+                        <small key={role}>{domain(role)}</small>
+                      ))
+                    ) : (
+                      <small>{t("evidenceRolesPending")}</small>
+                    )}
+                  </span>
+                  {mind.latestErrorCode ? (
+                    <small className="research-mind-error">
+                      {domain(mind.latestErrorCode)}
+                    </small>
+                  ) : null}
+                  {mind.retryRecoveredRuns ? (
+                    <small className="research-mind-recovered">
+                      {t("retryRecoveredMind", {
+                        count: number(mind.retryRecoveredRuns),
+                      })}
+                    </small>
+                  ) : null}
+                  {mind.sourceRoleCollisions ? (
+                    <small className="research-mind-warning">
+                      {t("sourceRoleReuse", {
+                        count: number(mind.sourceRoleCollisions),
+                      })}
+                    </small>
+                  ) : null}
+                </button>
+              ))}
+            </div>
+            <small className="research-operations-boundary">
+              {t("researchOperationsBoundary")}
+            </small>
+          </>
+        ) : null}
+      </div>
       <div className="overview-wide attention-portfolio">
         <div className="overview-wide-head">
           <span>
@@ -120,6 +260,24 @@ export function SystemOverview({
                 <strong>
                   {attention.effectiveBreadth ?? t("unavailable")}
                 </strong>
+              </div>
+              <div>
+                <small>{t("uniqueArchetypes")}</small>
+                <strong>{number(attention.uniqueArchetypes ?? 0)}</strong>
+              </div>
+              <div>
+                <small>{t("archetypeBreadth")}</small>
+                <strong>
+                  {attention.archetypeEffectiveBreadth ?? t("unavailable")}
+                </strong>
+              </div>
+              <div>
+                <small>{t("shortHorizon")}</small>
+                <strong>{number(attention.horizonMix?.short ?? 0)}</strong>
+              </div>
+              <div>
+                <small>{t("longHorizon")}</small>
+                <strong>{number(attention.horizonMix?.long ?? 0)}</strong>
               </div>
             </div>
             <div className="attention-seat-list">
@@ -161,12 +319,123 @@ export function SystemOverview({
                       <small>{domain(assignment.mode)}</small>
                     </span>
                     <p>{directive}</p>
+                    <span className="attention-targets">
+                      {assignment.targetArchetype ? (
+                        <small>{domain(assignment.targetArchetype)}</small>
+                      ) : null}
+                      {assignment.targetHorizonBucket ? (
+                        <small>
+                          {domain(assignment.targetHorizonBucket)} ·{" "}
+                          {t("horizon")}
+                        </small>
+                      ) : null}
+                    </span>
                   </button>
                 );
               })}
             </div>
             <small className="attention-boundary">
               {t("researchAttentionBoundary")}
+            </small>
+          </>
+        ) : null}
+      </div>
+      <div className="overview-wide continuity-portfolio">
+        <div className="overview-wide-head">
+          <span>
+            <CalendarClock /> {t("opportunityContinuity")}
+          </span>
+          <StatusPill status={continuity?.posture ?? "waiting"} />
+        </div>
+        <p className="attention-intro">
+          {continuity
+            ? t("opportunityContinuityDetail")
+            : t("opportunityContinuityWaiting")}
+        </p>
+        {continuity ? (
+          <>
+            <div className="continuity-metrics">
+              <div>
+                <small>{t("activeRegistry")}</small>
+                <strong>{number(continuity.registryActive)}</strong>
+              </div>
+              <div>
+                <small>{t("frozenForResearch")}</small>
+                <strong>{number(continuity.frozenActive)}</strong>
+              </div>
+              <div>
+                <small>{t("openQuestions")}</small>
+                <strong>{number(continuity.pendingQuestions)}</strong>
+              </div>
+              <div>
+                <small>{t("deferredResearch")}</small>
+                <strong>{number(continuity.deferredQuestions)}</strong>
+              </div>
+              <div>
+                <small>{t("expiringOpportunities")}</small>
+                <strong>{number(continuity.expiringActive)}</strong>
+              </div>
+              <div>
+                <small>{t("staleOpportunities")}</small>
+                <strong>{number(continuity.staleActive)}</strong>
+              </div>
+              <div>
+                <small>{t("oldestActiveAge")}</small>
+                <strong>
+                  {t("daysCount", {
+                    count: number(continuity.oldestActiveDays),
+                  })}
+                </strong>
+              </div>
+            </div>
+            <div className="continuity-detail">
+              <div>
+                <small>{t("earliestDecisionDeadline")}</small>
+                <strong>
+                  {continuity.earliestDecisionDeadlineAt
+                    ? relative(continuity.earliestDecisionDeadlineAt)
+                    : t("unavailable")}
+                </strong>
+                <p>{continuity.warning}</p>
+              </div>
+              <div>
+                <small>{t("nextResearchWindow")}</small>
+                <strong>
+                  {continuity.nextResearchDueAt
+                    ? relative(continuity.nextResearchDueAt)
+                    : t("noDeferredResearch")}
+                </strong>
+                <p>{t("researchCadenceDetail")}</p>
+              </div>
+              <div className="continuity-priorities">
+                <small>{t("priorityFollowUps")}</small>
+                {continuity.priorityOpportunityIds.length ? (
+                  continuity.priorityOpportunityIds.map((opportunityId) => (
+                    <button
+                      key={opportunityId}
+                      type="button"
+                      onClick={() =>
+                        onSelect({
+                          kind: "opportunity",
+                          id: opportunityId,
+                          label: opportunityId,
+                          summary: continuity as unknown as Record<
+                            string,
+                            unknown
+                          >,
+                        })
+                      }
+                    >
+                      {opportunityId}
+                    </button>
+                  ))
+                ) : (
+                  <span>{t("noPriorityFollowUps")}</span>
+                )}
+              </div>
+            </div>
+            <small className="attention-boundary">
+              {t("opportunityContinuityBoundary")}
             </small>
           </>
         ) : null}

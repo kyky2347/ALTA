@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
+from .research_validation import selection_adjusted_alpha_evidence
+
 
 @dataclass(frozen=True)
 class CalibrationObservation:
@@ -64,11 +66,14 @@ def _alpha_posture(
     minimum_sample: int,
     lower: Decimal | None,
     upper: Decimal | None,
+    selection_adjusted_lower: Decimal | None,
 ) -> str:
     if sample_size < minimum_sample:
         return "insufficient_sample"
-    if lower is not None and lower > 0:
+    if selection_adjusted_lower is not None and selection_adjusted_lower > 0:
         return "positive_signal_requires_external_validation"
+    if lower is not None and lower > 0:
+        return "positive_unadjusted_selection_risk"
     if upper is not None and upper < 0:
         return "negative_signal"
     return "inconclusive"
@@ -98,6 +103,7 @@ def summarize_alpha_evidence(
     observations: tuple[AlphaPerformanceObservation, ...],
     *,
     minimum_sample: int = 30,
+    research_trials: int | None = None,
 ) -> dict[str, object]:
     """Describe forward Shadow Alpha without promoting a small sample to proof."""
 
@@ -105,14 +111,36 @@ def summarize_alpha_evidence(
         raise ValueError("minimum_sample must be positive")
     realized = tuple(item.realized_alpha_bps for item in observations)
     sample_size = len(realized)
+    research_trials = sample_size if research_trials is None else research_trials
+    if research_trials < sample_size:
+        raise ValueError("research trials cannot be smaller than the Alpha sample")
     mean = _mean(realized)
     standard_deviation, standard_error, lower, upper = _confidence_interval(realized)
+    selection = selection_adjusted_alpha_evidence(
+        sample_size=sample_size,
+        mean_alpha_bps=mean,
+        standard_error_bps=standard_error,
+        research_trials=research_trials,
+    )
     posture = _alpha_posture(
         sample_size=sample_size,
         minimum_sample=minimum_sample,
         lower=lower,
         upper=upper,
+        selection_adjusted_lower=selection.adjusted_lower_alpha_bps,
     )
+    if sample_size < minimum_sample:
+        warning = "Alpha is unproven: the forward Shadow sample is below the minimum."
+    elif posture == "positive_unadjusted_selection_risk":
+        warning = (
+            "The unadjusted Alpha interval is positive, but it does not survive "
+            "the opportunity-search selection correction."
+        )
+    else:
+        warning = (
+            "The selection-adjusted confidence bound remains forward Shadow evidence; "
+            "regime dependence and non-normal returns still require external validation."
+        )
     return {
         "scope": "cost_adjusted_spy_relative_closed_shadow",
         "posture": posture,
@@ -124,6 +152,12 @@ def summarize_alpha_evidence(
         "standardErrorBps": _serialized(standard_error),
         "confidence95LowerBps": _serialized(lower),
         "confidence95UpperBps": _serialized(upper),
+        "researchTrials": selection.research_trials,
+        "selectionPolicyVersion": selection.version,
+        "selectionCriticalZ": _serialized(selection.critical_z),
+        "selectionAdjustedConfidence95LowerBps": _serialized(
+            selection.adjusted_lower_alpha_bps
+        ),
         "positiveAlphaRate": (
             str(Decimal(sum(value > 0 for value in realized)) / Decimal(sample_size))
             if sample_size
@@ -132,11 +166,11 @@ def summarize_alpha_evidence(
         "worstAlphaBps": _serialized(min(realized) if realized else None),
         "bestAlphaBps": _serialized(max(realized) if realized else None),
         "lowerBoundAboveZero": bool(lower is not None and lower > 0),
-        "warning": (
-            "Alpha is unproven: the forward Shadow sample is below the minimum."
-            if sample_size < minimum_sample
-            else "The confidence interval is descriptive only; selection dependence, regime exposure, and non-normal returns still require external validation."
+        "selectionAdjustedLowerBoundAboveZero": bool(
+            selection.adjusted_lower_alpha_bps is not None
+            and selection.adjusted_lower_alpha_bps > 0
         ),
+        "warning": warning,
     }
 
 

@@ -80,6 +80,16 @@ class AutonomousRunner:
                         runtime = self.runtime_factory(self.database, self.settings)
                     result = runtime.orchestrator.run(cycle_id, wake_at)
                 except Exception as error:
+                    if stop.is_set():
+                        self._notify(
+                            "stopping",
+                            cycle_id=cycle_id,
+                            cycle_completed_at=datetime.now(UTC).isoformat(),
+                            cycle_result="cancelled",
+                            failure_type=None,
+                            consecutive_failures=failures,
+                        )
+                        return 0
                     failures += 1
                     failure_recorded = True
                     try:
@@ -140,6 +150,19 @@ class AutonomousRunner:
                 failures = 0
                 completed_at = datetime.now(UTC)
                 cycle_result = getattr(result, "status", "completed")
+                if stop.is_set():
+                    # The cycle committed successfully before shutdown won the
+                    # race. Preserve that durable result and only stop future
+                    # work; cancellation is reserved for interrupted runs.
+                    self._notify(
+                        "stopping",
+                        cycle_id=cycle_id,
+                        cycle_completed_at=completed_at.isoformat(),
+                        cycle_result=cycle_result,
+                        failure_type=None,
+                        consecutive_failures=0,
+                    )
+                    return 0
                 if once:
                     self._notify(
                         "stopped",

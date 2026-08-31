@@ -227,11 +227,15 @@ async function handleInternetMcp(req, res, context) {
         code: "alta_draining",
       });
     bodyLease = await readJsonBody(req, context);
-    admitBoundedScoutToolCall(req, context, bodyLease.value);
+    const researchBudget = admitBoundedScoutToolCall(
+      req,
+      context,
+      bodyLease.value,
+    );
     const result = await handleMcpMessage(
       context.internetService,
       bodyLease.value,
-      { signal: controller.signal },
+      { signal: controller.signal, researchBudget },
     );
     if (result === null) {
       res.writeHead(202, { "Cache-Control": "no-store" });
@@ -255,10 +259,10 @@ async function handleInternetMcp(req, res, context) {
 }
 
 function admitBoundedScoutToolCall(req, context, message) {
-  if (message?.method !== "tools/call") return;
+  if (message?.method !== "tools/call") return null;
   const runId = req.headers["x-alta-run-id"];
   const rawLimit = req.headers["x-alta-max-tool-calls"];
-  if (runId === undefined && rawLimit === undefined) return;
+  if (runId === undefined && rawLimit === undefined) return null;
   if (
     typeof runId !== "string" ||
     !/^run_[a-f0-9]{32}$/.test(runId) ||
@@ -282,6 +286,7 @@ function admitBoundedScoutToolCall(req, context, message) {
     const oldest = context.scoutToolCalls.keys().next().value;
     context.scoutToolCalls.delete(oldest);
   }
+  return { limit, used: previous + 1, remaining: limit - previous - 1 };
 }
 
 function assertGatewayReady(context) {

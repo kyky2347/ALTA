@@ -37,6 +37,7 @@ def decision_grade_diligence() -> ResearchDiligence:
         posture="cross_checked",
         completed_tool_calls=4,
         active_research_calls=4,
+        cited_research_calls=4,
         non_news_research_calls=3,
         source_families=("primary_web", "market_data", "versioned_web"),
         independent_source_domains=(
@@ -44,9 +45,21 @@ def decision_grade_diligence() -> ResearchDiligence:
             "exchange.example",
             "regulator.example",
         ),
+        independent_evidence_origins=(
+            "a" * 64,
+            "b" * 64,
+            "c" * 64,
+        ),
         beneficiary_path_declared=True,
         counterevidence_declared=True,
         next_test_declared=True,
+        evidence_roles=(
+            "primary_fact",
+            "mechanism",
+            "market_context",
+            "counterevidence",
+        ),
+        counterevidence_source_distinct=True,
     )
 
 
@@ -489,6 +502,7 @@ def test_ranking_rewards_cross_checked_non_news_research() -> None:
                 posture="cross_checked",
                 completed_tool_calls=4,
                 active_research_calls=4,
+                cited_research_calls=4,
                 non_news_research_calls=3,
                 source_families=("primary_web", "market_data", "versioned_web"),
                 independent_source_domains=(
@@ -496,9 +510,21 @@ def test_ranking_rewards_cross_checked_non_news_research() -> None:
                     "exchange.example",
                     "regulator.example",
                 ),
+                independent_evidence_origins=(
+                    "a" * 64,
+                    "b" * 64,
+                    "c" * 64,
+                ),
                 beneficiary_path_declared=True,
                 counterevidence_declared=True,
                 next_test_declared=True,
+                evidence_roles=(
+                    "primary_fact",
+                    "mechanism",
+                    "market_context",
+                    "counterevidence",
+                ),
+                counterevidence_source_distinct=True,
             ),
         }
     )
@@ -513,7 +539,7 @@ def test_ranking_rewards_cross_checked_non_news_research() -> None:
                 non_news_research_calls=0,
                 source_families=("news_locator",),
                 independent_source_domains=("publisher.example",),
-                reason_codes=("non_news_research_absent",),
+                reason_codes=("non_news_research_depth_limited",),
             ),
         }
     )

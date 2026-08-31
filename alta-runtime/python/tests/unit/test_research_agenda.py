@@ -6,6 +6,7 @@ from alta_asterism.research_agenda import (
     build_open_research_questions,
     build_opportunity_drive,
     build_research_queue,
+    next_follow_up_at,
 )
 
 
@@ -223,3 +224,24 @@ def test_research_queue_prioritizes_decision_gaps_and_excludes_expired_work() ->
         "disconfirming",
         "urgent",
     )
+
+
+def test_follow_up_cadence_tightens_only_near_the_frozen_deadline() -> None:
+    attempted_at = datetime(2026, 8, 27, 12, tzinfo=UTC)
+
+    assert next_follow_up_at(
+        attempted_at=attempted_at,
+        deadline_at=attempted_at + timedelta(days=2),
+    ) == attempted_at + timedelta(hours=1)
+    assert next_follow_up_at(
+        attempted_at=attempted_at,
+        deadline_at=attempted_at + timedelta(days=10),
+    ) == attempted_at + timedelta(hours=6)
+    assert next_follow_up_at(
+        attempted_at=attempted_at,
+        deadline_at=attempted_at + timedelta(days=30),
+    ) == attempted_at + timedelta(days=1)
+    assert next_follow_up_at(
+        attempted_at=attempted_at,
+        deadline_at=attempted_at + timedelta(days=90),
+    ) == attempted_at + timedelta(days=3)

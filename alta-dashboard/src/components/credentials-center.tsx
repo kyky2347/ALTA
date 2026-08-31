@@ -1,7 +1,15 @@
-import { useMemo, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type FormEvent,
+} from "react";
 import {
   BrainCircuit,
   Check,
+  CircleAlert,
+  Clock3,
   Database,
   EyeOff,
   KeyRound,
@@ -10,7 +18,10 @@ import {
   Network,
   RefreshCw,
   Search,
+  ShieldAlert,
   ShieldCheck,
+  TimerReset,
+  WifiOff,
 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -25,7 +36,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useI18n } from "@/lib/i18n";
-import type { CredentialInventory, CredentialSlot } from "@/lib/types";
+import type {
+  CredentialInventory,
+  CredentialSlot,
+  CredentialVerificationStatus,
+} from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const categoryIcons = {
@@ -60,19 +75,38 @@ type Props = {
   error: string | null;
   runtimeActive: boolean;
   preview: boolean;
-  onRefresh: () => Promise<void>;
+  onVerify: (force?: boolean) => Promise<void>;
   onSave: (slot: string, secret: string) => Promise<void>;
 };
+
+const attentionStatuses = new Set<CredentialVerificationStatus>([
+  "auth_rejected",
+  "rate_limited",
+  "unavailable",
+]);
+
+function VerificationIcon({
+  status,
+}: {
+  status: CredentialVerificationStatus;
+}) {
+  if (status === "healthy" || status === "not_required") return <Check />;
+  if (status === "auth_rejected") return <ShieldAlert />;
+  if (status === "rate_limited") return <TimerReset />;
+  if (status === "unavailable") return <WifiOff />;
+  if (status === "unverified") return <Clock3 />;
+  return <KeyRound />;
+}
 
 export function CredentialsCenter({
   inventory,
   error,
   runtimeActive,
   preview,
-  onRefresh,
+  onVerify,
   onSave,
 }: Props) {
-  const { domain, systemMessage, t } = useI18n();
+  const { domain, relative, systemMessage, t } = useI18n();
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
   const [secret, setSecret] = useState("");
   const [saving, setSaving] = useState(false);
@@ -102,20 +136,37 @@ export function CredentialsCenter({
     setSavedSlot(null);
   }
 
-  async function refresh() {
-    setRefreshing(true);
-    setActionError(null);
-    try {
-      await onRefresh();
-    } catch (reason) {
-      setActionError(
-        systemMessage(reason instanceof Error ? reason.message : null) ??
-          t("credentialRefreshFailed"),
-      );
-    } finally {
-      setRefreshing(false);
-    }
-  }
+  const verify = useCallback(
+    async (force = false) => {
+      setRefreshing(true);
+      setActionError(null);
+      try {
+        await onVerify(force);
+      } catch (reason) {
+        setActionError(
+          systemMessage(reason instanceof Error ? reason.message : null) ??
+            t("credentialRefreshFailed"),
+        );
+      } finally {
+        setRefreshing(false);
+      }
+    },
+    [onVerify, systemMessage, t],
+  );
+
+  useEffect(() => {
+    if (preview || !inventory) return;
+    const expiresAt = Date.parse(inventory.verification.expiresAt ?? "");
+    const delay =
+      inventory.verification.checkedAt && Number.isFinite(expiresAt)
+        ? Math.max(0, expiresAt - Date.now())
+        : 0;
+    const timer = window.setTimeout(
+      () => void verify(false),
+      Math.min(delay, 2_147_483_647),
+    );
+    return () => window.clearTimeout(timer);
+  }, [inventory, preview, verify]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -139,23 +190,42 @@ export function CredentialsCenter({
 
   const mutationLocked = runtimeActive || preview || !selected?.editable;
   const configured = inventory?.configuredSlots.length ?? 0;
-  const operational =
-    inventory?.slots.filter((slot) => slot.operational ?? slot.configured)
-      .length ?? 0;
+  const verified =
+    inventory?.slots.filter((slot) =>
+      ["healthy", "not_required"].includes(slot.verification.status),
+    ).length ?? 0;
+  const attention =
+    inventory?.slots.filter((slot) =>
+      attentionStatuses.has(slot.verification.status),
+    ) ?? [];
 
-  function slotState(slot: CredentialSlot) {
-    if (slot.configured) return t("credentialStored");
-    if (slot.availableWithoutCredential) return t("availableWithoutKey");
-    if (slot.credentialRequirement === "optional")
-      return t("optionalEnhancement");
+  function verificationState(status: CredentialVerificationStatus) {
+    if (status === "healthy") return t("apiVerified");
+    if (status === "auth_rejected") return t("apiExpiredOrRejected");
+    if (status === "rate_limited") return t("apiRateLimited");
+    if (status === "unavailable") return t("apiUnavailable");
+    if (status === "not_required") return t("availableWithoutKey");
+    if (status === "unverified") return t("apiNotVerified");
     return t("credentialMissing");
   }
+
+  function slotState(slot: CredentialSlot) {
+    if (
+      slot.verification.status === "not_configured" &&
+      slot.credentialRequirement === "optional"
+    )
+      return t("optionalEnhancement");
+    return verificationState(slot.verification.status);
+  }
+
+  const selectedAttention = selected
+    ? attentionStatuses.has(selected.verification.status)
+    : false;
 
   return (
     <section className="credentials-shell">
       <header className="credentials-heading">
         <div>
-          <span className="eyebrow">{t("secureConfiguration")}</span>
           <h2>{t("providerCredentials")}</h2>
           <p>{t("credentialCenterDetail")}</p>
         </div>
@@ -165,24 +235,24 @@ export function CredentialsCenter({
             {t("configured")}
           </span>
           <span>
-            <strong>{inventory?.slots.length ?? 0}</strong>
-            {t("supported")}
+            <strong>{verified}</strong>
+            {t("verified")}
           </span>
           <span>
-            <strong>{operational}</strong>
-            {t("operational")}
+            <strong>{attention.length}</strong>
+            {t("needsAttention")}
           </span>
           <Button
             variant="outline"
             size="sm"
             disabled={refreshing || preview}
-            onClick={() => void refresh()}
+            onClick={() => void verify(true)}
           >
             <RefreshCw
               data-icon="inline-start"
               className={cn(refreshing && "is-spinning")}
             />
-            {t("refresh")}
+            {refreshing ? t("verifyingApis") : t("verifyApis")}
           </Button>
         </div>
       </header>
@@ -204,6 +274,28 @@ export function CredentialsCenter({
           </AlertDescription>
         </Alert>
       )}
+      {attention.length > 0 && (
+        <Alert variant="destructive" className="credential-lock-alert">
+          <CircleAlert />
+          <AlertTitle>{t("credentialHealthAttentionTitle")}</AlertTitle>
+          <AlertDescription>
+            {t("credentialHealthAttentionDetail", {
+              providers: attention.map((slot) => slot.label).join(", "),
+            })}
+          </AlertDescription>
+        </Alert>
+      )}
+      {inventory?.verification.stale &&
+        inventory.verification.checkedAt &&
+        attention.length === 0 && (
+          <Alert className="credential-lock-alert credential-stale-alert">
+            <Clock3 />
+            <AlertTitle>{t("credentialHealthStaleTitle")}</AlertTitle>
+            <AlertDescription>
+              {t("credentialHealthStaleDetail")}
+            </AlertDescription>
+          </Alert>
+        )}
 
       <div className="credentials-workspace">
         <div className="provider-directory">
@@ -232,15 +324,12 @@ export function CredentialsCenter({
                           <span
                             className={cn(
                               "provider-state",
-                              (slot.operational ?? slot.configured) &&
-                                "is-configured",
+                              `is-${slot.verification.status}`,
                             )}
                           >
-                            {(slot.operational ?? slot.configured) ? (
-                              <Check />
-                            ) : (
-                              <KeyRound />
-                            )}
+                            <VerificationIcon
+                              status={slot.verification.status}
+                            />
                           </span>
                           <span>
                             <strong>{slot.label}</strong>
@@ -295,20 +384,43 @@ export function CredentialsCenter({
                 </div>
                 <Badge
                   variant={
-                    (selected.operational ?? selected.configured)
-                      ? "default"
-                      : "outline"
+                    selectedAttention
+                      ? "destructive"
+                      : selected.verification.status === "healthy"
+                        ? "default"
+                        : "outline"
                   }
                 >
-                  {selected.configured
-                    ? t("configured")
-                    : selected.availableWithoutCredential
-                      ? t("availableNoKey")
-                      : selected.credentialRequirement === "optional"
-                        ? t("optional")
-                        : t("notConfigured")}
+                  {slotState(selected)}
                 </Badge>
               </header>
+
+              <div
+                className={cn(
+                  "credential-verification",
+                  `is-${selected.verification.status}`,
+                )}
+                role="status"
+              >
+                <VerificationIcon status={selected.verification.status} />
+                <div>
+                  <strong>{slotState(selected)}</strong>
+                  <p>
+                    {selected.verification.checkedAt
+                      ? t("credentialVerifiedAt", {
+                          time: relative(selected.verification.checkedAt),
+                        })
+                      : t("credentialNeverVerified")}
+                    {selected.verification.latencyMs !== null &&
+                      ` · ${selected.verification.latencyMs} ms`}
+                    {selected.verification.httpStatus !== null &&
+                      ` · HTTP ${selected.verification.httpStatus}`}
+                  </p>
+                </div>
+                {inventory?.verification.stale && (
+                  <Badge variant="outline">{t("stale")}</Badge>
+                )}
+              </div>
 
               <div className="credential-facts">
                 <div>

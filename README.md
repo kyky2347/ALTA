@@ -22,7 +22,7 @@ Shadow ledger.
 > credentials or real capital.
 
 **Current release:** `0.26.0` (`FORWARD_EVIDENCE_VERIFIED`) · **Normal mode:**
-Replay / Shadow · **Broker boundary:** explicit Tiger Paper acceptance only ·
+Replay / Shadow · **Broker boundary:** operator-authorized Tiger Paper only ·
 **Real-world Alpha:** unproven
 
 **Local development state:** institutional book intelligence and a replayable
@@ -35,12 +35,25 @@ question, and preserves at least two independent-discovery seats. A separate
 point-in-time Research Attention Portfolio detects when recent production
 Candidates are dominated by one entity, preserves one informed continuation
 seat, and redirects the remaining exploratory Minds toward independent entity
-coverage. Aggregate
+coverage. That portfolio now also measures Alpha-archetype, direction, and
+short/medium/long-horizon coverage, then gives every Mind a deliberately
+under-covered first-search lane without forcing an output. A durable Opportunity
+Continuity projection scans the active registry before the prompt window is
+bounded, preserves the highest-value open tests, and surfaces expiring or stale
+decision deadlines so a month-long thesis cannot be displaced by two newer
+ideas. Successful exact-question follow-ups now use a horizon-aware research
+cadence: unchanged questions cool down without moving the thesis deadline,
+changed Opportunity snapshots become immediately eligible, and failed attempts
+remain due. The compact follow-up contract also keeps its exact parent,
+question, and lineage inside the production prompt budget or fails explicitly;
+it cannot silently degrade into generic exploration. SEC primary-source research can resolve a listed ticker through the
+official SEC mapping before retrieving filings, reducing a common discovery
+dead end for ownership, insider, financing, and operational clues. Aggregate
 stress, Alpha-source, shared-catalyst, and cross-carrier underlying
 concentration constrain construction,
 and full-book rotation must improve both expected Alpha dollars and Alpha per
 unit of stress capital. The current local tree also centralizes every Agent
-context budget, gives malformed Scout output one fresh bounded attempt, backs
+context budget, gives malformed Scout output up to two fresh bounded retries, backs
 off degraded optional connectors, and refuses to spend private-assessment
 tokens on Opportunities that deterministic gates already reject. Research
 quality now credits only frozen Evidence or exact tool results that the
@@ -63,6 +76,16 @@ arrival-price shortfall and both commissions are compared with the frozen cost
 budget for each carrier. Only after 30 comparable closes may a positive cost
 surprise create a downside-only Alpha reserve; the reserve is rechecked before
 intent and can never increase expected edge or leverage.
+
+The local tree now also treats opportunity search itself as a source of model
+risk. Every audited Opportunity that reaches expression counts as a research
+trial. Forward Alpha reporting applies a family-wise selection correction to
+the confidence floor, and mature but inconclusive evidence remains at the 50%
+probation budget instead of being promoted merely because its mean is not
+negative. The console shows both the ordinary interval and the stricter
+selection-adjusted floor. Portfolio observability now aggregates the tightest
+underlying, Alpha-source, catalyst, and systematic-exposure cluster rather than
+showing ticker concentration alone.
 
 [Quick start](#quick-start) · [Architecture](docs/architecture/overview.md) ·
 [Operations](docs/operations/autonomous-shadow.md) ·
@@ -114,19 +137,24 @@ trade structure cannot rescue weak evidence.
 
 [![Synthetic ALTA operator console showing the live opportunity and Agent hand-off flow](docs/assets/alta-operator-console.png)](docs/assets/alta-operator-console.png)
 
-_Synthetic operator preview. It demonstrates the observable workflow and uses
-no brokerage account, real capital, private credentials, or performance data._
+_Current-build synthetic operator preview. It shows the opportunity pipeline,
+durable Agent hand-offs, committee state, audited expression, and replay ribbon
+without a brokerage account, real capital, private credentials, or performance
+data._
 
 [![Synthetic ALTA forward-evidence console showing calibration and lifecycle diagnostics](docs/assets/alta-forward-evidence.png)](docs/assets/alta-forward-evidence.png)
 
-_Forward evidence is kept separate from brokerage. The console labels sample
-maturity, uncertainty, forecast error, capital posture, and observed lifecycle
-quality without presenting Shadow results as proven Alpha._
+_Current-build synthetic forward-evidence view. It keeps brokerage separate
+while showing sample maturity, selection-adjusted uncertainty, forecast error,
+portfolio concentration, execution quality, and capital posture without
+presenting Shadow results as proven Alpha._
 
-[![Synthetic ALTA credential center showing write-only provider activation](docs/assets/alta-credential-center.png)](docs/assets/alta-credential-center.png)
+[![Synthetic ALTA credential center showing write-only activation and sanitized API health](docs/assets/alta-credential-center.png)](docs/assets/alta-credential-center.png)
 
-_Synthetic credential-center preview. It contains no real provider state,
-fingerprints, tokens, account identifiers, or brokerage data._
+_Current-build synthetic credential-center preview. It demonstrates verified,
+rate-limited, and authentication-rejected states without real provider state,
+fingerprints, tokens, account identifiers, or brokerage data. All three images
+are generated from the control-disabled `?preview=1` surface._
 
 ## How ALTA works
 
@@ -141,9 +169,11 @@ flowchart TB
     registry["Opportunity Foundry and registry<br/>identity · dedup · refresh · open questions"]
     director["Deterministic Research Director<br/>decision gap · urgency · unique assignment"]
     attention["Research Attention Portfolio<br/>one continuation · broader independent coverage"]
+    continuity["Opportunity Continuity<br/>global registry · fixed deadlines · bounded wake"]
     sources --> screen -. "non-Evidence question" .-> minds --> thesis --> registry
     registry --> director -. "exact non-Evidence follow-up" .-> minds
     registry --> attention -. "non-Evidence exploration seats" .-> minds
+    registry --> continuity -. "deadline-prioritized open tests" .-> director
     mandate -. "non-Evidence context" .-> minds
   end
 
@@ -178,7 +208,7 @@ flowchart TB
   harness -.-> assess
   harness -.-> implement
   harness -.-> audit
-  ledger -. "explicit acceptance only" .-> paper["Isolated Tiger Paper mirror<br/>one share · DAY limit · forced flat"]
+  ledger -. "operator-authorized Paper only" .-> paper["Isolated Tiger Paper mirror<br/>one share · DAY limit · regular hours"]
 ```
 
 Only structured artifacts cross Agent hand-offs. Private Assessors do not see
@@ -201,7 +231,8 @@ follow-up work is rejected; and the score can never enter ranking or capital.
 | Causal-policy Mind      | Trace official policy, macro, input-cost, and supply-chain transmission                                                                       | Must map issuer-level exposure and timing                             |
 | Expectation-gap Mind    | Find measurable gaps between priced expectations and emerging fundamentals                                                                    | Must seek counterevidence and an observable resolution path           |
 | Research Director       | Prioritize exact unresolved questions, allocate unique follow-ups, and protect independent exploration                                        | Deterministic non-Evidence process control; cannot judge or trade     |
-| Research attention      | Detect entity-level research crowding, preserve one continuation seat, and expand independent coverage                                        | Point-in-time process allocation; cannot create Evidence or edge      |
+| Research attention      | Detect entity, Alpha-archetype, direction, and horizon crowding; preserve one continuation seat; assign under-covered first-search lanes      | Point-in-time process allocation; targets are not quotas or Evidence  |
+| Opportunity continuity  | Scan the global active registry, retain fixed thesis deadlines, and protect valuable older follow-ups before bounding each Agent prompt       | Durable process memory; cannot validate a thesis or authorize capital |
 | Two private Assessors   | Underwrite independent scenario distributions, base rates, variants, and first rejections                                                     | Locked views; no instrument selection                                 |
 | Moderator and ranker    | Reconcile disagreements, preserve uncertainty, and admit only decision-grade edge                                                             | Moderator is an Agent; rank mechanics are deterministic               |
 | Implementation PM       | Compare direct stock, ETF/proxy, option, and `Wait`                                                                                           | Proposes a bounded slate; cannot submit orders                        |
@@ -217,18 +248,18 @@ remain external-provider dependencies, not repository guarantees.
 
 ## What is implemented
 
-| Area          | Current capability                                                                                                                                                                                                                                                                                                                  |
-| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Discovery     | Four concurrent Trader Minds, autonomous tool calls, a completed-bar anomaly funnel, an urgency-aware Research Director with unique follow-up assignments and two protected exploration seats, a point-in-time Research Attention Portfolio, route rotation, a frozen book-aware mandate, no-op support, and bounded process memory |
-| Evidence      | Raw-first point-in-time records, stable identity, content deduplication, immutable thesis pillars, cited-source research quality, provenance, and replay                                                                                                                                                                            |
-| Deliberation  | Private heterogeneous assessment, scenario odds, reference-class base rates, priced-in/variant separation, bounded moderation, and conservative admission                                                                                                                                                                           |
-| Expression    | Up to three Stock / ETF / Option / Wait hypotheses, real quote or option-chain gates, comparable Alpha/stress/execution economics, and independent audit                                                                                                                                                                            |
-| Portfolio     | Cost deduction, Alpha decay, mature forecast- and execution-cost reserves, single-trade and aggregate stress limits, fail-closed legacy risk, liquidity, gross/factor/Alpha-source/shared-catalyst buckets, cross-carrier underlying aggregation, stress-efficient capital competition, and pre-intent revalidation                 |
-| Learning      | Cost-adjusted SPY-relative Shadow measurement, carrier-specific execution TCA, observed MFE/MAE/drawdown/exit capture, frozen cohorts, configuration drift, missingness, maturity-gated performance attribution, and comparable forecast calibration                                                                                |
-| Incentives    | Symmetric, revocable research-budget bonus based only on a conservative forward Alpha bound; no rank, risk, capital, or broker influence                                                                                                                                                                                            |
-| Reliability   | Single-owner scheduler, two watchdogs, canonical context budgets, one auditable fresh Scout retry, connector backoff, same-frozen-wake recovery, idempotent transitions, and clean shutdown                                                                                                                                         |
-| Observability | Authenticated local operator console plus loopback JSON/SSE for runtime, research attention, Agent runs, opportunities, debates, expressions, positions, cohorts, and Alpha summaries                                                                                                                                               |
-| Capital       | Disabled by default; isolated CLI-only Tiger Paper acceptance with exact-account binding, one-share limits, and final-flat verification                                                                                                                                                                                             |
+| Area          | Current capability                                                                                                                                                                                                                                                                                                                                                                |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Discovery     | Four concurrent Trader Minds, adaptive autonomous tool calls, independent-source batch inspection, a completed-bar anomaly funnel, an urgency-aware Research Director with unique follow-up assignments and two protected exploration seats, a point-in-time Research Attention Portfolio, route rotation, a frozen book-aware mandate, no-op support, and bounded process memory |
+| Evidence      | Raw-first point-in-time records, stable identity, content deduplication, immutable thesis pillars, four-role source binding (changed fact, mechanism, market context, and counterevidence), cited-source research quality, provenance, and replay                                                                                                                                 |
+| Deliberation  | Private heterogeneous assessment, scenario odds, reference-class base rates, priced-in/variant separation, bounded moderation, and conservative admission                                                                                                                                                                                                                         |
+| Expression    | Up to three Stock / ETF / Option / Wait hypotheses, real quote or option-chain gates, comparable Alpha/stress/execution economics, and independent audit                                                                                                                                                                                                                          |
+| Portfolio     | Cost deduction, Alpha decay, mature forecast- and execution-cost reserves, single-trade and aggregate stress limits, fail-closed legacy risk, liquidity, gross/factor/Alpha-source/shared-catalyst buckets, cross-carrier underlying aggregation, stress-efficient capital competition, and pre-intent revalidation                                                               |
+| Learning      | Cost-adjusted SPY-relative Shadow measurement, carrier-specific execution TCA, observed MFE/MAE/drawdown/exit capture, frozen cohorts, configuration drift, missingness, maturity-gated performance attribution, and comparable forecast calibration                                                                                                                              |
+| Incentives    | Symmetric, revocable research-budget bonus based only on a conservative forward Alpha bound; no rank, risk, capital, or broker influence                                                                                                                                                                                                                                          |
+| Reliability   | Single-owner scheduler, two watchdogs, canonical context budgets, contract-aware fresh Scout retries with append-only failure evidence and renewed durable deadlines, connector backoff, same-frozen-wake recovery, idempotent transitions, and clean shutdown                                                                                                                    |
+| Observability | Authenticated local operator console plus loopback JSON/SSE for runtime, research operations, evidence-role coverage, research attention, Agent runs, opportunities, debates, expressions, positions, cohorts, and Alpha summaries                                                                                                                                                |
+| Capital       | Disabled by default; authenticated operator authorization, sanitized assets/positions/orders, exact-account and configuration binding, and isolated one-share Tiger Paper execution; no live-account path or browser order entry                                                                                                                                                  |
 
 ### Where the research edge is intended to come from
 
@@ -247,6 +278,50 @@ social positioning. The system is designed to look for:
 
 These are research hypotheses. ALTA does not claim that the architecture has
 produced persistent out-of-sample Alpha.
+
+Within each bounded turn, a Mind locates one differentiated anomaly, uses one
+batch call to inspect several independent primary pages, validates the causal
+mechanism and market context, and reserves the final retrieval for the strongest
+rival explanation. The gateway reports the exact remaining call budget after
+each retrieval. Deep research accepts issuer/regulator domain, recency, and
+language scopes; multiple allowed domains use OR semantics, and deterministic
+relevance/authority ranking fetches primary records ahead of generic search
+noise. Sources with neither a query-term match nor an explicit allowed-domain
+match are discarded before page retrieval. When search providers are down, an
+explicit issuer or regulator allow-list still retains a bounded direct-domain
+route; that route remains a locator, not Evidence. Returned hosts are revalidated locally even when an upstream engine
+ignores its scope. Saved evidence is allocated across calls before any early broad
+search can consume the evidence window. A production Candidate is considered
+cross-checked only when exact retrieved references cover the changed fact,
+mechanism, price or expectations context, and distinct counterevidence. That
+posture now requires at least two cited non-news calls and three independently
+frozen source records across three domains; repeated URLs or one retrieved
+record reused under several evidence roles do not manufacture corroboration.
+Batch research divides its bounded evidence window across fetched pages, and
+the durable ledger freezes the source-specific excerpt rather than repeating a
+call-wide prefix for every URL. The operator console reports these saved
+operations and failures without exposing queries, credentials, source text,
+hidden prompts, or private reasoning.
+
+Malformed structured output does not silently discard an otherwise useful
+research turn. Each of at most two bounded retries receives only the failing
+field paths and stable error codes—never the prior answer or hidden reasoning—
+and reuses the same frozen wake, Run identity, Evidence boundary, and tool
+budget. The
+authenticated Research Operations view separates recovered retries from final
+contract rejections and deadline failures, and separately counts follow-ups
+assigned, executed with preserved lineage, and completed as honest no-ops. An expectation-gap Candidate whose
+frozen posture is unavailable must additionally bind a finance record retrieved
+in that same turn as exact market-context Evidence; otherwise it remains
+`no_op`.
+
+When a Shadow position eventually closes, the entry-frozen research posture
+and quality score travel with its Candidate contributors. Maturity-gated,
+cost-adjusted benchmark Alpha is therefore attributed not only to the Mind,
+archetype, research route, and explore/follow-up mode, but also to the evidence
+process that produced the idea. This does not prove Alpha or loosen a gate; it
+lets future Minds learn whether deeper corroboration actually survives forward
+measurement instead of rewarding persuasive prose or Candidate volume.
 
 When Massive discovery is explicitly enabled, ALTA reuses the bounded daily-bar
 ingestion to screen completed sessions for unusual relative return, price-volume
@@ -364,9 +439,11 @@ one controlled Shadow cycle. The host service is then managed with:
 ./alta env down
 ```
 
-The normal unattended service remains Shadow-only. The optional Tiger path is a
-separate, explicitly invoked engineering acceptance and is never enabled by the
-24×7 scheduler.
+The normal unattended service starts Shadow-only. An operator may explicitly
+authorize the isolated Tiger **Paper** mirror from the local console while the
+runtime is stopped. Authorization is durable, bound to one exact configuration
+and 17-digit Paper account, and accepted only after a fresh broker preflight
+proves an empty account with no open orders. There is no live-account route.
 
 ## Local operator console
 
@@ -408,14 +485,31 @@ Replacements are allowed only while the research runtime is fully stopped,
 preventing one cycle from mixing provider state. OpenAI continues to use the
 official Codex authentication flow rather than an API-key field.
 
+Opening **Credentials** also performs a bounded, cached availability check for
+configured providers; **Verify APIs** repeats it on demand. A 401 or 403 is
+reported as “expired or rejected,” a 429 remains a distinct rate-limit state,
+and timeouts, network failures, and provider 5xx responses are shown as
+temporary unavailability. Checks use fixed read-only endpoints, a per-provider
+deadline, and a 15-minute owner-only cache. Response bodies, request headers,
+credential-bearing URLs, raw errors, and tokens are neither persisted nor sent
+to the browser. The label is deliberately an access diagnosis, not a claim that
+the provider exposes a formal token-expiration timestamp.
+
 On a fresh clone, **Start ALTA** prepares the isolated environment and installs
 the user-level research service before starting it; subsequent starts are
 idempotent and wait for readiness. **Stop safely** stops the service,
 PostgreSQL, and Redis while leaving the foreground console available. The
-control plane remains Shadow research only. It may detect safe metadata for an
-owner-only external Tiger Paper configuration, but it never accepts broker
-private keys in the browser; the capital-disabled runtime does not reach Tiger,
-submit an order, or expose an order API. An optional separately
+**Capital desk** exposes a real backend authorization switch plus sanitized
+Tiger Paper assets, positions, recent orders, and an authorization audit. It
+never accepts broker private keys in the browser and never returns account
+numbers, credential paths, raw order IDs, or secrets. Enabling is allowed only
+while the runtime is fully stopped and performs a fresh Paper/account/empty-book
+preflight before authorization is committed. A configuration change invalidates
+the authorization automatically. Disabling commits revocation first and then
+safely stops a running service and its dependencies. When authorized, the next
+service start may mirror only already-approved stock expressions into the
+isolated one-share, DAY-limit, regular-hours Paper executor; Agents never receive
+broker credentials or an order tool. An optional separately
 managed console service remains available through `./alta dashboard
 install|open|status|logs|stop|uninstall`. See the
 [operator-console guide](docs/operations/operator-console.md).
@@ -433,6 +527,15 @@ console contract fails closed with a specific rebuild instruction instead of
 letting a stale frontend issue ambiguous controls. Docker lifecycle commands,
 the migration boundary, upstream reads, and browser requests all have bounded
 deadlines.
+The foreground hot path is deliberately lightweight: current state, runtime
+detail, and cursor events are fetched concurrently; hidden tabs downshift their
+poll cadence; unchanged durable cursors and runtime payloads do not trigger
+React updates. Heavy views, the record inspector, and global search load on
+demand, while pointer/focus intent prefetches the next view. The Python read
+service uses HTTP/1.1 connection reuse, a bounded PostgreSQL pool, indexed
+recent-history projections, and stampede-safe caches whose status projection is
+invalidated by the append-only event cursor. The local static server keeps built
+assets in memory and supports immutable ETag revalidation.
 The autonomous runtime remains independent of the dashboard and recovers through
 the host service manager, Python supervisor, PostgreSQL durable volume, Redis
 append-only state, database ownership lock, and frozen-cycle replay boundaries.
@@ -466,24 +569,25 @@ an order API.
 
 The current local working tree passes:
 
-| Gate                      |                                                                           Result |
-| ------------------------- | -------------------------------------------------------------------------------: |
-| Node gateway / harness    |                                                                        168 tests |
-| Opportunity OS            |                                                                        284 tests |
-| Isolated capital package  |                                                                         25 tests |
-| Deterministic lifecycle   |       3 Candidates → 3 Opportunities → 1 audited Shadow position → observed exit |
-| Replay                    |               `16be618841b4ced276fea1c3297bd0a934093b995bce50bfadad0b74e9f9816c` |
-| Accelerated soak          |                                    14 cycles, zero failures, zero manual repairs |
-| Foreground service        |                                 `live` and `ready`, capital disabled, clean stop |
-| Research Director deploy  |                    2 unique follow-ups + 2 explore; 4/4 Runs succeeded; idle end |
-| Research-attention deploy |         7 prior Candidates; 85.7% top entity; 1 continuation + 3 expansion seats |
-| Operator resilience       |  Offline degradation/reconnect, UI start/stop, and saved-snapshot state verified |
-| Supervised wall-clock run |         26 completed idle cycles; 3 Opportunities; 0 ranks, positions, or orders |
-| Sensitive-file check      |       No credential files or credential-like values found in first-party changes |
-| Forecast calibration      | 30-sample maturity gate, downside-only reserve, size cap, and pre-intent recheck |
-| Lifecycle diagnostics     |         PIT executable path, MFE/MAE/drawdown/capture; descriptive and read-only |
-| Cross-carrier risk        |          Stock/ETF/option underlying aggregation, sizing cap, and intent recheck |
-| Execution-cost governance |     PIT round-trip TCA, 30-sample reserve, carrier isolation, and intent recheck |
+| Gate                       |                                                                                  Result |
+| -------------------------- | --------------------------------------------------------------------------------------: |
+| Node gateway / harness     |                                                                               183 tests |
+| Opportunity OS             |                                                                               313 tests |
+| Isolated capital package   |                                                                                27 tests |
+| Deterministic lifecycle    |              3 Candidates → 3 Opportunities → 1 audited Shadow position → observed exit |
+| Replay                     |                      `16be618841b4ced276fea1c3297bd0a934093b995bce50bfadad0b74e9f9816c` |
+| Accelerated soak           |                                           14 cycles, zero failures, zero manual repairs |
+| Foreground service         |                                        `live` and `ready`, capital disabled, clean stop |
+| Research Director deploy   |                           2 unique follow-ups + 2 explore; 4/4 Runs succeeded; idle end |
+| Research-attention deploy  |                7 prior Candidates; 85.7% top entity; 1 continuation + 3 expansion seats |
+| Operator resilience        |         Offline degradation/reconnect, UI start/stop, and saved-snapshot state verified |
+| Supervised wall-clock run  |                26 completed idle cycles; 3 Opportunities; 0 ranks, positions, or orders |
+| Sensitive-file check       |              No credential files or credential-like values found in first-party changes |
+| Forecast calibration       |        30-sample maturity gate, downside-only reserve, size cap, and pre-intent recheck |
+| Lifecycle diagnostics      |                PIT executable path, MFE/MAE/drawdown/capture; descriptive and read-only |
+| Cross-carrier risk         |                 Stock/ETF/option underlying aggregation, sizing cap, and intent recheck |
+| Execution-cost governance  |            PIT round-trip TCA, 30-sample reserve, carrier isolation, and intent recheck |
+| Research-selection control | Family-wise Alpha floor across audited trials; inconclusive maturity stays on probation |
 
 The Research Director cold start exposed and fixed two real context-budget
 defects: a global queue could exceed the 16 KiB frozen-wake limit, and a
@@ -518,6 +622,37 @@ verified closed. Capital stayed disabled and no broker order was attempted.
 This is evidence that the coordination and refusal paths work, not evidence of
 Alpha.
 
+The latest 2026-08-30 EDT deployment then exercised `alpha-trader-v21` against
+real public research routes. The first cycle exposed a provenance overflow when
+one tool payload contained more than ten URLs; the second proved that fix but
+showed two otherwise complete Minds crossing the old 64,000 new-token bound.
+After bounding and deduplicating locators inside each payload and raising the
+finite production envelope to 88,000, the final cycle completed all four Trader
+Minds: 18 of 19 recorded tool calls completed, one public-search failure was
+isolated, three Minds completed on their first attempt, and one recovered from
+a bounded schema correction. Every Mind returned an honest `no_op`; there were
+zero Candidates, Opportunities, expressions, Shadow positions, or orders.
+Capital remained disabled, both loopback services stopped cleanly, and the
+browser and Agent process tree exited. This verifies active retrieval,
+contract recovery, and refusal behavior—not Alpha or market outperformance.
+
+The 2026-08-31 EDT bounded deployment exercised the production follow-up fix
+against the existing Shadow registry. Two different exact questions and two
+independent exploration seats were frozen across four Scouts; every output
+preserved its assigned mode. All four Runs succeeded after 20 bounded research
+calls, with one source failure isolated. The two follow-ups closed as honest
+`no_op` results because the retrieved records did not complete their decision
+tests; the exploratory Minds also declined to promote incomplete signals.
+Consequently the cycle created zero Candidates, Opportunities, assessments,
+ranks, expressions, Shadow positions, or orders. Research Operations v4 exposed
+2 assigned / 2 executed / 2 no-op follow-ups, while Opportunity Continuity v2
+showed one prior unchanged test in cooldown and nine currently due tests. The
+bilingual console was verified at 390 px and desktop width, then used to stop
+the runtime, PostgreSQL, and Redis safely; the dashboard, browser, Agent tree,
+and loopback listeners were subsequently verified closed. Capital remained
+disabled. This proves scheduling lineage, real retrieval, refusal, observability,
+and shutdown behavior—not Alpha.
+
 The soak advances simulated event time; it is not 24 hours of live wall-clock
 model operation. Engineering verification proves paths and refusal behavior,
 not strategy profitability.
@@ -531,9 +666,11 @@ not strategy profitability.
 - A Shadow fill requires a forward quote observed after intent; historical
   prices are not backfilled as invented fills.
 - Research Agents receive neither broker credentials nor an order tool.
-- Tiger mutation is disabled by default and confined to an isolated Paper-only
-  package with exact-account binding, one-share DAY limits, and final-flat
-  reconciliation.
+- Tiger mutation is disabled by default and confined to an operator-authorized,
+  isolated Paper-only package with exact-account/configuration binding,
+  one-share DAY limits, regular-hours enforcement, idempotent reconciliation,
+  and fail-closed startup. The browser exposes no manual order entry and no
+  live-account route exists.
 - Positive small samples never create leverage. Negative evidence can reduce
   later synthetic Shadow capital.
 - Interrupted cycles rebuild from the original frozen wake rather than silently

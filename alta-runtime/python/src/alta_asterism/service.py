@@ -21,12 +21,14 @@ from .contracts import Environment, Settings
 from .database import Database, event_json
 from .forward_evaluation import ForwardEvaluationReader
 from .implementation import PortfolioRiskPolicy
+from .projection_cache import ProjectionCache
 from .research_incentive import (
     MAX_REWARD_TOKENS,
     MAX_REWARD_TOOL_CALLS,
     RESEARCH_INCENTIVE_MODE,
 )
 from .scouts import SCOUT_PROMPT_VERSION, SCOUT_TOOL_CATALOG_VERSION
+from .scout_repository import ScoutRepository
 from .trader_mind import (
     CORE_ACTIVE_RESEARCH_TOOLS,
     PRODUCTION_ACTIVE_RESEARCH_REQUIRED,
@@ -77,6 +79,12 @@ def _handler(
         adv_participation_bps=settings.shadow_adv_participation_bps,
         min_net_alpha_bps=settings.shadow_min_net_alpha_bps,
     )
+    # The event cursor is the durable invalidation signal. This keeps idle reads
+    # cheap without hiding newly committed research behind a time-only TTL.
+    mvp_projection: ProjectionCache[dict[str, object]] = ProjectionCache(
+        300.0, max_entries=32
+    )
+    runtime_projection: ProjectionCache[dict[str, object]] = ProjectionCache(10.0)
 
     def runtime_snapshot() -> dict[str, object]:
         with runtime_state_lock:
@@ -85,6 +93,13 @@ def _handler(
     class Handler(BaseHTTPRequestHandler):
         server_version = "opportunityd"
         sys_version = ""
+        protocol_version = "HTTP/1.1"
+
+        def setup(self) -> None:
+            super().setup()
+            # Persistent loopback clients may reuse a connection, but an
+            # abandoned socket must not retain a server thread indefinitely.
+            self.connection.settimeout(30)
 
         def log_message(self, _format, *_args) -> None:
             return
@@ -171,26 +186,40 @@ def _handler(
                     },
                 )
             if request.path == "/api/v1/mvp/status":
-                status = database.mvp_status(settings.environment.value, limit)
+                event_cursor = database.event_cursor(settings.environment.value)
+                cached = mvp_projection.get(
+                    (limit, event_cursor),
+                    lambda: database.mvp_status(settings.environment.value, limit),
+                )
+                status = cached.value
                 return self.json_response(
                     200,
                     {
                         "data": status,
-                        "meta": {**meta, "nextCursor": status["eventCursor"]},
+                        "meta": {
+                            **meta,
+                            "nextCursor": status["eventCursor"],
+                            "freshnessMs": cached.age_ms,
+                            "cacheHit": cached.hit,
+                        },
                         "warnings": [],
                     },
                 )
             if request.path == "/api/v1/system/runtime":
                 state = runtime_snapshot()
+                cached = runtime_projection.get(
+                    "runtime",
+                    lambda: database.runtime_detail(
+                        settings.environment.value,
+                        portfolio_policy,
+                        settings.universe,
+                    ),
+                )
                 return self.json_response(
                     200,
                     {
                         "data": {
-                            **database.runtime_detail(
-                                settings.environment.value,
-                                portfolio_policy,
-                                settings.universe,
-                            ),
+                            **cached.value,
                             "config": {
                                 "autonomousEnabled": settings.autonomous_enabled,
                                 "autonomousIntervalSeconds": (
@@ -311,7 +340,11 @@ def _handler(
                                 **state,
                             },
                         },
-                        "meta": meta,
+                        "meta": {
+                            **meta,
+                            "freshnessMs": cached.age_ms,
+                            "cacheHit": cached.hit,
+                        },
                         "warnings": [],
                     },
                 )
@@ -455,7 +488,7 @@ def serve(settings: Settings, host: str, port: int) -> int:
         raise ValueError(
             "autonomous opportunityd requires MASSIVE_API_KEY when Massive is enabled"
         )
-    database = Database(settings.database_dsn)
+    database = Database(settings.database_dsn, pool_size=8)
     if settings.autonomous_enabled and not database.ready():
         raise ValueError(
             "autonomous opportunityd requires the latest database migration"
@@ -536,7 +569,16 @@ def serve(settings: Settings, host: str, port: int) -> int:
         autonomous_stop.set()
         with runtime_state_lock:
             runtime_state["autonomousStatus"] = "stopping"
-        threading.Thread(target=server.shutdown, daemon=True).start()
+            cycle_id = runtime_state.get("currentCycleId")
+
+        def cancel_and_shutdown() -> None:
+            try:
+                if isinstance(cycle_id, str) and cycle_id:
+                    ScoutRepository(database).cancel_cycle(cycle_id)
+            finally:
+                server.shutdown()
+
+        threading.Thread(target=cancel_and_shutdown, daemon=True).start()
 
     previous = {
         item: signal.signal(item, stop) for item in (signal.SIGINT, signal.SIGTERM)
@@ -553,6 +595,7 @@ def serve(settings: Settings, host: str, port: int) -> int:
                     runtime_state["autonomousStatus"] = "failed"
                     runtime_state["autonomousFailureType"] = "AutonomousShutdownTimeout"
         server.server_close()
+        database.close()
         for item, handler in previous.items():
             signal.signal(item, handler)
     return exit_code

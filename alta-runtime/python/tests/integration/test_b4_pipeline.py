@@ -36,6 +36,7 @@ from alta_asterism.opportunity_registry import OpportunityRegistry
 from alta_asterism.ranking import build_ranking_book
 from alta_asterism.ranking_store import RankingRepository
 from alta_asterism.research_diligence import ResearchDiligence
+from alta_asterism.scouts import SCOUTS, RunBudget, fit_frozen_input_for_scout
 from alta_asterism.underwriting import (
     DecisionIntelligence,
     ScenarioCase,
@@ -318,6 +319,13 @@ def test_upgrade_from_populated_b3_backfills_b4_contracts(
 
     assert database.upgrade() == LATEST_REVISION
     with database.connect() as connection:
+        performance_indexes = {
+            row[0]
+            for row in connection.execute(
+                """SELECT indexname FROM pg_indexes
+                WHERE indexname LIKE 'b15_%%'"""
+            ).fetchall()
+        }
         opportunity = connection.execute(
             """SELECT member_candidate_ids, foundry_state, merge_revision,
             expectation_posture, investability, completeness
@@ -341,6 +349,21 @@ def test_upgrade_from_populated_b3_backfills_b4_contracts(
     )
     assert assessment == ("private", 0.5, "wait", True)
     assert rank == ("pre-b4-v1", 5, 20, "ranked")
+    assert performance_indexes == {
+        "b15_event_environment_sequence",
+        "b15_event_pipeline_sequence",
+        "b15_event_source_posture",
+        "b15_event_committee_sequence",
+        "b15_event_aggregate_sequence",
+        "b15_run_recent",
+        "b15_run_role_recent",
+        "b15_candidate_recent",
+        "b15_opportunity_recent",
+        "b15_rank_recent",
+        "b15_expression_recent",
+        "b15_shadow_position_recent",
+        "b15_assessment_recent",
+    }
     assert database.downgrade() == "base"
     assert database.upgrade() == LATEST_REVISION
 
@@ -529,6 +552,7 @@ def test_b4_foundry_private_discussion_and_single_book_pipeline(
         "research_source_breadth",
         "research_route_diversity",
         "research_non_news_depth",
+        "research_origin_independence",
     }
     assert forbidden_counts == (0, 0)
 
@@ -714,6 +738,103 @@ def test_cross_cycle_registry_suppresses_same_content_and_refreshes_new_evidence
         scoped_drive = memory.opportunity_drive.for_scout(assignment.scout_id)
         assert scoped_drive.assigned_mode == "follow_up"
         assert scoped_drive.assigned_research == assignment
+    completed_assignment = assignments[0]
+    completed_scout = next(
+        item for item in SCOUTS if item.scout_id == completed_assignment.scout_id
+    )
+    completed_input = fit_frozen_input_for_scout(
+        memory,
+        completed_scout,
+        RunBudget(
+            max_tool_calls=6,
+            max_total_tokens=80_000,
+            max_output_bytes=12_000,
+            require_active_research=True,
+        ),
+    )
+    completed_at = candidates[0].known_at + timedelta(hours=2, minutes=1)
+    completed_content = {
+        "schema": "alta.scout-output.v5",
+        "output": {
+            "kind": "no_op",
+            "reason": "No new point-in-time source changed the assigned thesis test.",
+            "evidence_ids": [],
+            "research_mode": "follow_up",
+            "parent_opportunity_id": completed_assignment.opportunity_id,
+            "research_question": next(
+                question.prompt
+                for item in completed_input.prior_opportunities
+                if item.opportunity_id == completed_assignment.opportunity_id
+                for question in item.research_questions
+                if question.question_id == completed_assignment.question_id
+            ),
+        },
+    }
+    with database.connect() as connection:
+        connection.execute(
+            """INSERT INTO research.run
+            (id, environment, version, known_at, role, status, input_hash,
+             frozen_input, budget, deadline_at, prompt_version,
+             tool_catalog_version, model_provider, model_id, trace_id,
+             tool_provenance, evidence_ids, output_kind, attempt_count, cycle_id)
+            VALUES ('run_completed_follow_up','replay',1,%s,%s,'succeeded',%s,%s,
+                    %s,%s,'alpha-trader-v21','alta-active-research-v8',
+                    'deterministic','fixture','trace_completed_follow_up',
+                    '[]'::jsonb,'{}'::text[],'no_op',1,
+                    'live-completed-follow-up')""",
+            (
+                completed_at,
+                completed_scout.scout_id,
+                hashlib.sha256(b"run_completed_follow_up").hexdigest(),
+                Jsonb(
+                    {
+                        "scout": completed_scout.model_dump(mode="json"),
+                        "input": completed_input.model_dump(mode="json"),
+                    }
+                ),
+                Jsonb(
+                    {
+                        "max_tool_calls": 6,
+                        "max_total_tokens": 80_000,
+                        "max_output_bytes": 12_000,
+                        "require_active_research": True,
+                    }
+                ),
+                completed_at + timedelta(minutes=5),
+            ),
+        )
+        connection.execute(
+            """INSERT INTO research.run_artifact
+            (id, environment, version, known_at, run_id, artifact_kind,
+             schema_version, content, content_hash)
+            VALUES ('artifact_completed_follow_up','replay',1,%s,
+                    'run_completed_follow_up','scout_output',
+                    'alta.scout-output.v5',%s,%s)""",
+            (
+                completed_at,
+                Jsonb(completed_content),
+                hashlib.sha256(
+                    json.dumps(completed_content, sort_keys=True).encode()
+                ).hexdigest(),
+            ),
+        )
+    deferred, _ = DatabaseSourceFlow(
+        database,
+        ("SPY",),
+        environment=Environment.REPLAY,
+    ).schedule_and_wake(
+        "cycle_registry_memory_deferred",
+        completed_at + timedelta(minutes=1),
+        {},
+    )
+    assert deferred.opportunity_continuity is not None
+    assert deferred.opportunity_continuity.deferred_questions >= 1
+    assert deferred.opportunity_continuity.next_research_due_at > completed_at
+    assert all(
+        question.question_id != completed_assignment.question_id
+        for item in deferred.prior_opportunities
+        for question in item.research_questions
+    )
     with database.connect() as connection:
         events = connection.execute(
             """SELECT event_type, payload->>'reason' FROM ops.event

@@ -55,6 +55,8 @@ def test_alpha_evidence_reports_uncertainty_without_promoting_small_samples() ->
     assert summary["sampleStdDevAlphaBps"] is not None
     assert summary["confidence95LowerBps"] is not None
     assert summary["confidence95UpperBps"] is not None
+    assert summary["researchTrials"] == 3
+    assert summary["selectionAdjustedConfidence95LowerBps"] is not None
     assert summary["positiveAlphaRate"] == str(Decimal(2) / Decimal(3))
     assert summary["lowerBoundAboveZero"] is False
 
@@ -77,6 +79,25 @@ def test_alpha_evidence_requires_a_positive_lower_bound_after_maturity() -> None
     )
     assert summarize_alpha_evidence(positive)["lowerBoundAboveZero"] is True
     assert summarize_alpha_evidence(inconclusive)["posture"] == "inconclusive"
+
+
+def test_alpha_evidence_penalizes_a_large_opportunity_search() -> None:
+    searched = tuple(
+        AlphaPerformanceObservation(
+            f"position_{index}", Decimal(60 if index % 2 else -20)
+        )
+        for index in range(30)
+    )
+
+    unadjusted = summarize_alpha_evidence(searched, research_trials=30)
+    selection_adjusted = summarize_alpha_evidence(searched, research_trials=1_000)
+
+    assert unadjusted["confidence95LowerBps"] is not None
+    assert Decimal(unadjusted["confidence95LowerBps"]) > 0
+    assert selection_adjusted["posture"] == "positive_unadjusted_selection_risk"
+    assert selection_adjusted["researchTrials"] == 1_000
+    assert Decimal(selection_adjusted["selectionAdjustedConfidence95LowerBps"]) <= 0
+    assert selection_adjusted["selectionAdjustedLowerBoundAboveZero"] is False
 
 
 def test_calibration_reads_the_entry_frozen_cost_adjusted_forecast() -> None:

@@ -1,12 +1,19 @@
-import { useEffect, useMemo, useState } from "react";
+import {
+  lazy,
+  startTransition,
+  Suspense,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import {
   Activity,
   Bot,
   CheckCircle2,
   CircleDot,
-  Command as CommandIcon,
   History,
   KeyRound,
+  Landmark,
   LayoutDashboard,
   PanelLeftClose,
   Radar,
@@ -24,27 +31,12 @@ import {
   AlertDescription,
   AlertTitle,
 } from "@/components/ui/alert";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import { DecisionLedger } from "@/components/decision-ledger";
-import { CredentialsCenter } from "@/components/credentials-center";
-import { DetailInspector } from "@/components/detail-inspector";
 import { EventTimeline } from "@/components/event-timeline";
 import { LanguageToggle } from "@/components/language-toggle";
-import { OpportunityField } from "@/components/opportunity-field";
 import { RuntimeControl } from "@/components/runtime-control";
-import { ShadowBook } from "@/components/shadow-book";
 import { StatusPill } from "@/components/status-pill";
-import { SystemOverview } from "@/components/system-overview";
 import { useAltaConsole } from "@/hooks/use-alta-console";
 import { useI18n } from "@/lib/i18n";
 import type { ControlState, SelectedEntity } from "@/lib/types";
@@ -56,6 +48,7 @@ type View =
   | "overview"
   | "agents"
   | "shadow"
+  | "capital"
   | "credentials";
 
 const navigation: Array<{ id: View; icon: typeof Activity }> = [
@@ -64,8 +57,49 @@ const navigation: Array<{ id: View; icon: typeof Activity }> = [
   { id: "overview", icon: LayoutDashboard },
   { id: "agents", icon: Bot },
   { id: "shadow", icon: ShieldCheck },
+  { id: "capital", icon: Landmark },
   { id: "credentials", icon: KeyRound },
 ];
+
+const viewLoaders = {
+  field: () => import("@/components/opportunity-field"),
+  ledger: () => import("@/components/decision-ledger"),
+  overview: () => import("@/components/system-overview"),
+  shadow: () => import("@/components/shadow-book"),
+  capital: () => import("@/components/capital-console"),
+  credentials: () => import("@/components/credentials-center"),
+};
+const loadCommandPalette = () => import("@/components/command-palette");
+const loadDetailInspector = () => import("@/components/detail-inspector");
+const OpportunityField = lazy(async () => ({
+  default: (await viewLoaders.field()).OpportunityField,
+}));
+const DecisionLedger = lazy(async () => ({
+  default: (await viewLoaders.ledger()).DecisionLedger,
+}));
+const SystemOverview = lazy(async () => ({
+  default: (await viewLoaders.overview()).SystemOverview,
+}));
+const ShadowBook = lazy(async () => ({
+  default: (await viewLoaders.shadow()).ShadowBook,
+}));
+const CapitalConsole = lazy(async () => ({
+  default: (await viewLoaders.capital()).CapitalConsole,
+}));
+const CredentialsCenter = lazy(async () => ({
+  default: (await viewLoaders.credentials()).CredentialsCenter,
+}));
+const CommandPalette = lazy(async () => ({
+  default: (await loadCommandPalette()).CommandPalette,
+}));
+const DetailInspector = lazy(async () => ({
+  default: (await loadDetailInspector()).DetailInspector,
+}));
+
+function preloadView(view: View) {
+  if (view === "agents") return;
+  void viewLoaders[view]();
+}
 
 function storedView(): View {
   try {
@@ -95,6 +129,8 @@ export default function App() {
     runtime,
     credentials,
     credentialsError,
+    capital,
+    capitalError,
     events,
     preview,
     loading,
@@ -102,8 +138,10 @@ export default function App() {
     connection,
     retryNow,
     controlRuntime,
-    refreshCredentials,
+    verifyCredentials,
     setProviderCredential,
+    refreshCapital,
+    setCapitalAuthorization,
     loadOlderEvents,
     loadingOlder,
     historyError,
@@ -138,70 +176,23 @@ export default function App() {
     }
   }, [railOpen, view]);
 
-  const searchable = useMemo(() => {
-    if (!status) return [];
-    return [
-      ...status.opportunities.map((item) => ({
-        kind: "opportunity" as const,
-        id: item.id,
-        label: item.title,
-        summary: item as unknown as Record<string, unknown>,
-      })),
-      ...status.agents.map((item) => ({
-        kind: "run" as const,
-        id: item.runId,
-        label: domain(item.id),
-        summary: item as unknown as Record<string, unknown>,
-      })),
-      ...status.expressions.map((item) => ({
-        kind: "expression" as const,
-        id: item.id,
-        label: domain(item.kind),
-        summary: item as unknown as Record<string, unknown>,
-      })),
-      ...status.shadowPositions.map((item) => ({
-        kind: "position" as const,
-        id: item.id,
-        label: t("shadowPosition", { symbol: item.symbol }),
-        summary: item as unknown as Record<string, unknown>,
-      })),
-      ...status.candidates.map((item) => ({
-        kind: "event" as const,
-        id: item.id,
-        label: item.title,
-        summary: item as unknown as Record<string, unknown>,
-      })),
-      ...status.assessments.map((item) => ({
-        kind: "event" as const,
-        id: item.id,
-        label: t("assessmentLabel", {
-          assessor: domain(item.assessor),
-          verdict: domain(item.verdict),
-        }),
-        summary: item as unknown as Record<string, unknown>,
-      })),
-      ...status.discussions.map((item) => ({
-        kind: "event" as const,
-        id: item.id,
-        label: domain(item.eventType),
-        summary: item as unknown as Record<string, unknown>,
-      })),
-      ...events.map((item) => ({
-        kind: "event" as const,
-        id: item.eventId,
-        label: domain(item.eventType),
-        summary: item as unknown as Record<string, unknown>,
-      })),
-    ];
-  }, [domain, events, status, t]);
   const localizedSelected = useMemo(
     () => relabelEntity(selected, domain, t),
     [domain, selected, t],
   );
   const activeSelected =
     localizedSelected ??
-    searchable.find((item) => item.kind === "opportunity") ??
-    null;
+    (status?.opportunities[0]
+      ? {
+          kind: "opportunity" as const,
+          id: status.opportunities[0].id,
+          label: status.opportunities[0].title,
+          summary: status.opportunities[0] as unknown as Record<
+            string,
+            unknown
+          >,
+        }
+      : null);
   const visibleOperation = recentOperation(control?.operation);
   const runtimeReady = preview || Boolean(control?.runtime.ready);
 
@@ -230,6 +221,7 @@ export default function App() {
         "app-shell",
         !railOpen && "rail-collapsed",
         view === "credentials" && "configuration-mode",
+        view === "capital" && "capital-mode",
       )}
     >
       <header className="topbar">
@@ -304,6 +296,8 @@ export default function App() {
             className="command-button"
             aria-label={t("findAnything")}
             onClick={() => setCommandOpen(true)}
+            onPointerEnter={() => void loadCommandPalette()}
+            onFocus={() => void loadCommandPalette()}
           >
             <Search data-icon="inline-start" />
             <span>{t("findAnything")}</span>
@@ -336,7 +330,9 @@ export default function App() {
               key={id}
               aria-label={viewNavigationLabel(id, t)}
               aria-current={view === id ? "page" : undefined}
-              onClick={() => setView(id)}
+              onPointerEnter={() => preloadView(id)}
+              onFocus={() => preloadView(id)}
+              onClick={() => startTransition(() => setView(id))}
             >
               <Icon />
               <span>{viewNavigationLabel(id, t)}</span>
@@ -348,7 +344,9 @@ export default function App() {
           <div>
             <strong>{t("researchOnly")}</strong>
             <span>{t("shadowEnvironment")}</span>
-            <span>{t("capitalDisabled")}</span>
+            <span>
+              {capital?.enabled ? t("capitalEnabled") : t("capitalDisabled")}
+            </span>
           </div>
         </div>
       </nav>
@@ -389,7 +387,11 @@ export default function App() {
             <h1>{viewHeading(view, t)}</h1>
           </div>
           <div className="workspace-context">
-            <span>{domain(status?.environment ?? "shadow")}</span>
+            <span>
+              {view === "capital"
+                ? t("tigerPaper")
+                : domain(status?.environment ?? "shadow")}
+            </span>
             <Separator orientation="vertical" />
             <span>{status?.currentPipelineId ?? t("noActiveCycle")}</span>
             <Separator orientation="vertical" />
@@ -407,112 +409,120 @@ export default function App() {
           </div>
         </div>
 
-        {view === "credentials" ? (
-          <CredentialsCenter
-            inventory={credentials}
-            error={credentialsError}
-            runtimeActive={Boolean(
-              control?.runtime.ready ||
+        <Suspense fallback={<ViewLoading />}>
+          {view === "credentials" ? (
+            <CredentialsCenter
+              inventory={credentials}
+              error={credentialsError}
+              runtimeActive={Boolean(
+                control?.runtime.ready ||
+                  control?.runtime.host?.processAlive ||
+                  control?.runtime.supervisor?.childProcessAlive ||
+                  control?.operation?.status === "running",
+              )}
+              preview={preview}
+              onVerify={verifyCredentials}
+              onSave={setProviderCredential}
+            />
+          ) : view === "capital" ? (
+            <CapitalConsole
+              capital={capital}
+              error={capitalError}
+              control={control}
+              preview={preview}
+              online={connection.status === "online"}
+              onRefresh={refreshCapital}
+              onAuthorization={setCapitalAuthorization}
+            />
+          ) : !status ? (
+            <StoppedState
+              installed={control?.runtime.installed ?? false}
+              active={Boolean(
                 control?.runtime.host?.processAlive ||
-                control?.runtime.supervisor?.childProcessAlive ||
-                control?.operation?.status === "running",
-            )}
-            preview={preview}
-            onRefresh={refreshCredentials}
-            onSave={setProviderCredential}
-          />
-        ) : !status ? (
-          <StoppedState
-            installed={control?.runtime.installed ?? false}
-            active={Boolean(
-              control?.runtime.host?.processAlive ||
-                control?.runtime.supervisor?.childProcessAlive,
-            )}
-            disabled={connection.status !== "online"}
-            onStart={() => void handleAction("start")}
-          />
-        ) : (
-          <>
-            {view === "field" && (
-              <OpportunityField
-                status={status}
-                runtime={runtime}
-                selected={activeSelected}
-                onSelect={setSelected}
-              />
-            )}
-            {view === "ledger" && (
-              <DecisionLedger
-                events={events}
-                status={status}
-                selected={activeSelected}
-                onSelect={setSelected}
-                onLoadOlder={loadOlderEvents}
-                loadingOlder={loadingOlder}
-                hasOlder={preview ? false : hasOlder}
-              />
-            )}
-            {view === "overview" && (
-              <SystemOverview
-                status={status}
-                runtime={runtime}
-                onSelect={setSelected}
-              />
-            )}
-            {view === "agents" && (
-              <AgentDesk
-                status={status}
-                runtime={runtime}
-                onSelect={setSelected}
-              />
-            )}
-            {view === "shadow" && (
-              <ShadowBook
-                status={status}
-                runtime={runtime}
-                onSelect={setSelected}
-              />
-            )}
-            <EventTimeline events={events} onSelect={setSelected} />
-          </>
-        )}
+                  control?.runtime.supervisor?.childProcessAlive,
+              )}
+              disabled={connection.status !== "online"}
+              onStart={() => void handleAction("start")}
+            />
+          ) : (
+            <>
+              {view === "field" && (
+                <OpportunityField
+                  status={status}
+                  runtime={runtime}
+                  selected={activeSelected}
+                  onSelect={setSelected}
+                />
+              )}
+              {view === "ledger" && (
+                <DecisionLedger
+                  events={events}
+                  status={status}
+                  selected={activeSelected}
+                  onSelect={setSelected}
+                  onLoadOlder={loadOlderEvents}
+                  loadingOlder={loadingOlder}
+                  hasOlder={preview ? false : hasOlder}
+                />
+              )}
+              {view === "overview" && (
+                <SystemOverview
+                  status={status}
+                  runtime={runtime}
+                  onSelect={setSelected}
+                />
+              )}
+              {view === "agents" && (
+                <AgentDesk
+                  status={status}
+                  runtime={runtime}
+                  onSelect={setSelected}
+                />
+              )}
+              {view === "shadow" && (
+                <ShadowBook
+                  status={status}
+                  runtime={runtime}
+                  onSelect={setSelected}
+                />
+              )}
+              <EventTimeline events={events} onSelect={setSelected} />
+            </>
+          )}
+        </Suspense>
       </main>
 
-      {view !== "credentials" && (
-        <DetailInspector
-          selected={activeSelected}
-          status={status}
-          preview={preview}
-        />
+      {view !== "credentials" && view !== "capital" && (
+        <Suspense fallback={null}>
+          <DetailInspector
+            selected={activeSelected}
+            status={status}
+            preview={preview}
+          />
+        </Suspense>
       )}
 
-      <Dialog open={commandOpen} onOpenChange={setCommandOpen}>
-        <DialogContent className="command-dialog">
-          <DialogTitle className="sr-only">{t("findAnyRecord")}</DialogTitle>
-          <Command>
-            <CommandInput placeholder={t("searchRecords")} />
-            <CommandList aria-label={t("suggestions")}>
-              <CommandEmpty>{t("noMatchingRecord")}</CommandEmpty>
-              <CommandGroup heading={t("records")}>
-                {searchable.map((entity) => (
-                  <CommandItem
-                    key={`${entity.kind}-${entity.id}`}
-                    value={`${entity.label} ${entity.id}`}
-                    onSelect={() => {
-                      setSelected(entity);
-                      setCommandOpen(false);
-                    }}
-                  >
-                    <CommandIcon />
-                    <span>{entity.label}</span>
-                    <small>{domain(entity.kind)}</small>
-                  </CommandItem>
-                ))}
-              </CommandGroup>
-            </CommandList>
-          </Command>
-        </DialogContent>
-      </Dialog>
+      {commandOpen && (
+        <Suspense fallback={null}>
+          <CommandPalette
+            open={commandOpen}
+            onOpenChange={setCommandOpen}
+            status={status}
+            events={events}
+            onSelect={setSelected}
+          />
+        </Suspense>
+      )}
+    </div>
+  );
+}
+
+function ViewLoading() {
+  return (
+    <div className="view-loading" aria-hidden="true">
+      <Skeleton />
+      <Skeleton />
+      <Skeleton />
     </div>
   );
 }
@@ -719,6 +729,7 @@ function viewNavigationLabel(view: View, t: ReturnType<typeof useI18n>["t"]) {
   if (view === "overview") return t("systemOverview");
   if (view === "agents") return t("agentDesk");
   if (view === "shadow") return t("shadowBook");
+  if (view === "capital") return t("capitalDesk");
   return t("credentials");
 }
 
@@ -736,6 +747,7 @@ function viewHeading(view: View, t: ReturnType<typeof useI18n>["t"]) {
   if (view === "overview") return t("operatingPosture");
   if (view === "agents") return t("specializedMinds");
   if (view === "shadow") return t("auditedShadowExpressions");
+  if (view === "capital") return t("brokerCapital");
   return t("secureProviderConfiguration");
 }
 

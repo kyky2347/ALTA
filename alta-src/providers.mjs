@@ -82,12 +82,12 @@ const BASE_OVERRIDES = {
   kimi: "ALTA_KIMI_BASE_URL",
 };
 
-function safeBaseUrl(value) {
+function safeBaseUrl(value, env = process.env) {
   const parsed = new URL(value);
   const loopback = ["127.0.0.1", "::1", "localhost"].includes(parsed.hostname);
   if (
     parsed.protocol !== "https:" &&
-    !(loopback && process.env.ALTA_ALLOW_INSECURE_LOOPBACK === "1")
+    !(loopback && env.ALTA_ALLOW_INSECURE_LOOPBACK === "1")
   ) {
     throw new Error(
       "Provider base URLs must use HTTPS (except explicit loopback tests)",
@@ -101,12 +101,12 @@ function safeBaseUrl(value) {
   return parsed.href.replace(/\/+$/, "");
 }
 
-export function runtimeProvider(name) {
+export function runtimeProvider(name, env = process.env) {
   const provider = PROVIDERS[name];
   if (!provider) throw new Error(`Unknown provider: ${name}`);
-  const override = process.env[BASE_OVERRIDES[name]];
+  const override = env[BASE_OVERRIDES[name]];
   if (!override) return provider;
-  const base = safeBaseUrl(override);
+  const base = safeBaseUrl(override, env);
   return {
     ...provider,
     modelsUrls: [`${base}/models`],

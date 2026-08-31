@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ApiError, getJson, mutateRuntime, replaceCredential } from "@/lib/api";
 import {
+  ApiError,
+  getJson,
+  mutateRuntime,
+  refreshPaperCapital,
+  replaceCredential,
+  setPaperCapitalAuthorization,
+  verifyCredentialHealth,
+} from "@/lib/api";
+import {
+  previewCapital,
   previewControl,
   previewCredentials,
   previewEvents,
@@ -13,14 +22,17 @@ import type {
   ControlState,
   CredentialInventory,
   MvpStatus,
+  PaperCapitalStatus,
   RuntimeDetail,
 } from "@/lib/types";
 
 type Bootstrap = ControlState & { csrfToken: string };
 
 const LIVE_POLL_MS = 2_500;
+const OPERATION_POLL_MS = 1_000;
+const BACKGROUND_POLL_MS = 15_000;
 const MAX_RETRY_MS = 30_000;
-const CONSOLE_PROTOCOL_VERSION = 2;
+const CONSOLE_PROTOCOL_VERSION = 4;
 
 function retryDelay(failures: number) {
   const base = Math.min(
@@ -34,6 +46,17 @@ function messageFor(error: unknown) {
   return error instanceof Error
     ? error.message
     : "The local operator service is temporarily unreachable.";
+}
+
+function stableJson(value: unknown) {
+  return JSON.stringify(value);
+}
+
+function controlSignature(control: ControlState) {
+  return stableJson({
+    ...control,
+    console: { ...control.console, uptimeSeconds: 0 },
+  });
 }
 
 function validateControl<T extends ControlState>(control: T): T {
@@ -78,6 +101,10 @@ export function useAltaConsole() {
     preview ? previewCredentials : null,
   );
   const [credentialsError, setCredentialsError] = useState<string | null>(null);
+  const [capital, setCapital] = useState<PaperCapitalStatus | null>(
+    preview ? previewCapital : null,
+  );
+  const [capitalError, setCapitalError] = useState<string | null>(null);
   const [connection, setConnection] = useState<ConsoleConnection>({
     status: preview ? "online" : "connecting",
     message: null,
@@ -100,9 +127,47 @@ export function useAltaConsole() {
   const activeRequest = useRef<AbortController | null>(null);
   const schedule = useRef<number | null>(null);
   const failures = useRef(0);
+  const nextPollDelay = useRef(LIVE_POLL_MS);
+  const lastSuccessfulAt = useRef<string | null>(
+    preview ? new Date().toISOString() : null,
+  );
+  const lastControlSignature = useRef(
+    preview ? controlSignature(previewControl) : "",
+  );
+  const lastRuntimeSignature = useRef(
+    preview ? stableJson(previewRuntime) : "",
+  );
+  const lastStatusCursor = useRef(preview ? previewStatus.eventCursor : -1);
   const mounted = useRef(true);
   const hasSnapshot = useRef(preview);
   const credentialsLoaded = useRef(preview);
+  const capitalLoaded = useRef(preview);
+
+  const markConnected = useCallback(
+    (message: string | null, stale: boolean) => {
+      failures.current = 0;
+      lastSuccessfulAt.current = new Date().toISOString();
+      setConnection((current) => {
+        if (
+          current.status === "online" &&
+          current.message === message &&
+          current.consecutiveFailures === 0 &&
+          current.retryAt === null &&
+          current.stale === stale
+        )
+          return current;
+        return {
+          status: "online",
+          message,
+          lastSuccessfulAt: lastSuccessfulAt.current,
+          consecutiveFailures: 0,
+          retryAt: null,
+          stale,
+        };
+      });
+    },
+    [],
+  );
 
   const performRefresh = useCallback(async () => {
     if (preview) return;
@@ -145,7 +210,17 @@ export function useAltaConsole() {
         }
       }
       if (!mounted.current) return;
-      setControl(nextControl);
+      const nextControlSignature = controlSignature(nextControl);
+      if (nextControlSignature !== lastControlSignature.current) {
+        lastControlSignature.current = nextControlSignature;
+        setControl(nextControl);
+      }
+      nextPollDelay.current =
+        document.visibilityState === "hidden"
+          ? BACKGROUND_POLL_MS
+          : nextControl.operation?.status === "running"
+            ? OPERATION_POLL_MS
+            : LIVE_POLL_MS;
       if (!credentialsLoaded.current) {
         try {
           const nextCredentials = await getJson<CredentialInventory>(
@@ -161,50 +236,81 @@ export function useAltaConsole() {
           setCredentialsError(messageFor(error));
         }
       }
+      if (!capitalLoaded.current) {
+        try {
+          const nextCapital = await getJson<PaperCapitalStatus>(
+            "/control/capital",
+            { signal: controller.signal },
+          );
+          if (!mounted.current) return;
+          setCapital(nextCapital);
+          setCapitalError(null);
+          capitalLoaded.current = true;
+        } catch (error) {
+          if (!mounted.current) return;
+          setCapitalError(messageFor(error));
+        }
+      }
 
       if (!nextControl.runtime.ready) {
-        failures.current = 0;
-        setConnection({
-          status: "online",
-          message: hasSnapshot.current
+        markConnected(
+          hasSnapshot.current
             ? "Runtime stopped — showing the last synchronized research snapshot."
             : null,
-          lastSuccessfulAt: new Date().toISOString(),
-          consecutiveFailures: 0,
-          retryAt: null,
-          stale: hasSnapshot.current,
-        });
+          hasSnapshot.current,
+        );
         return;
       }
 
-      const [statusResult, runtimeResult] = await Promise.allSettled([
-        getJson<MvpStatus>("/proxy/api/v1/mvp/status?limit=100", {
-          signal: controller.signal,
-        }),
-        getJson<RuntimeDetail>("/proxy/api/v1/system/runtime", {
-          signal: controller.signal,
-        }),
-      ]);
+      const requestedEventCursor = cursor.current;
+      const eventRequest =
+        requestedEventCursor > 0
+          ? getJson<{ events: AltaEvent[] }>(
+              `/proxy/api/v1/events?cursor=${requestedEventCursor}&limit=100`,
+              { signal: controller.signal },
+            )
+          : Promise.resolve(null);
+      const [statusResult, runtimeResult, eventResult] =
+        await Promise.allSettled([
+          getJson<MvpStatus>("/proxy/api/v1/mvp/status?limit=100", {
+            signal: controller.signal,
+          }),
+          getJson<RuntimeDetail>("/proxy/api/v1/system/runtime", {
+            signal: controller.signal,
+          }),
+          eventRequest,
+        ]);
       const partialFailures: unknown[] = [];
 
       if (statusResult.status === "fulfilled") {
         const nextStatus = statusResult.value;
+        let reloadEvents = false;
         if (nextStatus.eventCursor < cursor.current) {
           cursor.current = 0;
           historyExpanded.current = false;
           setEvents([]);
+          reloadEvents = true;
         }
-        setStatus(nextStatus);
+        if (nextStatus.eventCursor !== lastStatusCursor.current) {
+          lastStatusCursor.current = nextStatus.eventCursor;
+          setStatus(nextStatus);
+        }
         hasSnapshot.current = true;
         if (cursor.current === 0) {
           cursor.current = Math.max(0, nextStatus.eventCursor - 100);
           setHasOlder(cursor.current > 0);
+          reloadEvents = true;
         }
         try {
-          const page = await getJson<{ events: AltaEvent[] }>(
-            `/proxy/api/v1/events?cursor=${cursor.current}&limit=100`,
-            { signal: controller.signal },
-          );
+          const page =
+            reloadEvents || eventResult.status !== "fulfilled"
+              ? await getJson<{ events: AltaEvent[] }>(
+                  `/proxy/api/v1/events?cursor=${cursor.current}&limit=100`,
+                  { signal: controller.signal },
+                )
+              : eventResult.value;
+          if (!page)
+            throw new Error("Event synchronization was not initialized");
           if (page.events.length) {
             cursor.current = page.events.at(-1)?.cursor ?? cursor.current;
             setEvents((current) =>
@@ -219,26 +325,22 @@ export function useAltaConsole() {
       }
 
       if (runtimeResult.status === "fulfilled") {
-        setRuntime(runtimeResult.value);
+        const nextRuntimeSignature = stableJson(runtimeResult.value);
+        if (nextRuntimeSignature !== lastRuntimeSignature.current) {
+          lastRuntimeSignature.current = nextRuntimeSignature;
+          setRuntime(runtimeResult.value);
+        }
         hasSnapshot.current = true;
       } else {
         partialFailures.push(runtimeResult.reason);
       }
 
       if (partialFailures.length) throw partialFailures[0];
-      failures.current = 0;
-      setConnection({
-        status: "online",
-        message: null,
-        lastSuccessfulAt: new Date().toISOString(),
-        consecutiveFailures: 0,
-        retryAt: null,
-        stale: false,
-      });
+      markConnected(null, false);
     } finally {
       if (activeRequest.current === controller) activeRequest.current = null;
     }
-  }, [preview]);
+  }, [markConnected, preview]);
 
   const refreshData = useCallback(() => {
     if (inFlight.current) return inFlight.current;
@@ -259,7 +361,7 @@ export function useAltaConsole() {
           await refreshData();
           if (!mounted.current) return;
           setLoading(false);
-          enqueueRefresh(LIVE_POLL_MS);
+          enqueueRefresh(nextPollDelay.current);
         } catch (error) {
           if (!mounted.current) return;
           setLoading(false);
@@ -289,7 +391,8 @@ export function useAltaConsole() {
           setConnection((current) => ({
             status: hasSnapshot.current ? "degraded" : "offline",
             message: messageFor(error),
-            lastSuccessfulAt: current.lastSuccessfulAt,
+            lastSuccessfulAt:
+              lastSuccessfulAt.current ?? current.lastSuccessfulAt,
             consecutiveFailures: failures.current,
             retryAt: new Date(Date.now() + delayMs).toISOString(),
             stale: hasSnapshot.current,
@@ -382,6 +485,107 @@ export function useAltaConsole() {
     credentialsLoaded.current = true;
   }, [preview]);
 
+  const verifyCredentials = useCallback(
+    async (force = false) => {
+      if (preview)
+        throw new Error(
+          "Credential verification is disabled in synthetic preview",
+        );
+      if (!csrfToken.current)
+        throw new Error("The secure console session is not ready yet");
+      try {
+        const next = await verifyCredentialHealth(csrfToken.current, force);
+        setCredentials(next);
+        setCredentialsError(null);
+        credentialsLoaded.current = true;
+      } catch (error) {
+        if (!(error instanceof ApiError) || error.code !== "mutation_forbidden")
+          throw error;
+        const bootstrap = validateControl(
+          await getJson<Bootstrap>("/control/bootstrap"),
+        );
+        csrfToken.current = bootstrap.csrfToken;
+        consoleInstance.current = bootstrap.console.instanceId;
+        setControl(bootstrap);
+        const next = await verifyCredentialHealth(csrfToken.current, force);
+        setCredentials(next);
+        setCredentialsError(null);
+        credentialsLoaded.current = true;
+      }
+    },
+    [preview],
+  );
+
+  const loadCapital = useCallback(async () => {
+    if (preview) return;
+    const next = await getJson<PaperCapitalStatus>("/control/capital");
+    setCapital(next);
+    setCapitalError(null);
+    capitalLoaded.current = true;
+  }, [preview]);
+
+  const refreshCapital = useCallback(async () => {
+    if (preview)
+      throw new Error("Capital controls are disabled in synthetic preview");
+    if (!csrfToken.current)
+      throw new Error("The secure console session is not ready yet");
+    try {
+      const next = await refreshPaperCapital(csrfToken.current);
+      setCapital(next);
+      setCapitalError(null);
+      capitalLoaded.current = true;
+    } catch (error) {
+      if (!(error instanceof ApiError) || error.code !== "mutation_forbidden")
+        throw error;
+      const bootstrap = validateControl(
+        await getJson<Bootstrap>("/control/bootstrap"),
+      );
+      csrfToken.current = bootstrap.csrfToken;
+      consoleInstance.current = bootstrap.console.instanceId;
+      setControl(bootstrap);
+      const next = await refreshPaperCapital(csrfToken.current);
+      setCapital(next);
+      setCapitalError(null);
+      capitalLoaded.current = true;
+    }
+  }, [preview]);
+
+  const setCapitalAuthorization = useCallback(
+    async (enabled: boolean) => {
+      if (preview)
+        throw new Error("Capital controls are disabled in synthetic preview");
+      if (!csrfToken.current)
+        throw new Error("The secure console session is not ready yet");
+      try {
+        const next = await setPaperCapitalAuthorization(
+          enabled,
+          csrfToken.current,
+        );
+        setCapital(next);
+        setCapitalError(null);
+        capitalLoaded.current = true;
+      } catch (error) {
+        if (!(error instanceof ApiError) || error.code !== "mutation_forbidden")
+          throw error;
+        const bootstrap = validateControl(
+          await getJson<Bootstrap>("/control/bootstrap"),
+        );
+        csrfToken.current = bootstrap.csrfToken;
+        consoleInstance.current = bootstrap.console.instanceId;
+        setControl(bootstrap);
+        const next = await setPaperCapitalAuthorization(
+          enabled,
+          csrfToken.current,
+        );
+        setCapital(next);
+        setCapitalError(null);
+        capitalLoaded.current = true;
+      }
+      queueRefresh();
+    },
+    [preview, queueRefresh],
+  );
+
   const setProviderCredential = useCallback(
     async (slot: string, secret: string) => {
       if (preview)
@@ -439,6 +643,8 @@ export function useAltaConsole() {
     runtime,
     credentials,
     credentialsError,
+    capital,
+    capitalError,
     events,
     connection,
     error:
@@ -451,7 +657,11 @@ export function useAltaConsole() {
     retryNow,
     controlRuntime,
     refreshCredentials,
+    verifyCredentials,
     setProviderCredential,
+    loadCapital,
+    refreshCapital,
+    setCapitalAuthorization,
     loadOlderEvents,
     loadingOlder,
     historyError,

@@ -8,6 +8,55 @@ semantic versioning while the project remains experimental.
 
 ### Added
 
+- Opportunity Continuity v2 now treats a successful exact-question follow-up
+  as a durable research attempt. Unchanged questions re-enter the bounded
+  research queue on a horizon-aware cadence, while a changed Opportunity
+  snapshot bypasses the cooldown immediately. Failed attempts remain eligible
+  and thesis deadlines never move.
+- Research Operations v4 reports follow-ups assigned, actually executed with
+  preserved lineage, and completed as honest no-ops, both globally and by
+  Trader Mind. This separates scheduling intent from real Agent work.
+- Deep research now discards unrelated search-engine noise before page fetch
+  and preserves a bounded direct route to explicitly allowed issuer or
+  regulator domains when search providers are unavailable. A direct route is
+  recorded only as a source locator, never as proof of a claim.
+- Contract-aware Scout recovery now sends at most two bounded field/error codes
+  into the same frozen Run after a malformed result. The original failure stays
+  append-only, the renewed attempt gets a fresh durable deadline, and no model
+  response text is replayed into the correction prompt.
+- An expectation-gap Trader Mind may now recover from an unavailable frozen
+  expectation posture only by retrieving a new finance record in that turn and
+  binding its exact locator as `market_context`; missing or mismatched proof
+  remains an honest `no_op`.
+- Research Operations v3 distinguishes retried Runs, retries that recovered,
+  terminal contract rejections, and deadline failures in the authenticated
+  bilingual console.
+- A global Opportunity Continuity projection scans active work before applying
+  the bounded Agent context, preserves deadline-prioritized older tests, records
+  expiring/stale work, and survives same-wake recovery.
+- Research Attention v2 measures entity, Alpha-archetype, direction, and
+  short/medium/long-horizon coverage. Under-covered lanes guide only the first
+  exploratory search and never become Candidate quotas or Evidence.
+- SEC submissions research now accepts a listed ticker, resolves its CIK through
+  the official bounded exchange mapping, and exposes both identity and filing
+  provenance without requiring another model search.
+
+- Source-scoped durable tool Evidence and stable origin fingerprints. Deep and
+  batch research now divide the bounded result window across pages, while each
+  cited URL freezes its own excerpt instead of a call-wide duplicate prefix.
+- A stricter research-integrity posture requiring two cited non-news calls and
+  three independently frozen source records across three domains, with an
+  independent counterevidence source. The operator console exposes the bounded
+  origin count and source-role reuse without revealing source text or queries.
+- Entry-frozen research posture and quality attribution for mature forward
+  Shadow Alpha feedback, so ALTA can test whether expensive diligence quality
+  survives cost-adjusted benchmark measurement rather than rewarding activity.
+- The production Scout contract is now `alpha-trader-v21`, with tool catalog
+  `alta-active-research-v8`, explicit anti-mirror evidence instructions, and
+  domain/recency/language-scoped deep research. Multiple primary-source domains
+  use OR semantics and deterministic source-quality ordering; bounded retry
+  feedback corrects output contracts without weakening Evidence requirements.
+
 - A point-in-time Research Attention Portfolio derived only from prior
   production Candidates. When one entity dominates a mature recent sample, it
   preserves exactly one continuation seat and directs the other Trader Minds
@@ -16,7 +65,7 @@ semantic versioning while the project remains experimental.
 - A bilingual Research Attention surface in the operator console showing the
   production sample, unique entities, top-entity share, effective breadth, and
   every current Trader Mind seat.
-- The production Scout contract is now `alpha-trader-v16`; the new attention
+- The production Scout contract introduced as `alpha-trader-v16`; the new attention
   seat is explicit non-Evidence process state and exact follow-up precedence is
   part of the frozen prompt contract.
 
@@ -46,6 +95,31 @@ semantic versioning while the project remains experimental.
   with responsive containment and an explicit ALTA product lockup.
 
 ### Fixed
+
+- Exact follow-up assignments can no longer disappear when a Scout prompt is
+  reduced to its durable byte budget. Follow-up prompts use a compact,
+  mode-specific contract that preserves the parent Opportunity, question,
+  deadline, lineage, evidence roles, and company-thesis/security-readiness
+  distinction; an impossible fit now fails explicitly instead of silently
+  becoming broad exploration.
+- Tool provenance now stops and deduplicates inside a single text payload, so a
+  research response with more than ten URLs cannot overflow the durable
+  ten-source boundary before the Scout result is parsed.
+- The production Scout new-token envelope is 88,000: still below the 100,000
+  global contract, but above the observed 80,162-token five-stage research
+  turn that had already paid its retrieval cost before a 64,000-token rejection.
+- Scout retries now replace the in-memory Run specification with the same
+  renewed deadline already written to PostgreSQL. An invalid or incomplete
+  first response can no longer make a later attempt inherit an expired local
+  deadline and be misclassified as an infrastructure timeout.
+- The one-command dashboard bootstrap now pins an isolated pnpm linker layout,
+  so a user's global hoisted-linker configuration cannot produce dangling
+  workspace executables on another machine.
+- Follow-up no-op results bind harmlessly truncated provider question text back
+  to the sole frozen assignment; Candidate question identity remains strict.
+- Long Opportunity and Candidate identifiers can no longer widen flow columns
+  or hide neighboring cards. Desktop, tablet, and mobile layouts keep content
+  within their stage and expose long identifiers with truncation.
 
 - CI Actions now use Node 24-compatible, immutable official release SHAs, so
   publication checks no longer depend on GitHub's temporary Node 20 fallback.
@@ -128,8 +202,9 @@ semantic versioning while the project remains experimental.
   beneficiary path, counterevidence, next test, investability, and freshness are
   all explicit or the Scout returns `no_op`.
 - Invalid structured Scout output, a missed active-research requirement, or a
-  transient App Server failure receives one fresh bounded attempt under the same
-  durable Run identity. The first failure remains append-only and auditable.
+  transient App Server failure receives at most two fresh bounded retries under
+  the same durable Run identity. Every prior failure remains append-only and
+  auditable.
 - Private assessment is no longer invoked for Opportunities that deterministic
   horizon, evidence, completeness, expectation, or research-quality gates
   already know cannot enter the ranking book.

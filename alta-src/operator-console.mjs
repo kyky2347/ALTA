@@ -13,7 +13,7 @@ const RUNTIME_CACHE_MS = 1_000;
 const UPSTREAM_TIMEOUT_MS = 15_000;
 const MAX_UPSTREAM_BODY_BYTES = 16 * 1024 * 1024;
 const MAX_CREDENTIAL_BODY_BYTES = 8 * 1024;
-export const OPERATOR_PROTOCOL_VERSION = 2;
+export const OPERATOR_PROTOCOL_VERSION = 4;
 
 function processIsAlive(pid) {
   if (!Number.isInteger(pid) || pid <= 0) return false;
@@ -221,6 +221,9 @@ export function createOperatorConsole({
   let environmentProbe = null;
   let runtimeCache = null;
   let runtimeProbe = null;
+  let capitalOperation = false;
+  let credentialVerification = false;
+  const staticAssets = new Map();
 
   function writeOperation(value) {
     operation = value;
@@ -306,6 +309,7 @@ export function createOperatorConsole({
   async function state() {
     const runtime = await runtimeStatus();
     const environment = await environmentStatus();
+    const capital = publicCapitalStatus();
     reconcileOperation(runtime, environment);
     return {
       runtime,
@@ -322,7 +326,8 @@ export function createOperatorConsole({
       operation: publicOperation(),
       safety: {
         environment: "shadow",
-        capitalMode: "disabled",
+        capitalMode: capital.enabled ? "tiger_paper_acceptance" : "disabled",
+        brokerEnvironment: "PAPER",
         dashboardBinding: `${host}:${port}`,
       },
     };
@@ -333,6 +338,11 @@ export function createOperatorConsole({
     return {
       revision: inventory.revision,
       configuredSlots: inventory.configuredSlots,
+      verification: inventory.verification ?? {
+        checkedAt: null,
+        expiresAt: null,
+        stale: true,
+      },
       slots: inventory.slots,
       providerNetwork: inventory.providerNetwork ?? [],
       trading: inventory.trading ?? {
@@ -346,6 +356,33 @@ export function createOperatorConsole({
         status: "not_configured_capital_disabled",
       },
     };
+  }
+
+  function publicCapitalStatus() {
+    return (
+      service.capitalStatus?.() ?? {
+        version: 1,
+        provider: "Tiger Trade",
+        environment: "PAPER",
+        configured: false,
+        requestedEnabled: false,
+        enabled: false,
+        posture: "not_configured",
+        accountFingerprint: null,
+        configurationFingerprint: null,
+        mutationPolicy: "one_share_limit_day",
+        instrumentPolicy: "us_stock_only",
+        outsideRegularHours: false,
+        requiresStoppedRuntime: true,
+        lastChangedAt: null,
+        lastPreflightAt: null,
+        configurationError: "Tiger Paper credentials are not configured",
+        authorizationError: null,
+        snapshotError: null,
+        snapshot: null,
+        audit: [],
+      }
+    );
   }
 
   async function runOperation(action, lease) {
@@ -484,7 +521,7 @@ export function createOperatorConsole({
   }
 
   async function proxy(request, response, url) {
-    const status = await service.status();
+    const status = await runtimeStatus();
     if (!status.ready) {
       json(response, 503, {
         error: {
@@ -543,15 +580,30 @@ export function createOperatorConsole({
       json(response, 404, { error: { code: "not_found" } });
       return;
     }
-    const body = fs.readFileSync(file);
+    let asset = staticAssets.get(file);
+    if (!asset) {
+      const body = fs.readFileSync(file);
+      asset = { body, etag: `W/\"${body.length.toString(16)}\"` };
+      staticAssets.set(file, asset);
+    }
+    const immutable = !file.endsWith("index.html");
+    if (immutable && request.headers["if-none-match"] === asset.etag) {
+      response.writeHead(304, {
+        "Cache-Control": "public, max-age=31536000, immutable",
+        "ETag": asset.etag,
+      });
+      response.end();
+      return;
+    }
     response.writeHead(200, {
       "Content-Type": contentType(file),
-      "Content-Length": body.length,
-      "Cache-Control": file.endsWith("index.html")
+      "Content-Length": asset.body.length,
+      "Cache-Control": !immutable
         ? "no-store"
         : "public, max-age=31536000, immutable",
+      ...(immutable ? { ETag: asset.etag } : {}),
     });
-    response.end(request.method === "HEAD" ? undefined : body);
+    response.end(request.method === "HEAD" ? undefined : asset.body);
   }
 
   const server = http.createServer(async (request, response) => {
@@ -612,6 +664,140 @@ export function createOperatorConsole({
         json(response, 200, { data: publicCredentialInventory() });
         return;
       }
+      if (
+        request.method === "POST" &&
+        url.pathname === "/control/credentials/verify"
+      ) {
+        if (!permittedMutation(request)) {
+          json(response, 403, { error: { code: "mutation_forbidden" } });
+          return;
+        }
+        if (credentialVerification) {
+          json(response, 409, {
+            error: { code: "credential_verification_in_progress" },
+          });
+          return;
+        }
+        credentialVerification = true;
+        try {
+          await service.verifyCredentialHealth({
+            force: url.searchParams.get("force") === "1",
+          });
+          json(response, 200, { data: publicCredentialInventory() });
+        } catch {
+          json(response, 503, {
+            error: {
+              code: "credential_verification_failed",
+              message:
+                "Provider verification could not complete. Stored credentials were not changed.",
+            },
+          });
+        } finally {
+          credentialVerification = false;
+        }
+        return;
+      }
+      if (request.method === "GET" && url.pathname === "/control/capital") {
+        json(response, 200, { data: publicCapitalStatus() });
+        return;
+      }
+      if (
+        request.method === "POST" &&
+        url.pathname === "/control/capital/refresh"
+      ) {
+        if (!permittedMutation(request)) {
+          json(response, 403, { error: { code: "mutation_forbidden" } });
+          return;
+        }
+        if (
+          operation?.status === "running" ||
+          capitalOperation ||
+          credentialVerification
+        ) {
+          json(response, 409, { error: { code: "operation_in_progress" } });
+          return;
+        }
+        capitalOperation = true;
+        try {
+          const capital = await service.refreshCapital();
+          json(response, 200, { data: capital });
+        } finally {
+          capitalOperation = false;
+        }
+        return;
+      }
+      if (
+        request.method === "PUT" &&
+        url.pathname === "/control/capital/authorization"
+      ) {
+        if (!permittedMutation(request)) {
+          json(response, 403, { error: { code: "mutation_forbidden" } });
+          return;
+        }
+        if (
+          operation?.status === "running" ||
+          capitalOperation ||
+          credentialVerification
+        ) {
+          json(response, 409, { error: { code: "operation_in_progress" } });
+          return;
+        }
+        const body = await readJsonBody(request);
+        const expectedConfirmation = body?.enabled
+          ? "ENABLE TIGER PAPER"
+          : "DISABLE TIGER PAPER";
+        if (
+          !body ||
+          typeof body !== "object" ||
+          Array.isArray(body) ||
+          typeof body.enabled !== "boolean" ||
+          body.confirmation !== expectedConfirmation ||
+          Object.keys(body).some(
+            (key) => !["enabled", "confirmation"].includes(key),
+          )
+        ) {
+          json(response, 400, {
+            error: {
+              code: "invalid_capital_authorization_request",
+              message:
+                "Confirm the exact Tiger Paper authorization change requested.",
+            },
+          });
+          return;
+        }
+        capitalOperation = true;
+        try {
+          const runtime = await runtimeStatus({ fresh: true });
+          const running = Boolean(
+            runtime.ready ||
+              runtime.host?.processAlive ||
+              runtime.supervisor?.childProcessAlive,
+          );
+          if (body.enabled && running) {
+            json(response, 409, {
+              error: {
+                code: "runtime_must_be_stopped_for_capital_enablement",
+                message:
+                  "Stop the research runtime before enabling Tiger Paper authorization.",
+              },
+            });
+            return;
+          }
+          const capital = await service.setCapitalAuthorization(body.enabled);
+          if (!body.enabled && running) {
+            await service.stop();
+            const { environment: childEnvironment } =
+              service.runtimeEnvironment();
+            await environmentFactory(childEnvironment).down();
+            environmentCache = null;
+            runtimeCache = null;
+          }
+          json(response, 200, { data: capital });
+        } finally {
+          capitalOperation = false;
+        }
+        return;
+      }
       const credentialSlot = url.pathname.match(
         /^\/control\/credentials\/([a-z0-9-]+)$/,
       )?.[1];
@@ -620,7 +806,11 @@ export function createOperatorConsole({
           json(response, 403, { error: { code: "mutation_forbidden" } });
           return;
         }
-        if (operation?.status === "running") {
+        if (
+          operation?.status === "running" ||
+          capitalOperation ||
+          credentialVerification
+        ) {
           json(response, 409, { error: { code: "operation_in_progress" } });
           return;
         }
@@ -682,7 +872,11 @@ export function createOperatorConsole({
           json(response, 403, { error: { code: "mutation_forbidden" } });
           return;
         }
-        if (operation?.status === "running" || !acceptOperation(action)) {
+        if (
+          operation?.status === "running" ||
+          capitalOperation ||
+          !acceptOperation(action)
+        ) {
           json(response, 409, { error: { code: "operation_in_progress" } });
           return;
         }
@@ -712,7 +906,7 @@ export function createOperatorConsole({
       });
     }
   });
-  server.requestTimeout = 30_000;
+  server.requestTimeout = 65_000;
   server.headersTimeout = 10_000;
   server.keepAliveTimeout = 5_000;
   server.maxRequestsPerSocket = 100;

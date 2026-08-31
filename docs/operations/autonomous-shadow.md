@@ -100,11 +100,20 @@ Evidence, a diversification trade rule, a rank, or permission to use capital.
 
 The runtime derives a research-diligence record from what each Trader Mind
 actually completed, but source families, independent domains, non-news depth,
-and cross-check credit come only from frozen Evidence or exact tool results the
-Candidate cites. Unbound browsing remains observable as process cost and cannot
-inflate research quality. Causal beneficiary path, counterevidence, and next
-test remain explicit. This is durable process metadata, not Evidence and not a
-fixed approval score. The downstream team can challenge shallow or
+independent source-record origins, and cross-check credit come only from frozen
+Evidence or exact tool results the Candidate cites. Two cited non-news calls and
+three independent source records across three domains are required for the
+cross-checked posture. Unbound browsing remains observable as process cost and
+cannot inflate research quality. Causal beneficiary path, counterevidence, and
+next test remain explicit. Known-issuer or regulator searches should use the
+deep-research domain, recency,
+and language scopes; multiple allowed domains use OR semantics, and deterministic
+source-quality ordering fetches relevant primary records before generic search
+noise. Returned hosts are revalidated locally before they can enter the result
+set. The entry-frozen research posture and quality score also follow
+contributors into forward Shadow attribution, under the same mature
+sample rules as other Alpha feedback. This is durable process metadata, not
+Evidence and not a fixed approval score. The downstream team can challenge shallow or
 single-source work without preventing an Agent from presenting an unusual,
 well-supported route to Alpha.
 
@@ -164,14 +173,19 @@ other bounded public tools.
 
 ### Tiger
 
-Tiger is not part of the standard autonomous execution path. The main service
-and `autonomous --once` report `capitalMode=disabled`. The explicit acceptance
-path invokes a separate capital package that requires an exact 17-digit Paper
+Tiger is disabled in the standard autonomous path. When an operator explicitly
+authorizes Paper capital from the authenticated local console while the runtime
+is stopped, the next service start may inject the same isolated executor into
+the autonomous path. The separate acceptance command remains available for a
+bounded lifecycle test. Both paths require an exact 17-digit Paper
 account SHA-256 binding, an owner-only non-symlink configuration file, zero
 positions, zero open orders, and a single-owner lease. It permits only one-share
 stock/ETF DAY limit orders, reconciles every fill to the exact account, and
-verifies the account remains flat and order-free in a `finally` block. Account discovery, live fallback, shorts, options,
-extended-hours orders, and an HTTP order API are absent or rejected.
+the bounded acceptance command verifies the account remains flat and order-free
+in a `finally` block. Account discovery, live fallback, shorts, options,
+extended-hours orders, browser order entry, and an HTTP order endpoint are
+absent or rejected. Revoking the console authorization is durable before the
+service and dependencies are stopped.
 
 ## Preflight
 
@@ -530,8 +544,11 @@ are not substitutes for forward evidence.
 The same latest-measurement-only outcomes also drive a deterministic rolling
 capital posture for the next Shadow entry. The posture is scoped to the current
 portfolio-policy version and a 30-position window. Collecting and negative-mean
-probation cap target size at 50%; a 100 bp synthetic-NAV drawdown or a mature
-window whose descriptive 95% upper Alpha bound is non-positive caps it at 10%.
+probation cap target size at 50%. Every distinct Opportunity persisted at the
+expression boundary is also counted as a research trial; a family-wise
+selection-adjusted Alpha lower bound must be positive before a mature sample can
+leave probation. A 100 bp synthetic-NAV drawdown or a mature window whose
+descriptive 95% upper Alpha bound is non-positive caps it at 10%.
 The Expression Agent may explain the posture but cannot override it. The
 portfolio constructor reloads it immediately before intent, rejects stale or
 tightened plans, and never grants a multiplier above 1.0. Rolling recovery is
@@ -632,9 +649,12 @@ The verified release has demonstrated:
   `MVP_IDLE` when the thesis role exhausted its old deadline (zero expressions,
   positions, and orders); a second cycle recorded three honest no-ops and one
   bounded transient Scout deadline;
-- separate Scout and higher-judgment deadline windows plus one same-input,
-  same-identity fresh Scout retry, covered through invalid-output, real App
+- separate Scout and higher-judgment deadline windows plus at most two same-input,
+  same-identity fresh Scout retries, covered through invalid-output, real App
   Server interrupt, stuck-process reset, and PostgreSQL attempt-ledger tests;
+  each admitted retry replaces both the durable deadline and the worker's
+  in-memory Run specification, preventing a renewed attempt from inheriting a
+  stale local timeout;
 - an installed 24×7 service recovery test that exposed and corrected an
   application/database frozen-input bound mismatch, then completed with one
   healthy owner, bounded role unavailability, capital disabled, zero orders,
@@ -646,7 +666,7 @@ The verified release has demonstrated:
 - `0.23.0` rolling-governance tests covering collecting, probation,
   preservation, unique-position enforcement, drawdown response, rolling
   recovery, no bonus leverage, and pre-intent tightening;
-- complete Node (168), Opportunity OS Python (284), and isolated capital (25)
+- complete Node (178), Opportunity OS Python (293), and isolated capital (27)
   test suites for the current tree;
 - a fresh `0.23.0` host-managed deployment in which four DeepSeek V4 Flash
   Scouts completed without an external Agent, the Foundry admitted no

@@ -92,7 +92,9 @@ export function createRustBuild({
           !fs.existsSync(file) ||
           !fs.statSync(file).isFile()
         )
-          throw new Error(`V8 build override must be an existing local file: ${file}`);
+          throw new Error(
+            `V8 build override must be an existing local file: ${file}`,
+          );
       }
       return {};
     }
@@ -140,25 +142,24 @@ export function createRustBuild({
     const profile = "ptrcomp_sandbox_release";
     const cacheDir = process.env.ALTA_RUSTY_V8_CACHE_DIR
       ? path.resolve(process.env.ALTA_RUSTY_V8_CACHE_DIR)
-      : path.join(
-          stateDir,
-          "cache",
-          "v8",
-          `rusty-v8-${version}-${target}`,
-        );
+      : path.join(stateDir, "cache", "v8", `rusty-v8-${version}-${target}`);
     const archiveName = target.includes("windows")
       ? `rusty_v8_${profile}_${target}.lib.gz`
       : `librusty_v8_${profile}_${target}.a.gz`;
     const bindingName = `src_binding_${profile}_${target}.rs`;
     const checksumsName = `rusty_v8_${profile}_${target}.sha256`;
     const checksums = path.join(cacheDir, checksumsName);
-    const checksumText = await fs.promises.readFile(checksums, "utf8").catch(() => {
-      throw new Error(
-        `Verified local V8 artifacts are required for an ALTA source build. Place ${checksumsName}, ${archiveName}, and ${bindingName} in ${cacheDir}, set ALTA_RUSTY_V8_CACHE_DIR, or provide both RUSTY_V8_ARCHIVE and RUSTY_V8_SRC_BINDING_PATH. The build never downloads them.`,
-      );
-    });
+    const checksumText = await fs.promises
+      .readFile(checksums, "utf8")
+      .catch(() => {
+        throw new Error(
+          `Verified local V8 artifacts are required for an ALTA source build. Place ${checksumsName}, ${archiveName}, and ${bindingName} in ${cacheDir}, set ALTA_RUSTY_V8_CACHE_DIR, or provide both RUSTY_V8_ARCHIVE and RUSTY_V8_SRC_BINDING_PATH. The build never downloads them.`,
+        );
+      });
     if (Buffer.byteLength(checksumText) > 64 * 1024)
-      throw new Error("Codex V8 checksum manifest exceeds the local size limit");
+      throw new Error(
+        "Codex V8 checksum manifest exceeds the local size limit",
+      );
     const expected = new Map();
     for (const line of checksumText.trim().split("\n")) {
       const match = line.trim().match(/^([0-9a-f]{64})\s+(.+)$/);

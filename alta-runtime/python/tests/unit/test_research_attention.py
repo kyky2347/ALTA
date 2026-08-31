@@ -33,6 +33,11 @@ def observation(
         candidate_id=f"candidate_{index}",
         scout_id=scout_id,
         entity_key=entity,
+        alpha_archetype=(
+            "revision inflection" if index < 3 else "temporary dislocation"
+        ),
+        horizon_days=(7 if index % 3 == 0 else 45 if index % 3 == 1 else 180),
+        direction=("positive" if index % 2 == 0 else "negative"),
         known_at=WAKE_AT - timedelta(minutes=index + 1),
     )
 
@@ -45,6 +50,14 @@ def build(
         universe=("NVDA", "UNH", "SPY"),
         scout_ids=SCOUT_IDS,
         observations=observations,
+        scout_archetypes={
+            scout_id: (
+                "revision inflection",
+                "temporary dislocation",
+                "policy second-order beneficiary",
+            )
+            for scout_id in SCOUT_IDS
+        },
     )
 
 
@@ -55,6 +68,12 @@ def test_empty_history_leaves_every_research_seat_unconstrained() -> None:
     assert portfolio.sample_size == 0
     assert portfolio.top_entity is None
     assert {item.mode for item in portfolio.assignments} == {"unconstrained"}
+    assert all(item.target_archetype for item in portfolio.assignments)
+    assert {item.target_horizon_bucket for item in portfolio.assignments} == {
+        "short",
+        "medium",
+        "long",
+    }
 
 
 def test_concentrated_history_preserves_one_lead_and_expands_three_seats() -> None:
@@ -73,6 +92,14 @@ def test_concentrated_history_preserves_one_lead_and_expands_three_seats() -> No
     assert portfolio.top_entity == "nvda"
     assert portfolio.top_entity_share == Decimal("0.8333")
     assert portfolio.unique_entities == 2
+    assert portfolio.unique_archetypes == 2
+    assert portfolio.horizon_mix == {"short": 2, "medium": 2, "long": 2}
+    assert portfolio.direction_mix == {
+        "positive": 3,
+        "negative": 3,
+        "neutral": 0,
+        "unknown": 0,
+    }
     assert portfolio.continuation_scout_id == "change_event_scout"
     assert portfolio.assignment_for("change_event_scout").mode == "continue_lead"
     expanding = tuple(

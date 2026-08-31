@@ -18,6 +18,22 @@ import { useI18n } from "@/lib/i18n";
 import type { MvpStatus, SelectedEntity } from "@/lib/types";
 
 const DOMAIN_VALUE_FIELDS = new Set(["status", "direction", "kind", "side"]);
+const DETAIL_CACHE_TTL_MS = 15_000;
+const DETAIL_CACHE_MAX_ENTRIES = 64;
+const detailCache = new Map<
+  string,
+  { loadedAt: number; detail: Record<string, unknown> }
+>();
+
+function cacheDetail(path: string, detail: Record<string, unknown>) {
+  detailCache.delete(path);
+  detailCache.set(path, { loadedAt: Date.now(), detail });
+  while (detailCache.size > DETAIL_CACHE_MAX_ENTRIES) {
+    const oldest = detailCache.keys().next().value;
+    if (oldest === undefined) break;
+    detailCache.delete(oldest);
+  }
+}
 
 export function DetailInspector({
   selected,
@@ -35,18 +51,27 @@ export function DetailInspector({
     error: string | null;
   } | null>(null);
   const path = selected ? entityDetailPath(selected.kind, selected.id) : null;
+  const cachedDetail = path ? (detailCache.get(path)?.detail ?? null) : null;
 
   useEffect(() => {
     if (preview || !path) return;
+    const cached = detailCache.get(path);
+    if (cached && Date.now() - cached.loadedAt < DETAIL_CACHE_TTL_MS) return;
     let active = true;
-    getJson<Record<string, unknown>>(path)
-      .then((detail) => active && setRequest({ path, detail, error: null }))
+    const controller = new AbortController();
+    getJson<Record<string, unknown>>(path, { signal: controller.signal })
+      .then((detail) => {
+        if (!active) return;
+        cacheDetail(path, detail);
+        setRequest({ path, detail, error: null });
+      })
       .catch(
         (reason) =>
           active && setRequest({ path, detail: null, error: reason.message }),
       );
     return () => {
       active = false;
+      controller.abort();
     };
   }, [path, preview]);
 
@@ -54,9 +79,11 @@ export function DetailInspector({
     preview || !path
       ? (selected?.summary ?? null)
       : request?.path === path
-        ? request.detail
-        : null;
-  const loading = Boolean(path && !preview && request?.path !== path);
+        ? (request.detail ?? cachedDetail)
+        : cachedDetail;
+  const loading = Boolean(
+    path && !preview && !cachedDetail && request?.path !== path,
+  );
   const error = request?.path === path ? request.error : null;
 
   const opportunityAssessments =

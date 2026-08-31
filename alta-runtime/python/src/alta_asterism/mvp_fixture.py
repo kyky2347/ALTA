@@ -104,8 +104,8 @@ class FixtureMindClient:
         if output["kind"] == "candidate":
             tool_names = (
                 "alta_web_search",
+                "alta_web_batch_fetch",
                 "alta_finance_data",
-                "alta_news_search",
             )
             tools = tuple(
                 ToolProvenance(
@@ -118,7 +118,7 @@ class FixtureMindClient:
                     zip(tool_names, "abc", strict=True), start=1
                 )
             )
-            discoveries = tuple(
+            base_discoveries = tuple(
                 ToolEvidenceDiscovery(
                     tool_call_id=tool.tool_call_id,
                     tool_name=tool.tool_name,
@@ -136,12 +136,35 @@ class FixtureMindClient:
                     zip(tools, "def", strict=True), start=1
                 )
             )
+            counterevidence = ToolEvidenceDiscovery(
+                tool_call_id=tools[0].tool_call_id,
+                tool_name=tools[0].tool_name,
+                source_locator=f"https://fixture-source-4.example/{scout_id}",
+                content={
+                    "fixture": True,
+                    "source": 4,
+                    "result_text": (
+                        f"Independent fixture counterevidence for {scout_id}."
+                    ),
+                },
+                content_hash="0" * 64,
+            )
+            discoveries = (*base_discoveries, counterevidence)
+            evidence_roles = (
+                "primary_fact",
+                "mechanism",
+                "market_context",
+                "counterevidence",
+            )
             output["tool_evidence_refs"] = [
                 {
                     "tool_call_id": discovery.tool_call_id,
+                    "evidence_role": evidence_role,
                     "source_locator": discovery.source_locator,
                 }
-                for discovery in discoveries
+                for discovery, evidence_role in zip(
+                    discoveries, evidence_roles, strict=True
+                )
             ]
         return ModelTurn(
             final_response=json.dumps(output, separators=(",", ":")),

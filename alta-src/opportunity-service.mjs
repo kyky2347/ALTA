@@ -8,8 +8,14 @@ import { atomicWrite } from "./durable-file.mjs";
 import { loadResourceCredentials } from "./resource-credentials.mjs";
 import {
   credentialInventory,
+  loadCredentialSecrets,
   replaceCredential,
 } from "./credential-control.mjs";
+import {
+  CredentialHealthMonitor,
+  mergeCredentialHealth,
+} from "./credential-health.mjs";
+import { PaperCapitalControl } from "./capital-control.mjs";
 import {
   HostServicePlatform,
   launchdDefinition,
@@ -150,6 +156,7 @@ export class OpportunityService {
     sourceEnv = process.env,
     platform = new HostServicePlatform(),
     environmentFactory,
+    credentialHealth,
   }) {
     this.rootDir = rootDir;
     this.stateDir = stateDir;
@@ -178,6 +185,16 @@ export class OpportunityService {
       layout.logDirectory,
       "opportunity-service.error.log",
     );
+    this.credentialHealth =
+      credentialHealth ?? new CredentialHealthMonitor({ stateDir });
+    this.paperCapital = new PaperCapitalControl({
+      rootDir,
+      stateDir,
+      environment: () => ({
+        ...this.sourceEnv,
+        ...this.ensureConfiguration(),
+      }),
+    });
   }
 
   ensureConfiguration() {
@@ -232,7 +249,7 @@ export class OpportunityService {
       if (key.startsWith("TIGER_") || PAPER_SERVICE_SETTINGS.includes(key))
         delete environment[key];
     }
-    environment.ALTA_TIGER_PAPER_ENABLED = "0";
+    Object.assign(environment, this.paperCapital.runtimeEnvironment());
     environment.PATH = [path.dirname(this.node), environment.PATH ?? ""]
       .filter(Boolean)
       .join(path.delimiter);
@@ -250,7 +267,47 @@ export class OpportunityService {
 
   credentialInventory() {
     const configured = this.ensureConfiguration();
-    return credentialInventory({ ...this.sourceEnv, ...configured });
+    const environment = { ...this.sourceEnv, ...configured };
+    const inventory = credentialInventory(environment);
+    const withHealth = mergeCredentialHealth(
+      inventory,
+      this.credentialHealth.publicState(inventory.revision),
+    );
+    const capital = this.paperCapital.status();
+    return {
+      ...withHealth,
+      trading: {
+        ...withHealth.trading,
+        authorizationEnabled: capital.enabled,
+        authorizationPosture: capital.posture,
+      },
+    };
+  }
+
+  async verifyCredentialHealth({ force = false } = {}) {
+    const configured = this.ensureConfiguration();
+    const environment = { ...this.sourceEnv, ...configured };
+    const inventory = credentialInventory(environment);
+    const loaded = loadCredentialSecrets(environment);
+    await this.credentialHealth.verify({
+      revision: inventory.revision,
+      values: loaded.values,
+      env: environment,
+      force,
+    });
+    return this.credentialInventory();
+  }
+
+  capitalStatus() {
+    return this.paperCapital.status();
+  }
+
+  refreshCapital() {
+    return this.paperCapital.refresh();
+  }
+
+  setCapitalAuthorization(enabled) {
+    return this.paperCapital.setEnabled(enabled);
   }
 
   replaceCredential(slot, secret) {
@@ -484,7 +541,9 @@ export class OpportunityService {
         : null,
       ready,
       endpoint: `http://${configured.ALTA_SERVICE_HOST}:${configured.ALTA_SERVICE_PORT}`,
-      capitalMode: "disabled",
+      capitalMode: this.paperCapital.status().enabled
+        ? "tiger_paper_acceptance"
+        : "disabled",
       credentials,
     };
   }

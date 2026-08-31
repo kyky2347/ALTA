@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from .market_research import MarketResearchAgenda
 
 
-RESEARCH_ATTENTION_VERSION = "alta-research-attention-v1"
+RESEARCH_ATTENTION_VERSION = "alta-research-attention-v2"
 RESEARCH_ATTENTION_LOOKBACK_CANDIDATES = 64
 RESEARCH_ATTENTION_MINIMUM_CANDIDATES = 4
 RESEARCH_ATTENTION_CONCENTRATION_THRESHOLD = Decimal("0.50")
@@ -21,6 +21,16 @@ _BREADTH_QUANTUM = Decimal("0.01")
 
 AttentionPosture = Literal["insufficient_sample", "balanced", "concentrated"]
 AttentionMode = Literal["unconstrained", "continue_lead", "expand_coverage"]
+HorizonBucket = Literal["short", "medium", "long"]
+Direction = Literal["positive", "negative", "neutral", "unknown"]
+
+
+def horizon_bucket(horizon_days: int) -> HorizonBucket:
+    if horizon_days <= 14:
+        return "short"
+    if horizon_days <= 90:
+        return "medium"
+    return "long"
 
 
 def canonical_entity_key(value: str) -> str:
@@ -43,6 +53,11 @@ class ResearchAttentionObservation(BaseModel):
     candidate_id: str = Field(min_length=3, max_length=128)
     scout_id: str = Field(min_length=3, max_length=64)
     entity_key: str = Field(min_length=1, max_length=128)
+    alpha_archetype: str = Field(
+        default="legacy_unclassified", min_length=1, max_length=96
+    )
+    horizon_days: int = Field(default=30, ge=1, le=365)
+    direction: Direction = "unknown"
     known_at: datetime
 
     @field_validator("entity_key")
@@ -66,7 +81,9 @@ class ResearchAttentionAssignment(BaseModel):
     scout_id: str = Field(min_length=3, max_length=64)
     mode: AttentionMode
     deprioritized_entities: tuple[str, ...] = Field(default=(), max_length=3)
-    directive: str = Field(min_length=3, max_length=360)
+    target_archetype: str | None = Field(default=None, min_length=1, max_length=96)
+    target_horizon_bucket: HorizonBucket | None = None
+    directive: str = Field(min_length=3, max_length=560)
 
     @field_validator("deprioritized_entities")
     @classmethod
@@ -92,7 +109,9 @@ class ResearchAttentionPortfolio(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    version: Literal["alta-research-attention-v1"] = RESEARCH_ATTENTION_VERSION
+    version: Literal["alta-research-attention-v1", "alta-research-attention-v2"] = (
+        RESEARCH_ATTENTION_VERSION
+    )
     known_at: datetime
     observed_through: datetime | None = None
     maximum_window: int = RESEARCH_ATTENTION_LOOKBACK_CANDIDATES
@@ -104,6 +123,12 @@ class ResearchAttentionPortfolio(BaseModel):
     top_entity_share: Decimal | None = Field(default=None, ge=0, le=1)
     concentration_hhi: Decimal | None = Field(default=None, ge=0, le=1)
     effective_breadth: Decimal | None = Field(default=None, ge=1)
+    unique_archetypes: int = Field(
+        default=0, ge=0, le=RESEARCH_ATTENTION_LOOKBACK_CANDIDATES
+    )
+    archetype_effective_breadth: Decimal | None = Field(default=None, ge=1)
+    horizon_mix: dict[str, int] = Field(default_factory=dict)
+    direction_mix: dict[str, int] = Field(default_factory=dict)
     posture: AttentionPosture
     continuation_scout_id: str | None = Field(default=None, min_length=3, max_length=64)
     assignments: tuple[ResearchAttentionAssignment, ...] = Field(
@@ -222,6 +247,7 @@ def build_research_attention_portfolio(
     universe: tuple[str, ...],
     scout_ids: tuple[str, ...],
     observations: tuple[ResearchAttentionObservation, ...],
+    scout_archetypes: dict[str, tuple[str, ...]] | None = None,
 ) -> ResearchAttentionPortfolio:
     if wake_at.tzinfo is None or wake_at.utcoffset() is None:
         raise ValueError("research attention wake must be timezone-aware")
@@ -231,6 +257,12 @@ def build_research_attention_portfolio(
         raise ValueError("research attention requires an explicit universe")
     if any(item.known_at >= wake_at for item in observations):
         raise ValueError("research attention observation must predate its wake")
+    archetypes_by_scout = scout_archetypes or {}
+    unknown_scouts = set(archetypes_by_scout) - set(scout_ids)
+    if unknown_scouts:
+        raise ValueError("research attention archetypes include an unknown Trader Mind")
+    if any(not values for values in archetypes_by_scout.values()):
+        raise ValueError("research attention archetype mandates cannot be empty")
 
     deduplicated: dict[str, ResearchAttentionObservation] = {}
     for item in sorted(
@@ -240,20 +272,59 @@ def build_research_attention_portfolio(
     ):
         deduplicated.setdefault(item.candidate_id, item)
     window = tuple(deduplicated.values())[:RESEARCH_ATTENTION_LOOKBACK_CANDIDATES]
+    archetype_counts = Counter(item.alpha_archetype for item in window)
+    horizon_counts = Counter(horizon_bucket(item.horizon_days) for item in window)
+    direction_counts = Counter(item.direction for item in window)
+
+    def coverage_target(scout_id: str, index: int) -> tuple[str | None, HorizonBucket]:
+        available = archetypes_by_scout.get(scout_id, ())
+        target_archetype = (
+            min(available, key=lambda value: (archetype_counts[value], value))
+            if available
+            else None
+        )
+        buckets: tuple[HorizonBucket, ...] = ("short", "medium", "long")
+        target_horizon = min(
+            buckets,
+            key=lambda value: (
+                horizon_counts[value],
+                (buckets.index(value) - index) % 3,
+            ),
+        )
+        return target_archetype, target_horizon
+
     if not window:
+        empty_assignments = []
+        for index, scout_id in enumerate(scout_ids):
+            target_archetype, target_horizon = coverage_target(scout_id, index)
+            empty_assignments.append(
+                ResearchAttentionAssignment(
+                    scout_id=scout_id,
+                    mode="unconstrained",
+                    target_archetype=target_archetype,
+                    target_horizon_bucket=target_horizon,
+                    directive=(
+                        "Explore independently; no production Candidate concentration sample is mature. "
+                        f"Start search in the {target_horizon} horizon"
+                        + (
+                            f" and {target_archetype} archetype"
+                            if target_archetype
+                            else ""
+                        )
+                        + ", then follow stronger contradictory evidence or return no_op."
+                    ),
+                )
+            )
         return ResearchAttentionPortfolio(
             known_at=wake_at,
             sample_size=0,
             unique_entities=0,
             posture="insufficient_sample",
-            assignments=tuple(
-                ResearchAttentionAssignment(
-                    scout_id=scout_id,
-                    mode="unconstrained",
-                    directive="Explore independently; no production Candidate concentration sample is mature.",
-                )
-                for scout_id in scout_ids
-            ),
+            horizon_mix={item: 0 for item in ("short", "medium", "long")},
+            direction_mix={
+                item: 0 for item in ("positive", "negative", "neutral", "unknown")
+            },
+            assignments=tuple(empty_assignments),
         )
 
     counts = Counter(item.entity_key for item in window)
@@ -279,6 +350,13 @@ def build_research_attention_portfolio(
     effective_breadth = (Decimal(1) / exact_hhi).quantize(
         _BREADTH_QUANTUM, rounding=ROUND_HALF_EVEN
     )
+    exact_archetype_shares = tuple(
+        Decimal(count) / Decimal(sample_size) for count in archetype_counts.values()
+    )
+    archetype_hhi = sum((share * share for share in exact_archetype_shares), Decimal(0))
+    archetype_effective_breadth = (Decimal(1) / archetype_hhi).quantize(
+        _BREADTH_QUANTUM, rounding=ROUND_HALF_EVEN
+    )
     concentrated = (
         sample_size >= RESEARCH_ATTENTION_MINIMUM_CANDIDATES
         and len(universe) > 1
@@ -295,13 +373,24 @@ def build_research_attention_portfolio(
         _continuation_scout(window, top_entity, scout_ids) if concentrated else None
     )
     assignments = []
-    for scout_id in scout_ids:
+    for index, scout_id in enumerate(scout_ids):
+        target_archetype, target_horizon = coverage_target(scout_id, index)
+        target_clause = (
+            f" Begin with the under-covered {target_horizon} horizon"
+            + (f" / {target_archetype} lane" if target_archetype else " lane")
+            + "; abandon it if evidence is weaker than another admissible lead."
+        )
         if continuation is None:
             assignments.append(
                 ResearchAttentionAssignment(
                     scout_id=scout_id,
                     mode="unconstrained",
-                    directive="Explore independently; the recent production Candidate set is not concentrated.",
+                    target_archetype=target_archetype,
+                    target_horizon_bucket=target_horizon,
+                    directive=(
+                        "Explore independently; the recent production Candidate set is not concentrated."
+                        + target_clause
+                    ),
                 )
             )
         elif scout_id == continuation:
@@ -309,8 +398,11 @@ def build_research_attention_portfolio(
                 ResearchAttentionAssignment(
                     scout_id=scout_id,
                     mode="continue_lead",
+                    target_archetype=target_archetype,
+                    target_horizon_bucket=target_horizon,
                     directive=(
                         f"Retain the single {top_entity} continuation seat, but require a new source, changed fact, or causal prediction."
+                        + target_clause
                     ),
                 )
             )
@@ -320,8 +412,11 @@ def build_research_attention_portfolio(
                     scout_id=scout_id,
                     mode="expand_coverage",
                     deprioritized_entities=(top_entity,),
+                    target_archetype=target_archetype,
+                    target_horizon_bucket=target_horizon,
                     directive=(
                         f"Expand independent coverage beyond {top_entity}; do not return another exploratory Candidate for that entity this wake."
+                        + target_clause
                     ),
                 )
             )
@@ -334,6 +429,15 @@ def build_research_attention_portfolio(
         top_entity_share=top_share,
         concentration_hhi=hhi,
         effective_breadth=effective_breadth,
+        unique_archetypes=len(archetype_counts),
+        archetype_effective_breadth=archetype_effective_breadth,
+        horizon_mix={
+            item: horizon_counts[item] for item in ("short", "medium", "long")
+        },
+        direction_mix={
+            item: direction_counts[item]
+            for item in ("positive", "negative", "neutral", "unknown")
+        },
         posture=posture,
         continuation_scout_id=continuation,
         assignments=tuple(assignments),
@@ -374,11 +478,17 @@ class ResearchAttentionProjector:
         universe: tuple[str, ...],
         scout_ids: tuple[str, ...],
         wake_at: datetime,
+        scout_archetypes: dict[str, tuple[str, ...]] | None = None,
     ) -> ResearchAttentionPortfolio:
         with self.database.connect() as connection:
             rows = connection.execute(
                 """SELECT candidate.id, run.role,
-                candidate.foundry_snapshot->>'entity_key', candidate.known_at
+                candidate.foundry_snapshot->>'entity_key',
+                coalesce(candidate.foundry_snapshot->>'alpha_archetype',
+                         'legacy_unclassified'),
+                coalesce((candidate.foundry_snapshot->>'horizon_days')::integer, 30),
+                coalesce(candidate.foundry_snapshot->>'direction', 'unknown'),
+                candidate.known_at
                 FROM research.candidate candidate
                 JOIN research.run run ON run.id = candidate.run_id
                 WHERE candidate.environment = %s AND run.environment = %s
@@ -400,7 +510,10 @@ class ResearchAttentionProjector:
                 candidate_id=row[0],
                 scout_id=row[1],
                 entity_key=row[2],
-                known_at=row[3],
+                alpha_archetype=row[3],
+                horizon_days=row[4],
+                direction=row[5],
+                known_at=row[6],
             )
             for row in rows
         )
@@ -409,6 +522,7 @@ class ResearchAttentionProjector:
             universe=universe,
             scout_ids=scout_ids,
             observations=observations,
+            scout_archetypes=scout_archetypes,
         )
 
     def public_summary(
@@ -416,8 +530,15 @@ class ResearchAttentionProjector:
         environment: str,
         universe: tuple[str, ...],
         scout_ids: tuple[str, ...],
+        scout_archetypes: dict[str, tuple[str, ...]] | None = None,
     ) -> dict[str, object]:
-        attention = self.at(environment, universe, scout_ids, datetime.now(UTC))
+        attention = self.at(
+            environment,
+            universe,
+            scout_ids,
+            datetime.now(UTC),
+            scout_archetypes,
+        )
         warning = (
             "Research attention is concentrated; one continuation seat is preserved while the remaining Trader Minds expand entity coverage."
             if attention.posture == "concentrated"
@@ -452,6 +573,14 @@ class ResearchAttentionProjector:
                 if attention.effective_breadth is not None
                 else None
             ),
+            "uniqueArchetypes": attention.unique_archetypes,
+            "archetypeEffectiveBreadth": (
+                str(attention.archetype_effective_breadth)
+                if attention.archetype_effective_breadth is not None
+                else None
+            ),
+            "horizonMix": attention.horizon_mix,
+            "directionMix": attention.direction_mix,
             "posture": attention.posture,
             "continuationScoutId": attention.continuation_scout_id,
             "assignments": [
@@ -459,6 +588,8 @@ class ResearchAttentionProjector:
                     "scoutId": item.scout_id,
                     "mode": item.mode,
                     "deprioritizedEntities": list(item.deprioritized_entities),
+                    "targetArchetype": item.target_archetype,
+                    "targetHorizonBucket": item.target_horizon_bucket,
                     "directive": item.directive,
                 }
                 for item in attention.assignments

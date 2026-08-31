@@ -141,6 +141,43 @@ test("service status detects a credential revision that needs reload", async (t)
   assert.deepEqual(status.credentials.configuredSlots, ["massive"]);
 });
 
+test("service verification keeps credential material behind the operator boundary", async (t) => {
+  const { service } = fixture(t);
+  let snapshot = { checkedAt: null, expiresAt: null, stale: true, slots: {} };
+  let receivedSecret = null;
+  service.credentialHealth = {
+    publicState: () => snapshot,
+    verify: async ({ revision, values }) => {
+      receivedSecret = values.massive;
+      snapshot = {
+        checkedAt: "2026-08-30T12:00:00.000Z",
+        expiresAt: "2026-08-30T12:15:00.000Z",
+        stale: false,
+        slots: {
+          massive: {
+            status: "healthy",
+            reason: null,
+            checkedAt: "2026-08-30T12:00:00.000Z",
+            latencyMs: 21,
+            httpStatus: 200,
+          },
+        },
+      };
+      assert.match(revision, /^[a-f0-9]{16}$/);
+      return snapshot;
+    },
+  };
+
+  const inventory = await service.verifyCredentialHealth({ force: true });
+
+  assert.match(receivedSecret, /^service_fixture_/);
+  assert.equal(
+    inventory.slots.find((slot) => slot.slot === "massive").verification.status,
+    "healthy",
+  );
+  assert.equal(JSON.stringify(inventory).includes(receivedSecret), false);
+});
+
 test("installation rejects an occupied endpoint before starting dependencies", async (t) => {
   const listener = net.createServer();
   await new Promise((resolve) => listener.listen(0, "127.0.0.1", resolve));
