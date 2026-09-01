@@ -1,7 +1,13 @@
 from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
 
-from alta_asterism.cycle_recovery import recover_frozen_wake
+import pytest
+
+from alta_asterism.cycle_recovery import (
+    FrozenCycleSnapshotError,
+    frozen_wake_hash,
+    recover_frozen_wake,
+)
 from alta_asterism.opportunity_memory import PriorOpportunitySnapshot
 from alta_asterism.research_agenda import (
     OpenResearchQuestion,
@@ -22,18 +28,21 @@ class _Rows:
 
 
 class _Connection:
-    def __init__(self, run_rows):
+    def __init__(self, run_rows, snapshot_rows=()):
         self.run_rows = run_rows
+        self.snapshot_rows = snapshot_rows
 
     def execute(self, query, _params):
+        if "FROM research.scout_batch_snapshot" in query:
+            return _Rows(self.snapshot_rows)
         if "SELECT r.role, r.frozen_input" in query:
             return _Rows(self.run_rows)
         return _Rows([("durable_database", "healthy")])
 
 
 class _Database:
-    def __init__(self, run_rows):
-        self.connection = _Connection(run_rows)
+    def __init__(self, run_rows, snapshot_rows=()):
+        self.connection = _Connection(run_rows, snapshot_rows)
 
     def connect(self):
         return nullcontext(self.connection)
@@ -128,3 +137,24 @@ def test_recovery_restores_global_research_director_from_scoped_snapshots() -> N
     for assignment in drive.research_assignments:
         scoped = recovered_frozen.opportunity_drive.for_scout(assignment.scout_id)
         assert scoped.assigned_research == assignment
+
+    with pytest.raises(FrozenCycleSnapshotError, match="no global recovery anchor"):
+        recover_frozen_wake(_Database(run_rows[:-1]), "cycle_recovery")
+
+    anchored_postures = {"durable_database": "healthy"}
+    anchored = recover_frozen_wake(
+        _Database(
+            run_rows[:-1],
+            (
+                (
+                    "shadow",
+                    wake_at,
+                    frozen.model_dump(mode="json"),
+                    anchored_postures,
+                    frozen_wake_hash(frozen, anchored_postures),
+                ),
+            ),
+        ),
+        "cycle_recovery",
+    )
+    assert anchored == (frozen, anchored_postures)

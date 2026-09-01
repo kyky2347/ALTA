@@ -22,6 +22,7 @@ ResearchQuestionOrigin = Literal[
 ResearchPriorityReason = Literal[
     "forming",
     "ranked",
+    "open_position",
     "disconfirming",
     "pillar",
     "thesis_assessor",
@@ -229,10 +230,11 @@ class OpportunityDrive(BaseModel):
         return self.model_copy(update=update)
 
 
-_STATUS_WEIGHT = {"forming": 25, "ranked": 20}
+_STATUS_WEIGHT = {"forming": 25, "ranked": 20, "shadow": 30}
 _STATUS_REASON: dict[str, ResearchPriorityReason] = {
     "forming": "forming",
     "ranked": "ranked",
+    "shadow": "open_position",
 }
 _ORIGIN_WEIGHT = {
     "disconfirming_assessor": 40,

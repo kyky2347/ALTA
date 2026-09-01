@@ -7,6 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal, Protocol
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -35,13 +36,47 @@ _SENSITIVE_KEYS = {
     "xapikey",
 }
 _AUTH_PATTERN = re.compile(r"(?i)\b(bearer|basic)\s+[a-z0-9._~+/=-]+")
-_QUERY_SECRET_PATTERN = re.compile(
-    r"(?i)([?&](?:api[_-]?key|access[_-]?token|token|secret|signature)=)[^&#\s]+"
-)
+_URL_PATTERN = re.compile(r"(?i)https?://[^\s\"'<>]+")
 
 
 def _normalized_key(value: str) -> str:
     return re.sub(r"[^a-z0-9]", "", value.lower())
+
+
+def _sensitive_query_key(value: str) -> bool:
+    normalized = _normalized_key(value)
+    return (
+        normalized in _SENSITIVE_KEYS
+        or normalized in {"auth", "code", "credential", "key", "sig"}
+        or value.casefold().replace("_", "-").startswith("x-amz-")
+    )
+
+
+def _redact_url(value: str) -> str:
+    """Remove URL credentials/fragments and redact authentication query values."""
+
+    try:
+        parsed = urlsplit(value)
+        hostname = parsed.hostname
+        if parsed.scheme not in {"http", "https"} or hostname is None:
+            return value
+        host = f"[{hostname}]" if ":" in hostname else hostname
+        try:
+            port = parsed.port
+        except ValueError:
+            port = None
+        netloc = f"{host}:{port}" if port is not None else host
+        query = urlencode(
+            [
+                (key, REDACTED if _sensitive_query_key(key) else item)
+                for key, item in parse_qsl(parsed.query, keep_blank_values=True)
+            ],
+            doseq=True,
+            safe="[]",
+        )
+        return urlunsplit((parsed.scheme, netloc, parsed.path, query, ""))
+    except (TypeError, ValueError):
+        return value
 
 
 def redact(value: Any) -> Any:
@@ -58,9 +93,7 @@ def redact(value: Any) -> Any:
         return [redact(item) for item in value]
     if isinstance(value, str):
         value = _AUTH_PATTERN.sub(lambda match: f"{match.group(1)} {REDACTED}", value)
-        return _QUERY_SECRET_PATTERN.sub(
-            lambda match: f"{match.group(1)}{REDACTED}", value
-        )
+        return _URL_PATTERN.sub(lambda match: _redact_url(match.group(0)), value)
     return value
 
 

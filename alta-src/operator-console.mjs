@@ -367,6 +367,9 @@ export function createOperatorConsole({
         configured: false,
         requestedEnabled: false,
         enabled: false,
+        authorizationGeneration: null,
+        closeOnly: false,
+        drainRequired: false,
         posture: "not_configured",
         accountFingerprint: null,
         configurationFingerprint: null,
@@ -784,7 +787,7 @@ export function createOperatorConsole({
             return;
           }
           const capital = await service.setCapitalAuthorization(body.enabled);
-          if (!body.enabled && running) {
+          if (!body.enabled && running && !capital.enabled) {
             await service.stop();
             const { environment: childEnvironment } =
               service.runtimeEnvironment();

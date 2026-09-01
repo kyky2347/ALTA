@@ -12,6 +12,10 @@ import { useState } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { StatusPill } from "@/components/status-pill";
 import { useI18n } from "@/lib/i18n";
+import {
+  focusedOpportunity,
+  latestRankBookMap,
+} from "@/lib/opportunity-selection";
 import type { MvpStatus, RuntimeDetail, SelectedEntity } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -19,30 +23,59 @@ export function OpportunityField({
   status,
   runtime,
   selected,
+  selectedOpportunityId,
   onSelect,
 }: {
   status: MvpStatus;
   runtime: RuntimeDetail | null;
   selected: SelectedEntity | null;
+  selectedOpportunityId: string | null;
   onSelect: (entity: SelectedEntity) => void;
 }) {
   const { domain, number, relative, t } = useI18n();
   const [mobileStage, setMobileStage] = useState<
     "discovery" | "foundry" | "committee" | "action"
   >("foundry");
-  const leading = status.opportunities[0];
+  const leading = focusedOpportunity(status, selectedOpportunityId);
   const assessments = leading
     ? status.assessments.filter((item) => item.opportunityId === leading.id)
     : [];
   const discussion = leading
     ? status.discussions.filter((item) => item.opportunityId === leading.id)
     : [];
+  const selectedPosition =
+    selected?.kind === "position"
+      ? status.shadowPositions.find((item) => item.id === selected.id)
+      : undefined;
+  const selectedExpressionId =
+    selected?.kind === "expression"
+      ? selected.id
+      : selectedPosition?.expressionId;
+  const selectedExpression = selectedExpressionId
+    ? status.expressions.find((item) => item.id === selectedExpressionId)
+    : undefined;
+  const explicitExpressionRequested =
+    selected?.kind === "expression" || selected?.kind === "position";
   const expression = leading
-    ? status.expressions.find((item) => item.opportunityId === leading.id)
-    : status.expressions[0];
+    ? explicitExpressionRequested
+      ? selectedExpression?.opportunityId === leading.id
+        ? selectedExpression
+        : undefined
+      : status.expressions.find((item) => item.opportunityId === leading.id)
+    : undefined;
   const position = expression
-    ? status.shadowPositions.find((item) => item.expressionId === expression.id)
-    : status.shadowPositions[0];
+    ? selectedPosition?.expressionId === expression.id
+      ? selectedPosition
+      : status.shadowPositions.find(
+          (item) => item.expressionId === expression.id,
+        )
+    : undefined;
+  const visibleOpportunities = leading
+    ? [
+        leading,
+        ...status.opportunities.filter((item) => item.id !== leading.id),
+      ].slice(0, 3)
+    : status.opportunities.slice(0, 3);
   const agents = status.agents.slice(0, 6);
   const sourceCandidate = status.candidates[0];
   const activeAgent =
@@ -52,6 +85,7 @@ export function OpportunityField({
     (agent) =>
       agent.status === "running" && /(expression|audit)/i.test(agent.id),
   );
+  const currentRanks = latestRankBookMap(status);
 
   return (
     <section className="field-shell" aria-labelledby="field-title">
@@ -73,8 +107,10 @@ export function OpportunityField({
         {(["discovery", "foundry", "committee", "action"] as const).map(
           (stage) => (
             <button
+              type="button"
               className={mobileStage === stage ? "is-active" : ""}
               key={stage}
+              aria-pressed={mobileStage === stage}
               onClick={() => setMobileStage(stage)}
             >
               {stage === "action"
@@ -125,7 +161,7 @@ export function OpportunityField({
         </div>
 
         <StageArrow
-          source={sourceCandidate?.id ?? "candidate"}
+          source={sourceCandidate ? t("candidateStream") : "candidate"}
           target={leading?.id ?? "foundry"}
           knownAt={leading?.knownAt ?? sourceCandidate?.knownAt}
           active={activeRuntime && !leading && Boolean(sourceCandidate)}
@@ -143,39 +179,48 @@ export function OpportunityField({
             count={status.opportunities.length}
           />
           <div className="stage-stack">
-            {status.opportunities.slice(0, 3).map((opportunity, index) => (
-              <button
-                className={cn(
-                  "opportunity-card",
-                  selected?.id === opportunity.id && "is-selected",
-                )}
-                key={opportunity.id}
-                onClick={() =>
-                  onSelect({
-                    kind: "opportunity",
-                    id: opportunity.id,
-                    label: opportunity.title,
-                    summary: opportunity as unknown as Record<string, unknown>,
-                  })
-                }
-              >
-                <div className="opportunity-card-top">
-                  <span>
-                    {opportunity.id} · {String(index + 1).padStart(2, "0")}
-                  </span>
-                  <StatusPill status={opportunity.status} />
-                </div>
-                <h3>{opportunity.title}</h3>
-                <div className="opportunity-card-bottom">
-                  <span>
-                    {opportunity.foundryState
-                      ? domain(opportunity.foundryState)
-                      : t("building")}
-                  </span>
-                  <span>{relative(opportunity.knownAt)}</span>
-                </div>
-              </button>
-            ))}
+            {visibleOpportunities.map((opportunity) => {
+              const rank = currentRanks.get(opportunity.id);
+              return (
+                <button
+                  type="button"
+                  className={cn(
+                    "opportunity-card",
+                    leading?.id === opportunity.id && "is-selected",
+                  )}
+                  key={opportunity.id}
+                  aria-pressed={leading?.id === opportunity.id}
+                  onClick={() =>
+                    onSelect({
+                      kind: "opportunity",
+                      id: opportunity.id,
+                      label: opportunity.title,
+                      summary: opportunity as unknown as Record<
+                        string,
+                        unknown
+                      >,
+                    })
+                  }
+                >
+                  <div className="opportunity-card-top">
+                    <span>
+                      {opportunity.id}
+                      {rank ? ` · #${rank.position}` : ""}
+                    </span>
+                    <StatusPill status={opportunity.status} />
+                  </div>
+                  <h3>{opportunity.title}</h3>
+                  <div className="opportunity-card-bottom">
+                    <span>
+                      {opportunity.foundryState
+                        ? domain(opportunity.foundryState)
+                        : t("building")}
+                    </span>
+                    <span>{relative(opportunity.knownAt)}</span>
+                  </div>
+                </button>
+              );
+            })}
             {!status.opportunities.length && (
               <EmptyStage label={t("foundryWaiting")} />
             )}
@@ -201,11 +246,13 @@ export function OpportunityField({
           <div className="agent-matrix">
             {agents.map((agent) => (
               <button
+                type="button"
                 className={cn(
                   "agent-node",
                   selected?.id === agent.runId && "is-selected",
                 )}
                 key={agent.id}
+                aria-pressed={selected?.id === agent.runId}
                 onClick={() =>
                   onSelect({
                     kind: "run",
@@ -238,7 +285,9 @@ export function OpportunityField({
           <div className="handoff-stack">
             {discussion.slice(0, 2).map((item) => (
               <button
+                type="button"
                 key={item.id}
+                aria-pressed={selected?.id === item.id}
                 onClick={() =>
                   onSelect({
                     kind: "event",
@@ -304,10 +353,12 @@ export function OpportunityField({
           />
           {expression ? (
             <button
+              type="button"
               className={cn(
                 "action-card",
                 selected?.id === expression.id && "is-selected",
               )}
+              aria-pressed={selected?.id === expression.id}
               onClick={() =>
                 onSelect({
                   kind: "expression",
@@ -338,7 +389,12 @@ export function OpportunityField({
           </div>
           {position ? (
             <button
-              className="position-line"
+              type="button"
+              className={cn(
+                "position-line",
+                selected?.id === position.id && "is-selected",
+              )}
+              aria-pressed={selected?.id === position.id}
               onClick={() =>
                 onSelect({
                   kind: "position",

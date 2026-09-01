@@ -317,6 +317,23 @@ class Settings(BaseSettings):
         le=60,
         validation_alias="ALTA_TIGER_ORDER_TIMEOUT_SECONDS",
     )
+    tiger_paper_authorization_path: Path | None = Field(
+        default=None,
+        validation_alias="ALTA_TIGER_PAPER_AUTHORIZATION_PATH",
+    )
+    tiger_paper_authorization_generation: int | None = Field(
+        default=None,
+        ge=1,
+        validation_alias="ALTA_TIGER_PAPER_AUTHORIZATION_GENERATION",
+    )
+    tiger_paper_owner_lease_path: Path | None = Field(
+        default=None,
+        validation_alias="ALTA_TIGER_PAPER_OWNER_LEASE_PATH",
+    )
+    tiger_paper_mutation_lease_path: Path | None = Field(
+        default=None,
+        validation_alias="ALTA_TIGER_PAPER_MUTATION_LEASE_PATH",
+    )
     acceptance_hold_seconds: int | None = Field(
         default=None,
         ge=2,
@@ -391,6 +408,19 @@ class Settings(BaseSettings):
             raise ValueError("Tiger Paper mirroring requires ALTA_ENVIRONMENT=shadow")
         if self.tiger_config_path is None or not self.tiger_config_path.is_absolute():
             raise ValueError("Tiger Paper mirroring requires an absolute config path")
+        required_paths = (
+            self.tiger_paper_authorization_path,
+            self.tiger_paper_owner_lease_path,
+            self.tiger_paper_mutation_lease_path,
+        )
+        if any(path is None or not path.is_absolute() for path in required_paths):
+            raise ValueError(
+                "Tiger Paper mirroring requires absolute authorization and lease paths"
+            )
+        if self.tiger_paper_authorization_generation is None:
+            raise ValueError(
+                "Tiger Paper mirroring requires an authorization generation"
+            )
         account_hash = (
             self.tiger_paper_account_sha256.get_secret_value()
             if self.tiger_paper_account_sha256 is not None

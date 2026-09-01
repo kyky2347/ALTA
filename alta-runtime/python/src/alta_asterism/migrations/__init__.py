@@ -14,6 +14,10 @@ from . import (
     b13_0011,
     b14_0012,
     b15_0013,
+    b16_0014,
+    b17_0015,
+    b18_0016,
+    b19_0017,
 )
 
 MIGRATIONS = (
@@ -30,8 +34,19 @@ MIGRATIONS = (
     b13_0011,
     b14_0012,
     b15_0013,
+    b16_0014,
+    b17_0015,
+    b18_0016,
+    b19_0017,
 )
 LATEST_REVISION = MIGRATIONS[-1].REVISION
-CURRENT_TABLES = (*b1_0001.TABLES, *b7_0005.TABLES)
+CURRENT_TABLES = (
+    *b1_0001.TABLES,
+    *b7_0005.TABLES,
+    *b16_0014.TABLES,
+    *b17_0015.TABLES,
+    *b18_0016.TABLES,
+    *b19_0017.TABLES,
+)
 
 __all__ = ["CURRENT_TABLES", "LATEST_REVISION", "MIGRATIONS"]

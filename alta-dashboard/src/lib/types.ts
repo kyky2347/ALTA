@@ -202,6 +202,9 @@ export type PaperCapitalStatus = {
   configured: boolean;
   requestedEnabled: boolean;
   enabled: boolean;
+  authorizationGeneration: number | null;
+  closeOnly: boolean;
+  drainRequired: boolean;
   posture:
     | "disabled"
     | "not_configured"
@@ -209,6 +212,7 @@ export type PaperCapitalStatus = {
     | "snapshot_invalid"
     | "configuration_changed"
     | "paper_enabled"
+    | "paper_recovery_required"
     | "paper_ready_disabled";
   accountFingerprint: string | null;
   configurationFingerprint: string | null;
@@ -295,6 +299,9 @@ export type MvpStatus = {
     id: string;
     opportunityId: string;
     book: string;
+    rankingRunId: string;
+    rankingRunItemCount: number;
+    rankingRunComplete: boolean;
     position: number;
     score: string | number;
     knownAt: string;
@@ -643,4 +650,5 @@ export type SelectedEntity = {
   id: string;
   label: string;
   summary?: Record<string, unknown>;
+  snapshotOnly?: boolean;
 };

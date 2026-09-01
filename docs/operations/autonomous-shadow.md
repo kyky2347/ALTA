@@ -180,12 +180,18 @@ the autonomous path. The separate acceptance command remains available for a
 bounded lifecycle test. Both paths require an exact 17-digit Paper
 account SHA-256 binding, an owner-only non-symlink configuration file, zero
 positions, zero open orders, and a single-owner lease. It permits only one-share
-stock/ETF DAY limit orders, reconciles every fill to the exact account, and
-the bounded acceptance command verifies the account remains flat and order-free
-in a `finally` block. Account discovery, live fallback, shorts, options,
+stock/ETF DAY limit orders. Each mutation first persists a Paper intent and
+revalidates the current authorization generation inside the account-global
+lease. Broker results, Paper events, and Shadow state close in one local
+transaction. Restart reconciliation uses a stable ALTA `user_mark` in recent
+Tiger history; because it is not a server-side idempotency key, any missing,
+duplicate, partial, non-terminal, or mismatched record enters `manual_review`
+instead of being repeated. Revoking with the managed position enters close-only
+recovery, which blocks buys while permitting the durable exit to drain. The
+bounded acceptance command verifies the account remains flat and order-free in
+a `finally` block. Account discovery, live fallback, shorts, options,
 extended-hours orders, browser order entry, and an HTTP order endpoint are
-absent or rejected. Revoking the console authorization is durable before the
-service and dependencies are stopped.
+absent or rejected.
 
 ## Preflight
 
@@ -377,10 +383,14 @@ LaunchAgents start at macOS login. Linux systemd-user units start with the user
 manager; boot-before-login operation requires the operator to enable the
 standard systemd linger policy separately. ALTA does not change that host policy.
 
-The scheduler uses a PostgreSQL advisory lock so only one owner runs. A failed
-cycle is recorded without its exception detail, its Agent runtime is discarded,
-and the next attempt starts from a clean runtime after bounded exponential
-backoff. Waiting and degraded states emit periodic heartbeats.
+The scheduler combines a PostgreSQL advisory lock with a durable, monotonic
+owner epoch. Every transaction through the autonomous `Database` validates the
+epoch/token before work and again before commit while holding the owner row;
+session loss or a successor owner therefore fences stale writes. A failed cycle
+is recorded without its exception detail, its Agent runtime is discarded, and
+the next attempt starts from a clean runtime after bounded exponential backoff.
+Waiting and degraded states emit periodic heartbeats. This is single-database
+fencing, not a distributed-consensus or multi-region HA claim.
 
 The supervisor has no restart limit unless `--max-restarts` is passed
 explicitly. It restarts a crashed child and continuously probes readiness. A

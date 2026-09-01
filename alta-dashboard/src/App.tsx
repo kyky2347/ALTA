@@ -2,6 +2,7 @@ import {
   lazy,
   startTransition,
   Suspense,
+  useCallback,
   useEffect,
   useMemo,
   useState,
@@ -39,6 +40,11 @@ import { RuntimeControl } from "@/components/runtime-control";
 import { StatusPill } from "@/components/status-pill";
 import { useAltaConsole } from "@/hooks/use-alta-console";
 import { useI18n } from "@/lib/i18n";
+import {
+  latestRankLeader,
+  opportunityIdForEntity,
+  refreshSelectedEntity,
+} from "@/lib/opportunity-selection";
 import type { ControlState, SelectedEntity } from "@/lib/types";
 import { cn, readableMindSummary } from "@/lib/utils";
 
@@ -149,9 +155,13 @@ export default function App() {
   } = consoleState;
   const [view, setView] = useState<View>(storedView);
   const [selected, setSelected] = useState<SelectedEntity | null>(null);
+  const [selectedOpportunityId, setSelectedOpportunityId] = useState<
+    string | null
+  >(null);
   const [commandOpen, setCommandOpen] = useState(false);
   const [railOpen, setRailOpen] = useState(storedRail);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [, setClockTick] = useState(0);
 
   useEffect(() => {
     const listener = (event: KeyboardEvent) => {
@@ -176,23 +186,58 @@ export default function App() {
     }
   }, [railOpen, view]);
 
-  const localizedSelected = useMemo(
-    () => relabelEntity(selected, domain, t),
-    [domain, selected, t],
+  useEffect(() => {
+    const updateVisibleClock = () => {
+      if (document.visibilityState === "visible") setClockTick(Date.now());
+    };
+    const timer = window.setInterval(updateVisibleClock, 30_000);
+    document.addEventListener("visibilitychange", updateVisibleClock);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", updateVisibleClock);
+    };
+  }, []);
+
+  const handleSelect = useCallback(
+    (entity: SelectedEntity) => {
+      setSelected(entity);
+      const opportunityId = opportunityIdForEntity(status, entity);
+      setSelectedOpportunityId(opportunityId);
+    },
+    [status],
   );
-  const activeSelected =
-    localizedSelected ??
-    (status?.opportunities[0]
-      ? {
-          kind: "opportunity" as const,
-          id: status.opportunities[0].id,
-          label: status.opportunities[0].title,
-          summary: status.opportunities[0] as unknown as Record<
-            string,
-            unknown
-          >,
-        }
-      : null);
+
+  const refreshedSelected = useMemo(
+    () => refreshSelectedEntity(status, selected),
+    [selected, status],
+  );
+  const localizedSelected = useMemo(
+    () => relabelEntity(refreshedSelected, domain, t),
+    [domain, refreshedSelected, t],
+  );
+  const selectionExpired = Boolean(
+    selectedOpportunityId &&
+      status &&
+      !status.opportunities.some(
+        (opportunity) => opportunity.id === selectedOpportunityId,
+      ),
+  );
+  const effectiveOpportunityId = selectionExpired
+    ? null
+    : selectedOpportunityId;
+  const defaultOpportunity = status ? latestRankLeader(status) : null;
+  const defaultOpportunityEntity = defaultOpportunity
+    ? {
+        kind: "opportunity" as const,
+        id: defaultOpportunity.id,
+        label: defaultOpportunity.title,
+        summary: defaultOpportunity as unknown as Record<string, unknown>,
+      }
+    : null;
+  const inspectorSelected = localizedSelected ?? defaultOpportunityEntity;
+  const fieldSelected = selectionExpired
+    ? defaultOpportunityEntity
+    : inspectorSelected;
   const visibleOperation = recentOperation(control?.operation);
   const runtimeReady = preview || Boolean(control?.runtime.ready);
 
@@ -450,16 +495,17 @@ export default function App() {
                 <OpportunityField
                   status={status}
                   runtime={runtime}
-                  selected={activeSelected}
-                  onSelect={setSelected}
+                  selected={fieldSelected}
+                  selectedOpportunityId={effectiveOpportunityId}
+                  onSelect={handleSelect}
                 />
               )}
               {view === "ledger" && (
                 <DecisionLedger
                   events={events}
                   status={status}
-                  selected={activeSelected}
-                  onSelect={setSelected}
+                  selected={inspectorSelected}
+                  onSelect={handleSelect}
                   onLoadOlder={loadOlderEvents}
                   loadingOlder={loadingOlder}
                   hasOlder={preview ? false : hasOlder}
@@ -469,24 +515,24 @@ export default function App() {
                 <SystemOverview
                   status={status}
                   runtime={runtime}
-                  onSelect={setSelected}
+                  onSelect={handleSelect}
                 />
               )}
               {view === "agents" && (
                 <AgentDesk
                   status={status}
                   runtime={runtime}
-                  onSelect={setSelected}
+                  onSelect={handleSelect}
                 />
               )}
               {view === "shadow" && (
                 <ShadowBook
                   status={status}
                   runtime={runtime}
-                  onSelect={setSelected}
+                  onSelect={handleSelect}
                 />
               )}
-              <EventTimeline events={events} onSelect={setSelected} />
+              <EventTimeline events={events} onSelect={handleSelect} />
             </>
           )}
         </Suspense>
@@ -495,9 +541,11 @@ export default function App() {
       {view !== "credentials" && view !== "capital" && (
         <Suspense fallback={null}>
           <DetailInspector
-            selected={activeSelected}
+            selected={inspectorSelected}
             status={status}
             preview={preview}
+            selectionExpired={selectionExpired}
+            liveFallbackAvailable={Boolean(defaultOpportunityEntity)}
           />
         </Suspense>
       )}
@@ -509,7 +557,7 @@ export default function App() {
             onOpenChange={setCommandOpen}
             status={status}
             events={events}
-            onSelect={setSelected}
+            onSelect={handleSelect}
           />
         </Suspense>
       )}

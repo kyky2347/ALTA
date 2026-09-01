@@ -1,8 +1,10 @@
 import json
 import os
 import re
+import subprocess
+from contextlib import contextmanager
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from pathlib import Path
@@ -142,24 +144,155 @@ class SingleOwnerLease:
         self.path = path
         self.owner_id = owner_id
         self.token: str | None = None
+        self.payload: dict[str, object] | None = None
+
+    @property
+    def _guard_path(self) -> Path:
+        return self.path.with_name(f"{self.path.name}.guard")
+
+    @contextmanager
+    def _guard(self):
+        """Serialize lease inspection and replacement across local processes."""
+
+        import fcntl
+
+        descriptor = os.open(self._guard_path, os.O_CREAT | os.O_RDWR, 0o600)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+            yield
+        finally:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+            os.close(descriptor)
+
+    @staticmethod
+    def _process_alive(pid: object) -> bool:
+        if not isinstance(pid, int) or pid <= 0:
+            return False
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        return True
+
+    @staticmethod
+    def _process_identity(pid: int) -> str | None:
+        """Return a stable identity for one process lifetime, not just its PID."""
+
+        proc_stat = Path(f"/proc/{pid}/stat")
+        try:
+            raw_stat = proc_stat.read_text()
+            command_end = raw_stat.rfind(")")
+            fields_after_command = raw_stat[command_end + 2 :].split()
+            # /proc/<pid>/stat field 22 is the start time in clock ticks. The
+            # slice starts at field 3, so field 22 is index 19 here.
+            if command_end >= 0 and len(fields_after_command) > 19:
+                boot_id = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
+                start_ticks = fields_after_command[19]
+                if boot_id and start_ticks.isdigit():
+                    return f"linux:{boot_id}:{start_ticks}"
+        except (FileNotFoundError, OSError, UnicodeError):
+            pass
+
+        ps_path = "/bin/ps" if Path("/bin/ps").is_file() else "ps"
+        try:
+            completed = subprocess.run(
+                [ps_path, "-p", str(pid), "-o", "lstart="],
+                capture_output=True,
+                check=False,
+                env={"LC_ALL": "C", "PATH": os.environ.get("PATH", "")},
+                text=True,
+                timeout=2,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        started_at = " ".join(completed.stdout.split())
+        if completed.returncode != 0 or not started_at:
+            return None
+        return f"ps:{started_at}"
+
+    def _remove_dead_owner(self) -> None:
+        try:
+            existing = json.loads(self.path.read_text())
+        except FileNotFoundError:
+            return
+        except (OSError, ValueError, TypeError) as error:
+            raise PaperBoundaryError("Paper owner lease is unreadable") from error
+        if not isinstance(existing, dict) or "pid" not in existing:
+            raise PaperBoundaryError(
+                "Paper boundary has a legacy or invalid owner lease"
+            )
+        existing_pid = existing.get("pid")
+        if self._process_alive(existing_pid):
+            recorded_identity = existing.get("process_identity")
+            if not isinstance(recorded_identity, str) or not recorded_identity:
+                # A live legacy lease cannot safely distinguish its owner from
+                # a reused PID. Preserve the fail-closed behavior.
+                raise PaperBoundaryError("Paper boundary already has an owner")
+            current_identity = self._process_identity(existing_pid)
+            if current_identity is None:
+                raise PaperBoundaryError(
+                    "Paper boundary owner identity cannot be verified"
+                )
+            if current_identity == recorded_identity:
+                raise PaperBoundaryError("Paper boundary already has an owner")
+        self.path.unlink()
+
+    def _publish(self, payload: bytes, token: str) -> None:
+        """Atomically publish a complete lease without a partial-file window."""
+
+        temporary = self.path.with_name(f".{self.path.name}.{token}.tmp")
+        flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        descriptor: int | None = None
+        try:
+            descriptor = os.open(temporary, flags, 0o600)
+            view = memoryview(payload)
+            while view:
+                written = os.write(descriptor, view)
+                if written <= 0:
+                    raise OSError("Paper owner lease write made no progress")
+                view = view[written:]
+            os.fsync(descriptor)
+            os.close(descriptor)
+            descriptor = None
+            try:
+                os.link(temporary, self.path, follow_symlinks=False)
+            except FileExistsError as error:
+                raise PaperBoundaryError(
+                    "Paper boundary already has an owner"
+                ) from error
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)
+            try:
+                temporary.unlink()
+            except FileNotFoundError:
+                pass
 
     def acquire(self) -> None:
         if self.token is not None:
             return
         token = uuid4().hex
-        payload = json.dumps(
-            {"owner_id": self.owner_id, "token": token}, separators=(",", ":")
-        ).encode()
-        flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
-        try:
-            descriptor = os.open(self.path, flags, 0o600)
-        except FileExistsError as error:
-            raise PaperBoundaryError("Paper boundary already has an owner") from error
-        try:
-            os.write(descriptor, payload)
-        finally:
-            os.close(descriptor)
+        process_identity = self._process_identity(os.getpid())
+        if process_identity is None:
+            raise PaperBoundaryError("Paper owner process identity is unavailable")
+        lease = {
+            "owner_id": self.owner_id,
+            "token": token,
+            "pid": os.getpid(),
+            "process_identity": process_identity,
+            "acquired_at": datetime.now(UTC).isoformat(),
+        }
+        payload = json.dumps(lease, separators=(",", ":")).encode()
+        with self._guard():
+            if self.path.exists():
+                self._remove_dead_owner()
+            self._publish(payload, token)
         self.token = token
+        self.payload = lease
 
     def assert_owned(self) -> None:
         if self.token is None:
@@ -168,15 +301,18 @@ class SingleOwnerLease:
             payload = json.loads(self.path.read_text())
         except (OSError, ValueError, TypeError) as error:
             raise PaperBoundaryError("Paper owner lease is unavailable") from error
-        if payload != {"owner_id": self.owner_id, "token": self.token}:
+        if payload != self.payload:
             raise PaperBoundaryError("Paper owner lease no longer matches")
 
     def release(self) -> None:
         if self.token is None:
             return
         self.assert_owned()
-        self.path.unlink()
+        with self._guard():
+            self.assert_owned()
+            self.path.unlink()
         self.token = None
+        self.payload = None
 
 
 class PaperBoundary:

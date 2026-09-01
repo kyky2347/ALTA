@@ -39,6 +39,20 @@ const en = {
   capitalAuthorization: "Trading authorization",
   authorizationArmed: "Paper execution authorized",
   authorizationDisarmed: "Paper execution locked",
+  recoveryOnlyAuthorization: "Paper recovery · close only",
+  recoveryOnlyAuthorizationDetail:
+    "New BUY orders are blocked. ALTA may only SELL the bound Paper position while it returns the account to an empty state.",
+  paperRecoveryOnly: "Recovery · SELL only",
+  paperRecoveryRequired: "Paper recovery is still in progress",
+  paperRecoveryRequiredDetail:
+    "A position or open order prevented immediate revocation. Authorization remains narrowly enabled for SELL-only recovery; verify the account and revoke again after it is empty.",
+  clearAuthorizationRequest: "Clear inactive authorization",
+  requestedAuthorization: "Requested authorization",
+  effectiveAuthorization: "Effective authorization",
+  authorizationRequested: "Requested",
+  authorizationNotRequested: "Not requested",
+  effectiveEnabled: "Enabled",
+  effectiveDisabled: "Disabled",
   authorizePaper: "Authorize Paper execution",
   revokeAuthorization: "Revoke authorization",
   capitalGateDetail:
@@ -94,7 +108,7 @@ const en = {
   confirmRevoke: "Revoke and stop safely",
   confirmRevokeTitle: "Revoke Paper execution?",
   confirmRevokeDetail:
-    "Authorization is revoked before any running ALTA service is stopped. Existing broker positions are never hidden or discarded.",
+    "ALTA first verifies the bound Paper account. If exposure remains, it enters SELL-only recovery and keeps authorization narrowly active until the account is empty; only then is authorization fully revoked and the runtime stopped.",
   paperBoundary: "Paper account only",
   paperCapitalBoundaryDetail:
     "No live-account route exists. Account numbers, configuration paths, private keys, and raw broker order IDs never reach this browser.",
@@ -226,7 +240,58 @@ const en = {
     "No run artifact is attached to this selected record. Opportunity evidence may be represented through assessments and committee events.",
   noPublicSummary: "No public summary",
   loadingDurableRecord: "Loading the durable record…",
+  loadingDurableRecordDetail:
+    "The selected record is being read from the local durable store. Every tab will update together.",
+  refreshingSavedDetail: "Refreshing saved detail",
+  refreshingSavedDetailDetail:
+    "Showing the saved record from {{time}} while ALTA verifies a newer version.",
+  staleDetailRefreshFailed: "Saved detail could not be refreshed",
+  staleDetailRefreshFailedDetail:
+    "Every tab is showing the saved record from {{time}}. Refresh failed: {{error}}",
+  detailUnavailable: "Durable detail is unavailable",
+  detailUnavailableDetail:
+    "Only the bounded summary is available. The detail request failed: {{error}}",
+  selectionExpired: "The previous selection left the live snapshot",
+  selectionExpiredFallbackDetail:
+    "This durable record remains open for inspection. The live opportunity field follows the newest valid rank leader without carrying historical detail into current state.",
+  selectionExpiredEmptyDetail:
+    "This durable record remains open for inspection. No current ranked opportunity is available in the bounded live snapshot.",
+  boundedPositionSnapshot: "Bounded position snapshot",
+  boundedPositionSnapshotDetail:
+    "This position has no separate detail endpoint. Values are refreshed from the latest bounded system snapshot rather than presented as a canonical live broker record.",
+  positionSnapshotExpired: "Position left the bounded live snapshot",
+  positionSnapshotExpiredDetail:
+    "This click-time snapshot is retained for inspection, but it is no longer presented as current position state.",
   originalArtifact: "Original saved artifact",
+  researchContinuity: "Research continuity",
+  researchMode: "Research mode",
+  parentOpportunity: "Parent opportunity",
+  researchQuestion: "Research question",
+  beneficiaryPath: "Beneficiary path",
+  disconfirmingEvidence: "Disconfirming evidence",
+  nextResearchTest: "Next research test",
+  openQuestion: "Open question",
+  noOpenResearchQuestions: "No open research questions are saved.",
+  thesisPillars: "Thesis pillars",
+  pillarNumber: "Pillar {{number}}",
+  deadlineUnavailable: "Evidence deadline unavailable",
+  observable: "Observable",
+  confirmationCondition: "Confirmation condition",
+  invalidationCondition: "Invalidation condition",
+  noThesisPillars: "No frozen thesis pillars are saved.",
+  researchDiligence: "Research diligence",
+  noResearchDiligence: "No research diligence record is saved.",
+  rankAndExpression: "Rank & expression",
+  rankingHistory: "Ranking history",
+  rankPosition: "Rank #{{position}}",
+  book: "Book",
+  score: "Score",
+  knownAt: "Recorded at",
+  reasonCodes: "Reason codes",
+  noRankingHistory: "No ranking history is saved for this opportunity.",
+  expressionHistory: "Expression history",
+  noExpressionHistory: "No expression history is saved for this opportunity.",
+  additionalRecordsHidden: "{{count}} older records remain in normalized JSON.",
   recentEventReplay: "Recent event replay",
   replayRibbon: "Replay ribbon",
   loadedDurableEvents: "{{count}} loaded durable events",
@@ -248,6 +313,7 @@ const en = {
   audit: "Audit",
   unclassified: "Unclassified",
   noCandidates: "No candidates yet",
+  candidateStream: "Candidate stream",
   building: "Building",
   foundryWaiting: "Foundry is waiting for candidates",
   modelPending: "Model pending",
@@ -367,6 +433,25 @@ const en = {
   sourcePosture: "Source posture",
   observed: "observed",
   noSourcePosture: "No source posture has been recorded.",
+  sourceFreshness: "Freshness · {{freshness}}",
+  sourceIssue: "Issue · {{issue}}",
+  sourceNoKnownIssue: "No additional source error recorded",
+  sourcePreviousState: "Previous different state · {{posture}} · {{freshness}}",
+  sourcePriorRecordsHidden:
+    "{{count}} earlier cycle records folded into this state",
+  sourceHistoryFolded:
+    "{{count}} earlier cycle records are folded into the latest source states",
+  sourceIdentitiesHidden:
+    "{{count}} additional source identities are hidden; recorded issues are prioritized",
+  runtimeRecoveryTruth: "Runtime recovery truth",
+  runtimeRecoveryTruthDetail:
+    "Canonical heartbeat, cycle outcome, and failure streak. These values describe recovery state rather than inferred health.",
+  runtimeRecoveryWaiting:
+    "Runtime recovery detail is unavailable until the local service publishes a canonical snapshot.",
+  autonomousStatus: "Autonomous status",
+  lastCycleResult: "Last cycle result",
+  consecutiveFailures: "Consecutive failures",
+  lastHeartbeat: "Last heartbeat",
   researchOperations: "Research operations",
   researchOperationsDetail:
     "A bounded audit of recent retrieval work: completed calls, independently frozen source records, evidence-role coverage, and failed routes across every Trader Mind.",
@@ -374,6 +459,10 @@ const en = {
     "Research operations will appear after the first autonomous production research run.",
   recentResearchRuns: "Recent runs",
   completedRetrievals: "Completed retrievals",
+  failedRetrievals: "Failed retrievals",
+  researchTokens: "Research tokens",
+  meanResearchLatency: "Mean research latency",
+  milliseconds: "{{value}} ms",
   independentDomains: "Independent domains",
   independentEvidenceOrigins: "Independent evidence records",
   crossCheckedRuns: "Cross-checked",
@@ -558,6 +647,20 @@ const zhCN: Record<MessageKey, string> = {
   capitalAuthorization: "交易权限",
   authorizationArmed: "模拟盘执行已授权",
   authorizationDisarmed: "模拟盘执行已锁定",
+  recoveryOnlyAuthorization: "模拟盘恢复 · 仅可平仓",
+  recoveryOnlyAuthorizationDetail:
+    "系统已禁止新建 BUY 订单；在绑定模拟盘账户恢复为空仓前，ALTA 仅可 SELL 现有持仓。",
+  paperRecoveryOnly: "恢复模式 · 仅 SELL",
+  paperRecoveryRequired: "模拟盘恢复仍在进行",
+  paperRecoveryRequiredDetail:
+    "持仓或未完成订单阻止了立即撤销。授权仅为 SELL 平仓恢复而保持最小开启；账户为空后请再次核验并撤销。",
+  clearAuthorizationRequest: "清除未生效授权",
+  requestedAuthorization: "请求授权状态",
+  effectiveAuthorization: "实际生效状态",
+  authorizationRequested: "已请求",
+  authorizationNotRequested: "未请求",
+  effectiveEnabled: "已启用",
+  effectiveDisabled: "已禁用",
   authorizePaper: "授权模拟盘执行",
   revokeAuthorization: "撤销授权",
   capitalGateDetail: "此开关会真正修改后端持久化授权；它永远不会启用实盘账户。",
@@ -611,7 +714,7 @@ const zhCN: Record<MessageKey, string> = {
   confirmRevoke: "撤权并安全停止",
   confirmRevokeTitle: "撤销模拟盘执行权限？",
   confirmRevokeDetail:
-    "系统会先撤销授权，再停止任何正在运行的 ALTA 服务；已有券商持仓不会被隐藏或丢弃。",
+    "ALTA 会先核验绑定的模拟盘账户。如果仍有敞口，系统将进入仅 SELL 的恢复模式，并把授权限制在平仓所需的最小范围；账户为空后才会完全撤权并停止运行时。",
   paperBoundary: "仅限模拟盘账户",
   paperCapitalBoundaryDetail:
     "系统不存在实盘通道。账户号码、配置路径、私钥和券商原始订单号均不会进入浏览器。",
@@ -737,7 +840,57 @@ const zhCN: Record<MessageKey, string> = {
   noArtifact: "所选记录未附带运行产物；机会证据可能体现在评估和委员会事件中。",
   noPublicSummary: "没有公开摘要",
   loadingDurableRecord: "正在载入持久化记录…",
+  loadingDurableRecordDetail:
+    "正在从本机持久化存储读取所选记录；所有标签页会同步更新。",
+  refreshingSavedDetail: "正在刷新已保存的详情",
+  refreshingSavedDetailDetail:
+    "正在核验更新版本；核验期间显示 {{time}} 保存的记录。",
+  staleDetailRefreshFailed: "已保存的详情刷新失败",
+  staleDetailRefreshFailedDetail:
+    "所有标签页当前显示 {{time}} 保存的记录。刷新失败：{{error}}",
+  detailUnavailable: "持久化详情不可用",
+  detailUnavailableDetail: "当前只能显示有界摘要。详情请求失败：{{error}}",
+  selectionExpired: "此前选择已离开实时快照",
+  selectionExpiredFallbackDetail:
+    "这条持久化记录会继续保留在详情检查器中；实时机会流独立跟随最新有效的排序首位机会，不会把历史详情混入当前状态。",
+  selectionExpiredEmptyDetail:
+    "这条持久化记录会继续保留在详情检查器中；当前有界实时快照没有可用的已排序机会。",
+  boundedPositionSnapshot: "有界持仓快照",
+  boundedPositionSnapshotDetail:
+    "该持仓没有独立详情接口；数值来自系统最新的有界状态快照，不会被表述为券商实时权威记录。",
+  positionSnapshotExpired: "持仓已离开当前有界快照",
+  positionSnapshotExpiredDetail:
+    "系统保留点击时快照供核查，但不再把它显示为当前持仓状态。",
   originalArtifact: "原始保存产物",
+  researchContinuity: "研究连续性",
+  researchMode: "研究模式",
+  parentOpportunity: "父机会",
+  researchQuestion: "研究问题",
+  beneficiaryPath: "受益传导路径",
+  disconfirmingEvidence: "反证",
+  nextResearchTest: "下一项研究检验",
+  openQuestion: "开放问题",
+  noOpenResearchQuestions: "尚未保存开放研究问题。",
+  thesisPillars: "论点支柱",
+  pillarNumber: "支柱 {{number}}",
+  deadlineUnavailable: "证据期限不可用",
+  observable: "可观察指标",
+  confirmationCondition: "确认条件",
+  invalidationCondition: "失效条件",
+  noThesisPillars: "尚未保存冻结的论点支柱。",
+  researchDiligence: "研究尽调",
+  noResearchDiligence: "尚未保存研究尽调记录。",
+  rankAndExpression: "排序与表达",
+  rankingHistory: "排序历史",
+  rankPosition: "第 {{position}} 名",
+  book: "排序簿",
+  score: "评分",
+  knownAt: "记录时间",
+  reasonCodes: "原因代码",
+  noRankingHistory: "此机会尚未保存排序历史。",
+  expressionHistory: "表达历史",
+  noExpressionHistory: "此机会尚未保存表达历史。",
+  additionalRecordsHidden: "另有 {{count}} 条更早记录保留在标准化 JSON 中。",
   recentEventReplay: "近期事件回放",
   replayRibbon: "回放时间带",
   loadedDurableEvents: "已载入 {{count}} 条持久化事件",
@@ -759,6 +912,7 @@ const zhCN: Record<MessageKey, string> = {
   audit: "审计",
   unclassified: "未分类",
   noCandidates: "尚无候选机会",
+  candidateStream: "候选机会流",
   building: "构建中",
   foundryWaiting: "机会铸造等待候选输入",
   modelPending: "等待模型",
@@ -871,12 +1025,33 @@ const zhCN: Record<MessageKey, string> = {
   sourcePosture: "数据源姿态",
   observed: "已观察",
   noSourcePosture: "尚未记录数据源姿态。",
+  sourceFreshness: "新鲜度 · {{freshness}}",
+  sourceIssue: "问题 · {{issue}}",
+  sourceNoKnownIssue: "未记录额外的数据源错误",
+  sourcePreviousState: "上一不同状态 · {{posture}} · {{freshness}}",
+  sourcePriorRecordsHidden: "已折叠该状态之前的 {{count}} 条周期记录",
+  sourceHistoryFolded:
+    "已将 {{count}} 条早期周期记录折叠到各数据源的最新状态中",
+  sourceIdentitiesHidden:
+    "另有 {{count}} 个数据源身份未显示；存在已记录问题的数据源优先展示",
+  runtimeRecoveryTruth: "运行时恢复真值",
+  runtimeRecoveryTruthDetail:
+    "展示规范心跳、周期结果与连续失败次数；这些值描述真实恢复状态，不推测健康度。",
+  runtimeRecoveryWaiting: "本机服务发布规范快照后，才会显示运行时恢复详情。",
+  autonomousStatus: "自主运行状态",
+  lastCycleResult: "上一周期结果",
+  consecutiveFailures: "连续失败次数",
+  lastHeartbeat: "最近心跳",
   researchOperations: "研究作业审计",
   researchOperationsDetail:
     "对近期真实检索作业进行有界审计：展示每个 Trader 思维的已完成调用、独立冻结来源记录、证据角色覆盖和失败路径。",
   researchOperationsWaiting: "首次自主生产研究运行后，此处将显示研究作业。",
   recentResearchRuns: "近期运行",
   completedRetrievals: "完成检索",
+  failedRetrievals: "失败检索",
+  researchTokens: "研究 Token",
+  meanResearchLatency: "平均研究延迟",
+  milliseconds: "{{value}} 毫秒",
   independentDomains: "独立来源域",
   independentEvidenceOrigins: "独立证据记录",
   crossCheckedRuns: "交叉验证",
@@ -1162,6 +1337,7 @@ const exactDomainZh: Record<string, string> = {
   "not measured": "尚未衡量",
   "not configured": "尚未配置",
   "paper enabled": "模拟盘权限已生效",
+  "paper recovery required": "模拟盘恢复中",
   "paper ready disabled": "模拟盘就绪但未授权",
   "rationale": "理由",
   "recommendation": "建议",
@@ -1320,9 +1496,9 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
       domain: (value) => localizeDomainValue(value, locale),
       relative: (value) => {
         if (!value) return t("unavailable");
-        const seconds = Math.round(
-          (new Date(value).getTime() - Date.now()) / 1000,
-        );
+        const timestamp = new Date(value).getTime();
+        if (!Number.isFinite(timestamp)) return t("unavailable");
+        const seconds = Math.round((timestamp - Date.now()) / 1000);
         const formatter = new Intl.RelativeTimeFormat(locale, {
           numeric: "auto",
         });
@@ -1333,14 +1509,16 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
         if (Math.abs(hours) < 24) return formatter.format(hours, "hour");
         return formatter.format(Math.round(hours / 24), "day");
       },
-      clock: (value) =>
-        value
-          ? new Intl.DateTimeFormat(locale, {
-              hour: "2-digit",
-              minute: "2-digit",
-              second: "2-digit",
-            }).format(new Date(value))
-          : t("unavailable"),
+      clock: (value) => {
+        if (!value) return t("unavailable");
+        const timestamp = new Date(value).getTime();
+        if (!Number.isFinite(timestamp)) return t("unavailable");
+        return new Intl.DateTimeFormat(locale, {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        }).format(timestamp);
+      },
       number,
       value: (value) => {
         if (value === null || value === undefined || value === "")

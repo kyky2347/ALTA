@@ -22,12 +22,18 @@ from alta_asterism.context_budget import (
     MAX_FROZEN_SCOUT_INPUT_BYTES,
     canonical_json_bytes,
 )
+from alta_asterism.cycle_recovery import FrozenCycleSnapshotError
 from alta_asterism.live_source_flow import DatabaseSourceFlow, IngestingSourceFlow
 from alta_asterism.mind_worker import ModelTurn, ScoutDeadlineExceeded
 from alta_asterism.mvp_fixture import MvpFixture
 from alta_asterism.mvp_orchestrator import MvpOrchestrator
 from alta_asterism.scout_repository import ScoutRepository
-from alta_asterism.scouts import SCOUTS, RunBudget, make_run_spec
+from alta_asterism.scouts import (
+    SCOUTS,
+    RunBudget,
+    fit_frozen_input_for_scout,
+    make_run_spec,
+)
 
 
 def database_url(base_url: str, name: str) -> str:
@@ -87,6 +93,7 @@ def test_database_source_flow_normalizes_raw_and_enforces_point_in_time(
                             "source_url": (
                                 "https://fixture.invalid/filing?api_key=secret"
                             ),
+                            "origin_fingerprint": "d" * 64,
                         }
                     ),
                 ),
@@ -100,6 +107,7 @@ def test_database_source_flow_normalizes_raw_and_enforces_point_in_time(
     assert frozen.universe == ("AAPL", "SPY")
     assert [item.raw_id for item in frozen.evidence] == ["raw_known"]
     assert frozen.evidence[0].source_locator == "https://fixture.invalid/filing"
+    assert frozen.evidence[0].origin_fingerprint == "d" * 64
     assert frozen.expectation_posture == "available"
     assert frozen.portfolio_research_mandate is not None
     assert frozen.portfolio_research_mandate.posture == "empty_book"
@@ -402,12 +410,12 @@ def test_frozen_mind_memory_remains_valid_after_the_current_mind_evolves(
                 wake_at - timedelta(hours=1),
             ),
         )
-    frozen, _ = DatabaseSourceFlow(database, ("SPY",)).schedule_and_wake(
+    frozen, postures = DatabaseSourceFlow(database, ("SPY",)).schedule_and_wake(
         "cycle_mind_history_001", wake_at, {}
     )
     scoped = frozen.for_scout(scout.scout_id, scout.primary_sources)
     repository = ScoutRepository(database)
-    job_id = repository.start_batch("batch_mind_history_001", frozen)
+    job_id = repository.start_batch(f"batch_{frozen.wake_id}", frozen, postures)
     spec = make_run_spec(
         run_id="run_mind_history_fixture",
         trace_id="trace_mind_history_fixture",
@@ -595,6 +603,15 @@ class EmptyScoutClient:
             latency_ms=4,
             completed_at=datetime(2026, 8, 23, 15, 1, tzinfo=UTC),
         )
+
+
+class FailingScoutClient:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def run(self, _spec, _prompt: str, _schema: dict) -> ModelTurn:
+        self.calls += 1
+        raise RuntimeError("fixture provider unavailable")
 
 
 def test_structured_role_output_is_durable_and_recovered_without_model_call(
@@ -811,6 +828,188 @@ def test_autonomous_cycle_with_no_opportunity_completes_idle_and_replays(
     assert skipped == 5
 
 
+def test_all_failed_scout_job_cannot_complete_the_pipeline(
+    live_database: str,
+) -> None:
+    database = Database(live_database)
+    database.upgrade()
+    cycle_id = "cycle_all_scouts_failed"
+    client = FailingScoutClient()
+    orchestrator = MvpOrchestrator(
+        database,
+        MvpFixture.default(),
+        client,
+        source_flow=DatabaseSourceFlow(database, ("SPY",)),
+    )
+
+    with pytest.raises(RuntimeError, match="without a usable role outcome"):
+        orchestrator.run(cycle_id, datetime(2026, 8, 23, 15, tzinfo=UTC))
+
+    assert client.calls == len(SCOUTS) * 3
+    with database.connect() as connection:
+        job = connection.execute(
+            """SELECT status, attempt_count FROM ops.job
+            WHERE subject_id = %s AND kind = 'scout_batch'""",
+            (cycle_id,),
+        ).fetchone()
+        runs = connection.execute(
+            """SELECT status, attempt_count FROM research.run
+            WHERE cycle_id = %s ORDER BY role""",
+            (cycle_id,),
+        ).fetchall()
+        completed = connection.execute(
+            """SELECT count(*) FROM ops.event
+            WHERE aggregate_id = %s AND event_type = 'mvp.pipeline.completed'""",
+            (cycle_id,),
+        ).fetchone()[0]
+    assert job == ("failed", 1)
+    assert runs == [("failed", 3)] * len(SCOUTS)
+    assert completed == 0
+
+
+def test_partial_scout_snapshot_recovers_at_same_frozen_wake(
+    live_database: str,
+) -> None:
+    database = Database(live_database)
+    database.upgrade()
+    cycle_id = "cycle_partial_scout_recovery"
+    wake_at = datetime(2026, 8, 23, 15, tzinfo=UTC)
+    source = DatabaseSourceFlow(database, ("SPY",))
+    frozen, postures = source.schedule_and_wake(cycle_id, wake_at, {})
+    repository = ScoutRepository(database)
+    job_id = repository.start_batch(f"batch_{cycle_id}", frozen, postures)
+    scout = SCOUTS[0]
+    budget = RunBudget(
+        max_tool_calls=3,
+        max_total_tokens=1_000,
+        max_output_bytes=8_192,
+    )
+    digest = hashlib.sha256(f"batch_{cycle_id}\0{scout.scout_id}".encode()).hexdigest()
+    partial_spec = make_run_spec(
+        run_id=f"run_{digest[:32]}",
+        trace_id=f"trace_{digest[32:]}",
+        scout=scout,
+        frozen_input=fit_frozen_input_for_scout(frozen, scout, budget),
+        budget=budget,
+        deadline_at=wake_at + timedelta(seconds=5),
+        model_provider="fixture",
+        model_id="fixture-model",
+    )
+    assert repository.start_run(job_id, partial_spec) is True
+    with database.connect() as connection:
+        connection.execute(
+            """INSERT INTO research.raw
+            (id, environment, version, known_at, source, source_key,
+             content_hash, body)
+            VALUES ('raw_late_backfill','shadow',1,%s,'finlight',
+                    'late-backfill',%s,%s)""",
+            (
+                wake_at - timedelta(minutes=1),
+                hashlib.sha256(b"late-backfill").hexdigest(),
+                Jsonb(
+                    {
+                        "title": "Late backfill must not change a frozen wake",
+                        "source_url": "https://example.invalid/late-backfill",
+                    }
+                ),
+            ),
+        )
+
+    class SourceMustNotRun:
+        def schedule_and_wake(self, *_args, **_kwargs):
+            raise AssertionError("partial recovery re-queried mutable source state")
+
+    client = EmptyScoutClient()
+    result = MvpOrchestrator(
+        database,
+        MvpFixture.default(),
+        client,
+        source_flow=SourceMustNotRun(),
+    ).run(cycle_id, wake_at)
+
+    assert result.status == "MVP_IDLE"
+    assert client.calls == len(SCOUTS) - 1
+    with database.connect() as connection:
+        rows = connection.execute(
+            """SELECT role, input_hash, status, error_code
+            FROM research.run WHERE cycle_id = %s ORDER BY role""",
+            (cycle_id,),
+        ).fetchall()
+        late_evidence = connection.execute(
+            "SELECT count(*) FROM research.evidence WHERE raw_id = 'raw_late_backfill'"
+        ).fetchone()[0]
+    assert len(rows) == len(SCOUTS)
+    recovered = next(row for row in rows if row[0] == scout.scout_id)
+    assert recovered == (
+        scout.scout_id,
+        partial_spec.input_hash,
+        "failed",
+        "recovery_incomplete",
+    )
+    assert all(
+        row[2:] == ("succeeded", None) for row in rows if row[0] != scout.scout_id
+    )
+    assert late_evidence == 0
+
+
+def test_pre_scout_crash_recovers_anchored_wake_without_late_backfill(
+    live_database: str,
+) -> None:
+    database = Database(live_database)
+    database.upgrade()
+    cycle_id = "cycle_pre_scout_anchor_recovery"
+    wake_at = datetime(2026, 8, 23, 15, 30, tzinfo=UTC)
+    frozen, postures = DatabaseSourceFlow(database, ("SPY",)).schedule_and_wake(
+        cycle_id, wake_at, {}
+    )
+    with database.connect() as connection:
+        anchor = connection.execute(
+            """SELECT frozen_input, source_postures
+            FROM research.scout_batch_snapshot WHERE cycle_id = %s""",
+            (cycle_id,),
+        ).fetchone()
+        connection.execute(
+            """INSERT INTO research.raw
+            (id, environment, version, known_at, source, source_key,
+             content_hash, body)
+            VALUES ('raw_pre_scout_late','shadow',1,%s,'finlight',
+                    'pre-scout-late',%s,%s)""",
+            (
+                wake_at - timedelta(minutes=1),
+                hashlib.sha256(b"pre-scout-late").hexdigest(),
+                Jsonb(
+                    {
+                        "title": "A late backfill after the durable wake anchor",
+                        "source_url": "https://example.invalid/pre-scout-late",
+                    }
+                ),
+            ),
+        )
+    assert anchor == (frozen.model_dump(mode="json"), postures)
+
+    class SourceMustNotRun:
+        def schedule_and_wake(self, *_args, **_kwargs):
+            raise AssertionError("anchored recovery re-queried mutable source state")
+
+    client = EmptyScoutClient()
+    result = MvpOrchestrator(
+        database,
+        MvpFixture.default(),
+        client,
+        source_flow=SourceMustNotRun(),
+    ).run(cycle_id, wake_at)
+
+    assert result.status == "MVP_IDLE"
+    assert client.calls == len(SCOUTS)
+    with database.connect() as connection:
+        assert (
+            connection.execute(
+                "SELECT count(*) FROM research.evidence WHERE raw_id = 'raw_pre_scout_late'"
+            ).fetchone()[0]
+            == 0
+        )
+
+
 class FakeAutonomousRuntime:
     def __init__(self, _database: Database, _settings: Settings, *, fail: bool) -> None:
         self.fail = fail
@@ -918,6 +1117,7 @@ def test_autonomous_runner_is_single_owner_and_records_redacted_failure(
 
 def test_autonomous_cadence_prioritizes_monitoring_then_follow_up() -> None:
     select = AutonomousRunner.select_cycle_interval
+    known_at = datetime(2026, 8, 30, 15, tzinfo=UTC)
 
     assert select(
         base_seconds=1_800,
@@ -940,6 +1140,245 @@ def test_autonomous_cadence_prioritizes_monitoring_then_follow_up() -> None:
         open_position=False,
         unresolved_opportunity=False,
     ) == (600, "base_research")
+    # A newly formed/refreshed researchable Opportunity did not exist in the
+    # last frozen continuity queue, but should receive one prompt follow-up.
+    assert select(
+        base_seconds=1_800,
+        follow_up_seconds=900,
+        position_seconds=300,
+        open_position=False,
+        unresolved_opportunity=False,
+        new_researchable_opportunity=True,
+    ) == (900, "opportunity_backlog")
+    # Closed, rejected, and stale Opportunities are filtered before selection;
+    # no durable priority work means the base discovery cadence.
+    assert select(
+        base_seconds=1_800,
+        follow_up_seconds=900,
+        position_seconds=300,
+        open_position=False,
+        unresolved_opportunity=False,
+        known_at=known_at,
+    ) == (1_800, "base_research")
+    # Deferred-only research must not masquerade as a permanent backlog. Wake
+    # exactly for a near due time, but otherwise preserve base discovery.
+    assert select(
+        base_seconds=1_800,
+        follow_up_seconds=900,
+        position_seconds=300,
+        open_position=False,
+        unresolved_opportunity=False,
+        known_at=known_at,
+        next_research_due_at=known_at + timedelta(minutes=5),
+    ) == (300, "opportunity_due")
+    assert select(
+        base_seconds=1_800,
+        follow_up_seconds=900,
+        position_seconds=300,
+        open_position=False,
+        unresolved_opportunity=False,
+        known_at=known_at,
+        next_research_due_at=known_at + timedelta(hours=6),
+    ) == (1_800, "base_research")
+    # Monitoring remains the highest priority even when research is due now.
+    assert select(
+        base_seconds=1_800,
+        follow_up_seconds=900,
+        position_seconds=300,
+        open_position=True,
+        unresolved_opportunity=False,
+        known_at=known_at,
+        next_research_due_at=known_at - timedelta(seconds=1),
+        new_researchable_opportunity=True,
+    ) == (300, "open_position")
+
+
+def test_autonomous_cadence_uses_durable_due_queue_and_new_researchable_work(
+    live_database: str,
+) -> None:
+    database = Database(live_database)
+    database.upgrade()
+    known_at = datetime.now(UTC)
+    continuity_at = known_at - timedelta(hours=1)
+    evidence_id = "evidence_cadence_state"
+    with database.connect() as connection:
+        connection.execute(
+            """INSERT INTO research.run
+            (id, environment, version, known_at, role, status, input_hash,
+             frozen_input, budget, deadline_at, prompt_version,
+             tool_catalog_version, model_provider, model_id, trace_id,
+             tool_provenance, evidence_ids, cycle_id)
+            VALUES ('run_cadence_state','shadow',1,%s,'change_event_scout',
+                    'succeeded',%s,%s,%s,%s,'cadence-test-v1','none',
+                    'deterministic','fixture','trace_cadence_state',
+                    '[]'::jsonb,'{}'::text[],'live-cadence-state')""",
+            (
+                continuity_at,
+                hashlib.sha256(b"run_cadence_state").hexdigest(),
+                Jsonb(
+                    {
+                        "input": {
+                            "opportunity_continuity": {
+                                "known_at": continuity_at.isoformat(),
+                                "next_research_due_at": (
+                                    known_at + timedelta(hours=6)
+                                ).isoformat(),
+                            },
+                            "opportunity_drive": {
+                                "research_queue": [
+                                    {"opportunity_id": "opportunity_closed"},
+                                    {"opportunity_id": "opportunity_stale"},
+                                ]
+                            },
+                        }
+                    }
+                ),
+                Jsonb({"max_tool_calls": 0}),
+                known_at + timedelta(minutes=5),
+            ),
+        )
+        connection.execute(
+            """INSERT INTO research.raw
+            (id, environment, version, known_at, source, source_key,
+             content_hash, body)
+            VALUES ('raw_cadence_state','shadow',1,%s,'sec_companyfacts',
+                    'cadence-state',%s,%s)""",
+            (
+                continuity_at - timedelta(minutes=2),
+                hashlib.sha256(b"raw_cadence_state").hexdigest(),
+                Jsonb({"source_url": "https://data.sec.gov/cadence-state"}),
+            ),
+        )
+        connection.execute(
+            """INSERT INTO research.evidence
+            (id, environment, version, known_at, raw_id, stance, summary)
+            VALUES (%s,'shadow',1,%s,'raw_cadence_state','unknown',
+                    'Durable non-fixture cadence evidence.')""",
+            (evidence_id, continuity_at - timedelta(minutes=1)),
+        )
+
+        def add_opportunity(
+            target_connection,
+            opportunity_id: str,
+            status: str,
+            opportunity_known_at: datetime,
+            horizon_days: int,
+        ) -> None:
+            candidate_id = "candidate_" + opportunity_id.removeprefix("opportunity_")
+            digest = hashlib.sha256(opportunity_id.encode()).hexdigest()
+            target_connection.execute(
+                """INSERT INTO research.candidate
+                (id, environment, version, known_at, run_id, title, why_now,
+                 expectation, variant_wedge, falsifier, horizon_days,
+                 confidence, evidence_ids)
+                VALUES (%s,'shadow',1,%s,'run_cadence_state',%s,
+                        'A bounded cadence fixture.','A prior expectation.',
+                        'A measurable wedge.','Reject on failed evidence.',
+                        %s,0.5,%s)""",
+                (
+                    candidate_id,
+                    opportunity_known_at,
+                    opportunity_id,
+                    horizon_days,
+                    [evidence_id],
+                ),
+            )
+            target_connection.execute(
+                """INSERT INTO research.opportunity
+                (id, environment, version, known_at, candidate_id, status,
+                 title, thesis, falsifier, horizon_days, member_candidate_ids,
+                 exact_key, structural_key, snapshot_hash, foundry_state,
+                 merge_revision, direction, expectation_posture, investability,
+                 evidence_ids, completeness, identity_version)
+                VALUES (%s,'shadow',1,%s,%s,%s,%s,'A testable thesis.',
+                        'Reject on failed evidence.',%s,%s,%s,%s,%s,'active',1,
+                        'positive','available','ready',%s,'complete',2)""",
+                (
+                    opportunity_id,
+                    opportunity_known_at,
+                    candidate_id,
+                    status,
+                    opportunity_id,
+                    horizon_days,
+                    [candidate_id],
+                    digest,
+                    hashlib.sha256((opportunity_id + ":s").encode()).hexdigest(),
+                    hashlib.sha256((opportunity_id + ":v").encode()).hexdigest(),
+                    [evidence_id],
+                ),
+            )
+
+        add_opportunity(
+            connection,
+            "opportunity_closed",
+            "closed",
+            continuity_at - timedelta(hours=1),
+            30,
+        )
+        add_opportunity(
+            connection,
+            "opportunity_stale",
+            "forming",
+            continuity_at - timedelta(days=2),
+            1,
+        )
+        add_opportunity(
+            connection,
+            "opportunity_deferred",
+            "forming",
+            continuity_at - timedelta(hours=1),
+            30,
+        )
+
+    runner = AutonomousRunner(
+        database,
+        Settings(
+            DATABASE_URL=live_database,
+            REDIS_URL="redis://127.0.0.1:1/0",
+            ALTA_ENVIRONMENT="shadow",
+        ),
+    )
+
+    # A terminal/stale durable queue plus only far-future deferred work stays
+    # on base discovery cadence.
+    assert runner._next_cycle_interval() == (1_800, "base_research")
+
+    with database.connect() as connection:
+        connection.execute(
+            """UPDATE research.run SET frozen_input = jsonb_set(
+              frozen_input,
+              '{input,opportunity_drive,research_queue}',
+              '[{"opportunity_id":"opportunity_deferred"}]'::jsonb
+            ) WHERE id = 'run_cadence_state'"""
+        )
+    assert runner._next_cycle_interval() == (900, "opportunity_backlog")
+
+    with database.connect() as connection:
+        connection.execute(
+            """UPDATE research.run SET frozen_input = jsonb_set(
+              frozen_input,
+              '{input,opportunity_drive,research_queue}',
+              '[]'::jsonb
+            ) WHERE id = 'run_cadence_state'"""
+        )
+    assert runner._next_cycle_interval() == (1_800, "base_research")
+
+    with database.connect() as connection:
+        add_opportunity(
+            connection,
+            "opportunity_new",
+            "forming",
+            known_at - timedelta(minutes=30),
+            30,
+        )
+
+    assert runner._next_cycle_interval() == (900, "opportunity_backlog")
+    with database.connect() as connection:
+        connection.execute(
+            """UPDATE research.opportunity SET status = 'rejected'
+            WHERE id = 'opportunity_new'"""
+        )
+    assert runner._next_cycle_interval() == (1_800, "base_research")
 
 
 class VirtualClock:
@@ -978,6 +1417,80 @@ class RecoveringAutonomousRuntime:
 
     def close(self) -> None:
         self.closed.append(True)
+
+
+class SnapshotConflictThenSuccessRuntime:
+    def __init__(
+        self,
+        database: Database,
+        stop: threading.Event,
+        cycle_ids: list[str],
+    ) -> None:
+        self.database = database
+        self.stop = stop
+        self.cycle_ids = cycle_ids
+        self.orchestrator = self
+
+    def run(self, cycle_id: str, wake_at: datetime) -> SimpleNamespace:
+        self.cycle_ids.append(cycle_id)
+        if len(self.cycle_ids) == 1:
+            with self.database.connect() as connection:
+                connection.execute(
+                    """INSERT INTO ops.job
+                    (id, environment, version, known_at, kind, status, subject_id)
+                    VALUES ('job_snapshot_conflict','shadow',1,%s,
+                            'scout_batch','running',%s)""",
+                    (wake_at, cycle_id),
+                )
+            raise FrozenCycleSnapshotError("durable Scout input hash changed")
+        self.stop.set()
+        return SimpleNamespace(status="MVP_IDLE")
+
+
+def test_autonomous_runner_quarantines_snapshot_conflict_before_new_cycle(
+    live_database: str,
+) -> None:
+    database = Database(live_database)
+    database.upgrade()
+    settings = Settings(
+        DATABASE_URL=live_database,
+        REDIS_URL="redis://127.0.0.1:1/0",
+        ALTA_ENVIRONMENT="shadow",
+        ALTA_AUTONOMOUS_FAILURE_BACKOFF_SECONDS=1,
+        ALTA_AUTONOMOUS_FAILURE_BACKOFF_MAX_SECONDS=1,
+    )
+    stop = threading.Event()
+    clock = VirtualClock()
+    cycle_ids: list[str] = []
+    states: list[tuple[str, dict]] = []
+
+    runner = AutonomousRunner(
+        database,
+        settings,
+        runtime_factory=lambda db, _settings: SnapshotConflictThenSuccessRuntime(
+            db, stop, cycle_ids
+        ),
+        state_callback=lambda status, detail: states.append((status, detail)),
+        monotonic=clock.monotonic,
+        waiter=clock.wait,
+    )
+
+    assert runner.run(stop) == 0
+    assert len(cycle_ids) == 2
+    assert cycle_ids[0] != cycle_ids[1]
+    degraded = next(detail for status, detail in states if status == "degraded")
+    assert degraded["cycle_result"] == "quarantined"
+    assert degraded["replacement_cycle_scheduled"] is True
+    with database.connect() as connection:
+        job_status = connection.execute(
+            "SELECT status FROM ops.job WHERE id = 'job_snapshot_conflict'"
+        ).fetchone()[0]
+        failure = connection.execute(
+            """SELECT payload FROM ops.event
+            WHERE event_type = 'mvp.pipeline.failed' ORDER BY sequence"""
+        ).fetchone()[0]
+    assert job_status == "failed"
+    assert failure["retry_scheduled"] is False
 
 
 def test_autonomous_runner_recovers_after_more_than_three_failures(

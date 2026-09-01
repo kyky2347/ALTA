@@ -1,4 +1,5 @@
 import json
+import hashlib
 import os
 import sys
 import threading
@@ -12,7 +13,10 @@ import pytest
 from psycopg import sql
 from psycopg.types.json import Jsonb
 
+from alta_asterism.cycle_recovery import FrozenCycleSnapshotError
+from alta_asterism.contracts import Environment
 from alta_asterism.database import Database
+from alta_asterism.live_source_flow import DatabaseSourceFlow
 from alta_asterism.mind_worker import (
     MindClient,
     ModelTurn,
@@ -27,6 +31,7 @@ from alta_asterism.scouts import (
     FrozenScoutInput,
     RunBudget,
     build_prompt,
+    fit_frozen_input_for_scout,
     make_run_spec,
     output_schema,
 )
@@ -258,7 +263,9 @@ def test_planned_shutdown_cancels_only_running_cycle_work(
     database.upgrade()
     frozen_input = seed_frozen_input(database)
     repository = ScoutRepository(database)
-    job_id = repository.start_batch("batch_planned_shutdown", frozen_input)
+    job_id = repository.start_batch(
+        "batch_planned_shutdown", frozen_input, {"fixture": "healthy"}
+    )
     spec = make_run_spec(
         run_id="run_planned_shutdown",
         trace_id="trace_planned_shutdown",
@@ -308,6 +315,138 @@ def test_planned_shutdown_cancels_only_running_cycle_work(
     assert run == ("cancelled", "operator_shutdown")
     assert job_status == "cancelled"
     assert failures == 0
+
+
+def test_recovered_snapshot_set_rolls_back_missing_roles_on_hash_mismatch(
+    empty_b3_database: str,
+) -> None:
+    database = Database(empty_b3_database)
+    database.upgrade()
+    frozen_input = seed_frozen_input(database)
+    repository = ScoutRepository(database)
+    job_id = repository.start_batch(
+        "batch_atomic_recovery", frozen_input, {"fixture": "healthy"}
+    )
+    budget = RunBudget(
+        max_tool_calls=2,
+        max_total_tokens=1_000,
+        max_output_bytes=8_192,
+    )
+    deadline = datetime.now(UTC) + timedelta(seconds=30)
+
+    def spec_for(scout, source: FrozenScoutInput):
+        return make_run_spec(
+            run_id=f"run_atomic_recovery_{scout.scout_id}",
+            trace_id=f"trace_atomic_recovery_{scout.scout_id}",
+            scout=scout,
+            frozen_input=fit_frozen_input_for_scout(source, scout, budget),
+            budget=budget,
+            deadline_at=deadline,
+            model_provider="fixture",
+            model_id="fixture-model",
+        )
+
+    expected = tuple(spec_for(scout, frozen_input) for scout in SCOUTS)
+    changed = frozen_input.model_copy(update={"universe": ("CHANGED",)})
+    conflicting = spec_for(SCOUTS[-1], changed)
+    assert repository.start_run(job_id, conflicting) is True
+
+    with pytest.raises(FrozenCycleSnapshotError):
+        repository.start_runs(job_id, expected)
+
+    with database.connect() as connection:
+        rows = connection.execute(
+            """SELECT id, input_hash FROM research.run
+            WHERE job_id = %s ORDER BY id""",
+            (job_id,),
+        ).fetchall()
+    assert rows == [(conflicting.run_id, conflicting.input_hash)]
+
+
+def test_failed_scout_job_reopens_same_cycle_with_audited_attempt(
+    empty_b3_database: str,
+) -> None:
+    database = Database(empty_b3_database)
+    database.upgrade()
+    frozen_input = seed_frozen_input(database)
+    repository = ScoutRepository(database)
+    batch_id = "batch_failed_job_recovery"
+    postures = {"direct_batch": "healthy"}
+    job_id = repository.start_batch(batch_id, frozen_input, postures)
+    budget = RunBudget(
+        max_tool_calls=2,
+        max_total_tokens=1_000,
+        max_output_bytes=8_192,
+    )
+    deadline = datetime.now(UTC) + timedelta(seconds=30)
+    specs = tuple(
+        make_run_spec(
+            run_id=(
+                "run_"
+                + hashlib.sha256(f"{batch_id}\0{scout.scout_id}".encode()).hexdigest()[
+                    :32
+                ]
+            ),
+            trace_id=(
+                "trace_"
+                + hashlib.sha256(f"{batch_id}\0{scout.scout_id}".encode()).hexdigest()[
+                    32:
+                ]
+            ),
+            scout=scout,
+            frozen_input=fit_frozen_input_for_scout(frozen_input, scout, budget),
+            budget=budget,
+            deadline_at=deadline,
+            model_provider="fixture",
+            model_id="fixture-model",
+        )
+        for scout in SCOUTS
+    )
+    assert repository.start_runs(job_id, specs) == (True,) * len(SCOUTS)
+    for spec in specs:
+        repository.fail(
+            spec.run_id,
+            "interrupted_fixture",
+            error=RuntimeError("simulated process interruption"),
+        )
+    repository.finish_batch(job_id, failed=True)
+
+    outcomes = worker(database, InvalidThenValidClient()).run_batch(
+        batch_id, frozen_input
+    )
+
+    assert all(item.status == "succeeded" for item in outcomes)
+    with database.connect() as connection:
+        job = connection.execute(
+            """SELECT status, version, attempt_count FROM ops.job
+            WHERE id = %s""",
+            (job_id,),
+        ).fetchone()
+        runs = connection.execute(
+            """SELECT status, attempt_count FROM research.run
+            WHERE job_id = %s ORDER BY role""",
+            (job_id,),
+        ).fetchall()
+        events = connection.execute(
+            """SELECT event_type, payload FROM ops.event
+            WHERE aggregate_id = %s AND event_type LIKE 'scout.batch.%%'
+            ORDER BY sequence""",
+            (job_id,),
+        ).fetchall()
+    assert job == ("succeeded", 2, 2)
+    assert all(status == "succeeded" and attempts >= 2 for status, attempts in runs)
+    assert [
+        (event_type, payload["attempt_count"]) for event_type, payload in events
+    ] == [
+        ("scout.batch.finished", 1),
+        ("scout.batch.reopened", 2),
+        ("scout.batch.finished", 2),
+    ]
+    assert [payload.get("status") for _event_type, payload in events] == [
+        "failed",
+        None,
+        "succeeded",
+    ]
 
 
 def test_sdk_requests_one_no_tool_finalization_after_empty_provider_response(
@@ -709,12 +848,27 @@ def test_tool_discovery_is_promoted_to_append_only_evidence_before_candidate(
     assert row[0] == list(outcomes[0].output.evidence_ids)
     assert row[1] == "agent_tool:alta_news_search"
     assert row[2]["source_locator"] == "https://fixture.invalid/event"
+    assert len(row[2]["origin_fingerprint"]) == 64
+    assert set(row[2]["origin_fingerprint"]) <= set("0123456789abcdef")
     assert "REDACTION_CANARY" not in json.dumps(row[2])
     assert row[3].tzinfo is not None and row[4] == row[3]
     assert row[5].startswith(
         "Untrusted alta_news_search result for https://fixture.invalid/event:"
     )
     assert "fixture.invalid/event" in row[5]
+    next_cycle, _ = DatabaseSourceFlow(
+        database,
+        ("SPY",),
+        environment=Environment.REPLAY,
+    ).schedule_and_wake(
+        "cycle_tool_evidence_lineage",
+        row[3] + timedelta(seconds=1),
+        {},
+    )
+    frozen_tool_evidence = next(
+        item for item in next_cycle.evidence if item.evidence_id == row[0][0]
+    )
+    assert frozen_tool_evidence.origin_fingerprint == row[2]["origin_fingerprint"]
     assert artifact["output"]["tool_evidence_refs"] == [
         {
             "tool_call_id": "tool_change_1",

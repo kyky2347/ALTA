@@ -103,7 +103,9 @@ class MvpOrchestrator:
             monitored_positions = monitor_existing(demo_id, wake_at, frozen_input)
         self._checkpoint(demo_id, "schedule_wake", wake_at, fault_after_stage)
 
-        outcomes = self.research.run_scouts(demo_id, frozen_input)
+        outcomes = self.research.run_scouts(
+            demo_id, frozen_input, source_postures=source_postures
+        )
         scout_statuses = {item.scout_id: item.status for item in outcomes}
         self._checkpoint(
             demo_id,

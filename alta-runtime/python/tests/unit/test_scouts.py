@@ -308,6 +308,127 @@ def test_tool_evidence_freezes_source_scoped_content_and_stable_origin() -> None
     assert first[0].content_hash != repeated[0].content_hash
 
 
+def test_tool_evidence_does_not_count_tools_or_mirrors_as_independent_origins() -> None:
+    def tool_item(
+        call_id: str,
+        tool_name: str,
+        locator: str,
+        *,
+        backend: str,
+        source: str,
+        score: int,
+    ):
+        return SimpleNamespace(
+            root=SimpleNamespace(
+                model_dump=lambda **_: {
+                    "type": "mcpToolCall",
+                    "id": call_id,
+                    "tool": tool_name,
+                    "status": "completed",
+                    "result": {
+                        "url": locator,
+                        "title": "Issuer publishes the measured operating update",
+                        "text": "Unit volume increased 12 percent in the quarter.",
+                        "backend": backend,
+                        "source": source,
+                        "research_quality_score": score,
+                        "metadata": {"favicon": locator + "/favicon.ico"},
+                    },
+                }
+            )
+        )
+
+    discoveries = _tool_evidence(
+        (
+            tool_item(
+                "call_primary",
+                "alta_web_research",
+                "https://issuer.example/releases/update",
+                backend="brave",
+                source="issuer_search",
+                score=17,
+            ),
+            tool_item(
+                "call_mirror",
+                "alta_web_batch_fetch",
+                "https://mirror.example/syndicated/update",
+                backend="jina",
+                source="syndication_reader",
+                score=3,
+            ),
+        )
+    )
+
+    assert len(discoveries) == 2
+    assert discoveries[0].source_locator != discoveries[1].source_locator
+    assert discoveries[0].tool_name != discoveries[1].tool_name
+    assert discoveries[0].origin_fingerprint == discoveries[1].origin_fingerprint
+
+
+def test_tool_evidence_origin_preserves_scalar_field_semantics() -> None:
+    def tool_item(call_id: str, locator: str, *, title: str, text: str):
+        return SimpleNamespace(
+            root=SimpleNamespace(
+                model_dump=lambda **_: {
+                    "type": "mcpToolCall",
+                    "id": call_id,
+                    "tool": "alta_web_batch_fetch",
+                    "status": "completed",
+                    "result": {"url": locator, "title": title, "text": text},
+                }
+            )
+        )
+
+    discoveries = _tool_evidence(
+        (
+            tool_item(
+                "call_one",
+                "https://one.example/update",
+                title="Demand accelerated",
+                text="Inventory contracted",
+            ),
+            tool_item(
+                "call_two",
+                "https://two.example/update",
+                title="Inventory contracted",
+                text="Demand accelerated",
+            ),
+        )
+    )
+
+    assert discoveries[0].origin_fingerprint != discoveries[1].origin_fingerprint
+
+
+def test_tool_evidence_origin_preserves_record_value_associations() -> None:
+    def tool_item(call_id: str, locator: str, values: tuple[str, str]):
+        return SimpleNamespace(
+            root=SimpleNamespace(
+                model_dump=lambda **_: {
+                    "type": "mcpToolCall",
+                    "id": call_id,
+                    "tool": "alta_finance_data",
+                    "status": "completed",
+                    "result": {
+                        "url": locator,
+                        "observations": [
+                            {"date": "2026-06-01", "value": values[0]},
+                            {"date": "2026-07-01", "value": values[1]},
+                        ],
+                    },
+                }
+            )
+        )
+
+    discoveries = _tool_evidence(
+        (
+            tool_item("call_one", "https://one.example/series", ("1", "2")),
+            tool_item("call_two", "https://two.example/series", ("2", "1")),
+        )
+    )
+
+    assert discoveries[0].origin_fingerprint != discoveries[1].origin_fingerprint
+
+
 def test_candidate_and_no_op_are_strict_and_frozen_evidence_only() -> None:
     spec = spec_for()
 
@@ -1122,6 +1243,69 @@ def test_text_tool_results_bound_many_urls_inside_one_payload() -> None:
     assert result[0] == "https://example.com/duplicate"
     assert result[-1] == "https://source8.example/report"
     assert len(set(result)) == len(result)
+
+
+def test_structured_page_does_not_promote_unfetched_links_or_assets() -> None:
+    result = _source_locators(
+        {
+            "url": "https://issuer.example/filing",
+            "text": "The filing links to https://vendor.example/unfetched-detail.",
+            "links": [
+                {
+                    "url": "https://vendor.example/unfetched-detail",
+                    "text": "Supporting vendor page",
+                }
+            ],
+            "metadata": {"image_url": "https://cdn.example/hero.png"},
+        }
+    )
+
+    assert result == ("https://issuer.example/filing",)
+
+
+def test_feed_container_prefers_fetched_records_over_the_route_endpoint() -> None:
+    result = _source_locators(
+        {
+            "url": "https://issuer.example/feed.xml",
+            "items": [
+                {"url": "https://issuer.example/releases/one", "title": "One"},
+                {"url": "https://issuer.example/releases/two", "title": "Two"},
+            ],
+        }
+    )
+
+    assert result == (
+        "https://issuer.example/releases/one",
+        "https://issuer.example/releases/two",
+    )
+
+
+def test_finance_provenance_freezes_the_fact_not_only_its_route() -> None:
+    item = SimpleNamespace(
+        root=SimpleNamespace(
+            model_dump=lambda **_: {
+                "type": "mcpToolCall",
+                "id": "call_fred",
+                "tool": "alta_finance_data",
+                "status": "completed",
+                "result": {
+                    "source": "fred",
+                    "series_id": "PAYEMS",
+                    "observations": [{"date": "2026-07-01", "value": "159000"}],
+                    "provenance": {
+                        "publisher": "Federal Reserve Bank of St. Louis",
+                        "url": "https://fred.stlouisfed.org/series/PAYEMS",
+                    },
+                },
+            }
+        )
+    )
+
+    discoveries = _tool_evidence((item,))
+
+    assert len(discoveries) == 1
+    assert '"series_id":"PAYEMS"' in discoveries[0].content["result_text"]
+    assert '"value":"159000"' in discoveries[0].content["result_text"]
 
 
 def test_strict_output_schema_is_provider_portable_without_unions() -> None:

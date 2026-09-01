@@ -7,7 +7,15 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from .contracts import Settings
-from .autonomous import AutonomousRunner
+from .autonomous import (
+    AutonomousRunner,
+    acquire_autonomous_owner,
+    release_autonomous_owner,
+)
+from .autonomous_owner import (
+    acquire_maintenance_owner,
+    release_maintenance_owner,
+)
 from .database import Database
 from .mvp_demo import replay_demo, run_demo, run_market_session_soak
 from .service import serve
@@ -22,6 +30,11 @@ def parser() -> argparse.ArgumentParser:
 
     migrate = commands.add_parser("migrate")
     migrate.add_argument("action", choices=["upgrade", "downgrade", "current"])
+    migrate.add_argument(
+        "--confirm-destructive-downgrade",
+        action="store_true",
+        help="Confirm a stopped-service, destructive downgrade to the base schema.",
+    )
 
     opportunityd = commands.add_parser("opportunityd")
     opportunityd.add_argument("--host", default=None)
@@ -93,15 +106,38 @@ def _doctor(settings: Settings) -> int:
 
 def _migrate(args: argparse.Namespace, settings: Settings) -> int:
     database = Database(settings.database_dsn)
-    revision = getattr(database, args.action)()
+    if args.action == "current":
+        revision = database.current()
+    else:
+        if args.action == "downgrade" and not args.confirm_destructive_downgrade:
+            raise ValueError(
+                "downgrade requires --confirm-destructive-downgrade and a stopped service"
+            )
+        maintenance = acquire_maintenance_owner(database)
+        try:
+            revision = getattr(database, args.action)()
+        finally:
+            release_maintenance_owner(maintenance)
     print(json.dumps({"revision": revision}, separators=(",", ":")))
     return 0
 
 
+def _exclusive_upgrade(database: Database) -> None:
+    maintenance = acquire_maintenance_owner(database)
+    try:
+        database.upgrade()
+    finally:
+        release_maintenance_owner(maintenance)
+
+
 def _demo(args: argparse.Namespace, settings: Settings) -> int:
     database = Database(settings.database_dsn)
-    database.upgrade()
-    result = run_demo(database, args.demo_id, _aware_time(args.wake_at))
+    _exclusive_upgrade(database)
+    owner = acquire_autonomous_owner(database)
+    try:
+        result = run_demo(database, args.demo_id, _aware_time(args.wake_at))
+    finally:
+        release_autonomous_owner(owner)
     print(result.model_dump_json())
     return 0
 
@@ -117,21 +153,25 @@ def _replay(args: argparse.Namespace, settings: Settings) -> int:
 
 def _soak(args: argparse.Namespace, settings: Settings) -> int:
     database = Database(settings.database_dsn)
-    database.upgrade()
-    result = run_market_session_soak(
-        database,
-        args.session_id,
-        _aware_time(args.session_start),
-        _aware_time(args.session_end),
-        args.cadence_minutes,
-    )
+    _exclusive_upgrade(database)
+    owner = acquire_autonomous_owner(database)
+    try:
+        result = run_market_session_soak(
+            database,
+            args.session_id,
+            _aware_time(args.session_start),
+            _aware_time(args.session_end),
+            args.cadence_minutes,
+        )
+    finally:
+        release_autonomous_owner(owner)
     print(result.model_dump_json())
     return 0 if result.status == "PASS" else 1
 
 
 def _autonomous(args: argparse.Namespace, settings: Settings) -> int:
     database = Database(settings.database_dsn)
-    database.upgrade()
+    _exclusive_upgrade(database)
     stop = threading.Event()
 
     def request_stop(_signum, _frame) -> None:
@@ -150,14 +190,18 @@ def _autonomous(args: argparse.Namespace, settings: Settings) -> int:
 
 def _acceptance(args: argparse.Namespace, settings: Settings) -> int:
     database = Database(settings.database_dsn)
-    database.upgrade()
+    _exclusive_upgrade(database)
     cycle_id = args.cycle_id or (
         "paper-acceptance-" + datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     )
     from .live_runtime import LiveRuntime
 
-    with LiveRuntime(database, settings) as runtime:
-        result = runtime.run_acceptance(cycle_id)
+    owner = acquire_autonomous_owner(database)
+    try:
+        with LiveRuntime(database, settings) as runtime:
+            result = runtime.run_acceptance(cycle_id)
+    finally:
+        release_autonomous_owner(owner)
     print(json.dumps(result, separators=(",", ":"), default=str))
     return 0 if result["lifecycleComplete"] else 2
 

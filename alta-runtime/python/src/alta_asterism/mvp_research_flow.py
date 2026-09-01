@@ -57,7 +57,13 @@ class MvpResearchFlow:
             AgenticDeliberator(database, role_runner) if role_runner else None
         )
 
-    def run_scouts(self, demo_id: str, frozen_input: FrozenScoutInput):
+    def run_scouts(
+        self,
+        demo_id: str,
+        frozen_input: FrozenScoutInput,
+        *,
+        source_postures: dict[str, str],
+    ):
         worker = MindWorker(
             repository=ScoutRepository(self.database),
             client=self.mind_client,
@@ -77,7 +83,14 @@ class MvpResearchFlow:
                 else frozen_input.known_at
             ),
         )
-        return worker.run_batch(f"batch_{demo_id}", frozen_input)
+        outcomes = worker.run_batch(
+            f"batch_{demo_id}",
+            frozen_input,
+            source_postures=source_postures,
+        )
+        if outcomes and all(item.status == "failed" for item in outcomes):
+            raise RuntimeError("Scout batch completed without a usable role outcome")
+        return outcomes
 
     def materialize_candidates(
         self, demo_id: str, outcomes, wake_at: datetime

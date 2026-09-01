@@ -72,6 +72,7 @@ class EvidenceSnapshot(BaseModel):
     )
     known_at: datetime
     content_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    origin_fingerprint: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     summary: str = Field(min_length=1, max_length=2_000)
 
     @field_validator("source_locator")

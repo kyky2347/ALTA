@@ -116,8 +116,80 @@ def build_research_diligence(
     tools: Sequence[ResearchTool],
     discoveries: Sequence[ResearchDiscovery],
     frozen_source_locators: Sequence[str],
+    frozen_origin_fingerprints: Sequence[str] = (),
     output: Any,
 ) -> ResearchDiligence:
+    (
+        completed,
+        active,
+        cited_active,
+        tools_by_call,
+        cited_refs,
+        cited_tool_pairs,
+    ) = _cited_research(tools, output)
+    families = tuple(sorted({_tool_family(item.tool_name) for item in cited_active}))
+    roles = _evidence_roles(cited_refs)
+    non_news = tuple(
+        item
+        for item in cited_active
+        if _tool_family(item.tool_name) not in {"news_locator", "social_locator"}
+    )
+    cited_locators, domains, origin_by_pair, origins = _source_independence(
+        discoveries,
+        cited_tool_pairs,
+        frozen_source_locators,
+        frozen_origin_fingerprints,
+    )
+    source_role_collisions = _source_role_collision_count(cited_refs)
+    common = {
+        "completed_tool_calls": len(completed),
+        "active_research_calls": len(active),
+        "cited_research_calls": len(cited_active),
+        "non_news_research_calls": len(non_news),
+        "source_families": families,
+        "independent_source_domains": domains,
+        "independent_evidence_origins": origins,
+        "cited_source_count": len(cited_locators),
+        "source_role_collisions": source_role_collisions,
+        "evidence_roles": roles,
+    }
+    if getattr(output, "kind", None) == "no_op":
+        return ResearchDiligence(posture="no_op", **common)
+
+    beneficiary = bool(getattr(output, "beneficiary_path", None))
+    counterevidence = bool(getattr(output, "disconfirming_evidence", None))
+    next_test = bool(getattr(output, "next_test", None))
+    counterevidence_source_distinct = _counterevidence_is_distinct(
+        cited_refs, origin_by_pair
+    )
+    role_families = _role_families(cited_refs, tools_by_call)
+    reasons = _diligence_reason_codes(
+        active=active,
+        cited_active=cited_active,
+        non_news=non_news,
+        domains=domains,
+        origins=origins,
+        roles=roles,
+        role_families=role_families,
+        counterevidence_source_distinct=counterevidence_source_distinct,
+        beneficiary=beneficiary,
+        counterevidence=counterevidence,
+        next_test=next_test,
+    )
+    return ResearchDiligence(
+        posture="cross_checked" if not reasons else "screen_grade",
+        **common,
+        counterevidence_source_distinct=counterevidence_source_distinct,
+        beneficiary_path_declared=beneficiary,
+        counterevidence_declared=counterevidence,
+        next_test_declared=next_test,
+        reason_codes=reasons,
+    )
+
+
+def _cited_research(
+    tools: Sequence[ResearchTool], output: Any
+) -> tuple[tuple, tuple, tuple, dict[str, ResearchTool], tuple, set[tuple[str, str]]]:
     completed = tuple(item for item in tools if item.status == "completed")
     active = tuple(
         item for item in completed if item.tool_name in ACTIVE_RESEARCH_TOOLS
@@ -133,14 +205,17 @@ def build_research_diligence(
         for item in active
         if getattr(item, "tool_call_id", None) in cited_tool_call_ids
     )
-    families = tuple(sorted({_tool_family(item.tool_name) for item in cited_active}))
     tools_by_call = {item.tool_call_id: item for item in cited_active}
     cited_refs = tuple(
         item
         for item in getattr(output, "tool_evidence_refs", ())
         if item.tool_call_id in tools_by_call
     )
-    roles = tuple(
+    return completed, active, cited_active, tools_by_call, cited_refs, cited_tool_pairs
+
+
+def _evidence_roles(cited_refs: Sequence[Any]) -> tuple[str, ...]:
+    return tuple(
         sorted(
             {
                 role
@@ -150,11 +225,16 @@ def build_research_diligence(
             }
         )
     )
-    non_news = tuple(
-        item
-        for item in cited_active
-        if _tool_family(item.tool_name) not in {"news_locator", "social_locator"}
-    )
+
+
+def _source_independence(
+    discoveries: Sequence[ResearchDiscovery],
+    cited_tool_pairs: set[tuple[str, str]],
+    frozen_source_locators: Sequence[str],
+    frozen_origin_fingerprints: Sequence[str],
+) -> tuple[
+    tuple[str, ...], tuple[str, ...], dict[tuple[str, str], str], tuple[str, ...]
+]:
     cited_discoveries = tuple(
         item
         for item in discoveries
@@ -178,43 +258,36 @@ def build_research_diligence(
         (item.tool_call_id, item.source_locator): _discovery_origin(item)
         for item in cited_discoveries
     }
+    durable_origins = tuple(
+        value
+        for value in frozen_origin_fingerprints
+        if isinstance(value, str) and len(value) == 64
+    ) or tuple(
+        contract_hash({"source_locator": locator}) for locator in frozen_source_locators
+    )
     origins = tuple(
         sorted(
             {
                 *origin_by_pair.values(),
-                *(
-                    contract_hash({"source_locator": locator})
-                    for locator in frozen_source_locators
-                ),
+                *durable_origins,
             }
         )[:10]
     )
+    return cited_locators, domains, origin_by_pair, origins
+
+
+def _source_role_collision_count(cited_refs: Sequence[Any]) -> int:
     roles_by_locator: dict[str, set[str]] = {}
     for item in cited_refs:
         role = getattr(item, "evidence_role", None)
         if role in REQUIRED_EVIDENCE_ROLES:
             roles_by_locator.setdefault(item.source_locator, set()).add(role)
-    source_role_collisions = sum(
-        len(locator_roles) > 1 for locator_roles in roles_by_locator.values()
-    )
-    if getattr(output, "kind", None) == "no_op":
-        return ResearchDiligence(
-            posture="no_op",
-            completed_tool_calls=len(completed),
-            active_research_calls=len(active),
-            cited_research_calls=len(cited_active),
-            non_news_research_calls=len(non_news),
-            source_families=families,
-            independent_source_domains=domains,
-            independent_evidence_origins=origins,
-            cited_source_count=len(cited_locators),
-            source_role_collisions=source_role_collisions,
-            evidence_roles=roles,
-        )
+    return sum(len(locator_roles) > 1 for locator_roles in roles_by_locator.values())
 
-    beneficiary = bool(getattr(output, "beneficiary_path", None))
-    counterevidence = bool(getattr(output, "disconfirming_evidence", None))
-    next_test = bool(getattr(output, "next_test", None))
+
+def _counterevidence_is_distinct(
+    cited_refs: Sequence[Any], origin_by_pair: dict[tuple[str, str], str]
+) -> bool:
     primary_refs = {
         (item.tool_call_id, item.source_locator)
         for item in cited_refs
@@ -227,12 +300,17 @@ def build_research_diligence(
     }
     primary_domains = {_hostname(locator) for _, locator in primary_refs}
     primary_origins = {origin_by_pair.get(pair) for pair in primary_refs}
-    counterevidence_source_distinct = any(
+    return any(
         _hostname(locator) not in primary_domains
         and origin_by_pair.get((call_id, locator)) not in primary_origins
         for call_id, locator in counter_refs
     )
-    role_families = {
+
+
+def _role_families(
+    cited_refs: Sequence[Any], tools_by_call: dict[str, ResearchTool]
+) -> dict[str, set[str]]:
+    return {
         role: {
             _tool_family(tools_by_call[item.tool_call_id].tool_name)
             for item in cited_refs
@@ -240,51 +318,50 @@ def build_research_diligence(
         }
         for role in REQUIRED_EVIDENCE_ROLES
     }
-    reasons = []
-    if len(cited_active) < 3:
-        reasons.append("research_path_not_cross_checked")
-    if active and not cited_active:
-        reasons.append("active_research_not_bound_to_candidate")
-    if len(non_news) < 2:
-        reasons.append("non_news_research_depth_limited")
-    if len(domains) < 3:
-        reasons.append("independent_source_breadth_limited")
-    if len(origins) < 3:
-        reasons.append("independent_evidence_origins_limited")
-    if not role_families["primary_fact"].difference({"news_locator", "social_locator"}):
-        reasons.append("primary_fact_not_bound")
-    if not role_families["mechanism"].difference({"news_locator", "social_locator"}):
-        reasons.append("mechanism_not_bound")
-    if "market_data" not in role_families["market_context"]:
-        reasons.append("market_context_not_bound")
-    if "counterevidence" not in roles:
-        reasons.append("counterevidence_not_bound")
-    elif not counterevidence_source_distinct:
-        reasons.append("counterevidence_source_not_distinct")
-    if not beneficiary:
-        reasons.append("beneficiary_path_not_declared")
-    if not counterevidence:
-        reasons.append("counterevidence_not_declared")
-    if not next_test:
-        reasons.append("next_test_not_declared")
-    return ResearchDiligence(
-        posture="cross_checked" if not reasons else "screen_grade",
-        completed_tool_calls=len(completed),
-        active_research_calls=len(active),
-        cited_research_calls=len(cited_active),
-        non_news_research_calls=len(non_news),
-        source_families=families,
-        independent_source_domains=domains,
-        independent_evidence_origins=origins,
-        cited_source_count=len(cited_locators),
-        source_role_collisions=source_role_collisions,
-        evidence_roles=roles,
-        counterevidence_source_distinct=counterevidence_source_distinct,
-        beneficiary_path_declared=beneficiary,
-        counterevidence_declared=counterevidence,
-        next_test_declared=next_test,
-        reason_codes=tuple(reasons),
+
+
+def _diligence_reason_codes(
+    *,
+    active: Sequence[Any],
+    cited_active: Sequence[Any],
+    non_news: Sequence[Any],
+    domains: Sequence[str],
+    origins: Sequence[str],
+    roles: Sequence[str],
+    role_families: dict[str, set[str]],
+    counterevidence_source_distinct: bool,
+    beneficiary: bool,
+    counterevidence: bool,
+    next_test: bool,
+) -> tuple[str, ...]:
+    primary_fact_bound = bool(
+        role_families["primary_fact"].difference({"news_locator", "social_locator"})
     )
+    mechanism_bound = bool(
+        role_families["mechanism"].difference({"news_locator", "social_locator"})
+    )
+    checks = (
+        (len(cited_active) < 3, "research_path_not_cross_checked"),
+        (bool(active) and not cited_active, "active_research_not_bound_to_candidate"),
+        (len(non_news) < 2, "non_news_research_depth_limited"),
+        (len(domains) < 3, "independent_source_breadth_limited"),
+        (len(origins) < 3, "independent_evidence_origins_limited"),
+        (not primary_fact_bound, "primary_fact_not_bound"),
+        (not mechanism_bound, "mechanism_not_bound"),
+        (
+            "market_data" not in role_families["market_context"],
+            "market_context_not_bound",
+        ),
+        ("counterevidence" not in roles, "counterevidence_not_bound"),
+        (
+            "counterevidence" in roles and not counterevidence_source_distinct,
+            "counterevidence_source_not_distinct",
+        ),
+        (not beneficiary, "beneficiary_path_not_declared"),
+        (not counterevidence, "counterevidence_not_declared"),
+        (not next_test, "next_test_not_declared"),
+    )
+    return tuple(reason for failed, reason in checks if failed)
 
 
 def strongest_diligence(

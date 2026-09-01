@@ -88,34 +88,128 @@ def _canonical_hash(value: Any) -> str:
 
 
 def _canonical_tool_locator(candidate: str) -> str | None:
-    parsed = urlsplit(redact(candidate.rstrip(".,;:!?)\"']}>")))
+    trimmed = candidate.rstrip(".,;:!?)\"']}>")
+    unredacted = urlsplit(trimmed)
+    if (unredacted.username, unredacted.password) != (None, None):
+        return None
+    parsed = urlsplit(redact(trimmed))
     if not parsed.hostname or (parsed.username, parsed.password) != (None, None):
         return None
     return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))
 
 
+_SOURCE_LOCATOR_KEYS = frozenset(
+    {
+        "canonicalurl",
+        "href",
+        "link",
+        "original",
+        "snapshoturl",
+        "sourceurl",
+        "uri",
+        "url",
+    }
+)
+
+_EVIDENCE_RECORD_COLLECTION_KEYS = frozenset(
+    {
+        "captures",
+        "fallbackresults",
+        "filings",
+        "items",
+        "pages",
+        "results",
+        "sources",
+    }
+)
+
+_NON_EVIDENCE_LOCATOR_KEYS = frozenset(
+    {
+        "favicon",
+        "faviconurl",
+        "image",
+        "imageurl",
+        "images",
+        "links",
+        "logo",
+        "logourl",
+        "socialimage",
+        "thumbnail",
+        "thumbnailurl",
+    }
+)
+
+
 def _source_locators(value: Any) -> tuple[str, ...]:
     found: list[str] = []
+    _collect_explicit_locators(value, found)
+    if not found:
+        _collect_text_locators(value, found)
+    return tuple(found)
 
-    def visit(item: Any) -> None:
+
+def _normalized_locator_key(value: str | None) -> str:
+    return re.sub(r"[^a-z0-9]", "", (value or "").casefold())
+
+
+def _append_source_urls(value: str, found: list[str]) -> None:
+    for match in re.finditer(r"https://[^\s\"'<>\\]+", value):
         if len(found) >= 10:
             return
-        if isinstance(item, dict):
-            for child in item.values():
-                visit(child)
-        elif isinstance(item, list):
-            for child in item:
-                visit(child)
-        elif isinstance(item, str):
-            for match in re.finditer(r"https://[^\s\"'<>\\]+", item):
-                if len(found) >= 10:
-                    return
-                locator = _canonical_tool_locator(match.group(0))
-                if locator is not None and locator not in found:
-                    found.append(locator)
+        locator = _canonical_tool_locator(match.group(0))
+        if locator is not None and locator not in found:
+            found.append(locator)
 
-    visit(value)
-    return tuple(found)
+
+def _direct_source_locator_values(value: dict[Any, Any]) -> tuple[str, ...]:
+    return tuple(
+        child
+        for child_key, child in value.items()
+        if _normalized_locator_key(str(child_key)) in _SOURCE_LOCATOR_KEYS
+        and isinstance(child, str)
+    )
+
+
+def _collect_explicit_mapping(value: dict[Any, Any], found: list[str]) -> None:
+    direct = _direct_source_locator_values(value)
+    if not direct:
+        for child_key, child in value.items():
+            _collect_explicit_locators(child, found, key=str(child_key))
+        return
+    before_nested = len(found)
+    for child_key, child in value.items():
+        if _normalized_locator_key(str(child_key)) in _EVIDENCE_RECORD_COLLECTION_KEYS:
+            _collect_explicit_locators(child, found, key=str(child_key))
+    if len(found) == before_nested:
+        for child in direct:
+            _append_source_urls(child, found)
+
+
+def _collect_explicit_locators(
+    value: Any, found: list[str], *, key: str | None = None
+) -> None:
+    if len(found) >= 10 or _normalized_locator_key(key) in _NON_EVIDENCE_LOCATOR_KEYS:
+        return
+    if isinstance(value, dict):
+        _collect_explicit_mapping(value, found)
+    elif isinstance(value, list):
+        for child in value:
+            _collect_explicit_locators(child, found, key=key)
+
+
+def _collect_text_locators(
+    value: Any, found: list[str], *, key: str | None = None
+) -> None:
+    if len(found) >= 10 or _normalized_locator_key(key) in _NON_EVIDENCE_LOCATOR_KEYS:
+        return
+    if isinstance(value, dict):
+        for child_key, child in value.items():
+            _collect_text_locators(child, found, key=str(child_key))
+    elif isinstance(value, list):
+        for child in value:
+            _collect_text_locators(child, found, key=key)
+    elif isinstance(value, str):
+        _append_source_urls(value, found)
 
 
 def _utf8_prefix(value: str, maximum_bytes: int) -> str:
@@ -129,21 +223,42 @@ def _matching_source_payload(value: Any, locator: str) -> Any | None:
     """Return the smallest structured result node that directly owns a URL."""
 
     if isinstance(value, dict):
-        for child in value.values():
-            if not isinstance(child, str):
-                continue
-            child_locator = _canonical_tool_locator(child)
-            if child_locator == locator:
-                return value
-        for child in value.values():
-            matched = _matching_source_payload(child, locator)
-            if matched is not None:
-                return matched
-    elif isinstance(value, list):
-        for child in value:
-            matched = _matching_source_payload(child, locator)
-            if matched is not None:
-                return matched
+        return _matching_mapping_payload(value, locator)
+    if isinstance(value, list):
+        return _matching_list_payload(value, locator)
+    return None
+
+
+def _mapping_owns_locator(value: dict[Any, Any], locator: str) -> bool:
+    return any(
+        _canonical_tool_locator(child) == locator
+        for child_key, child in value.items()
+        if _normalized_locator_key(str(child_key)) in _SOURCE_LOCATOR_KEYS
+        and isinstance(child, str)
+    )
+
+
+def _matching_mapping_payload(value: dict[Any, Any], locator: str) -> Any | None:
+    if _mapping_owns_locator(value, locator):
+        return value
+    for child_key, child in value.items():
+        matched = _matching_source_payload(child, locator)
+        if matched is None:
+            continue
+        normalized_key = _normalized_locator_key(str(child_key))
+        if normalized_key in {"metadata", "provenance"} or normalized_key.endswith(
+            "provenance"
+        ):
+            return value
+        return matched
+    return None
+
+
+def _matching_list_payload(value: list[Any], locator: str) -> Any | None:
+    for child in value:
+        matched = _matching_source_payload(child, locator)
+        if matched is not None:
+            return matched
     return None
 
 
@@ -151,6 +266,78 @@ def _source_scoped_result(value: Any, locator: str) -> Any:
     """Keep durable Evidence attributable to one source, not a call-wide prefix."""
 
     return _matching_source_payload(value, locator) or value
+
+
+_ORIGIN_ROUTE_KEYS = _SOURCE_LOCATOR_KEYS | frozenset(
+    {
+        "alloweddomainmatch",
+        "backend",
+        "backends",
+        "cached",
+        "fallback",
+        "fallbackchain",
+        "failures",
+        "metadata",
+        "partial",
+        "provider",
+        "providers",
+        "publisher",
+        "query",
+        "queries",
+        "rank",
+        "researchqualityscore",
+        "researchtermmatches",
+        "resultcount",
+        "score",
+        "searchbackend",
+        "source",
+        "sources",
+        "stale",
+    }
+)
+
+
+def _origin_content_projection(value: Any, *, key: str | None = None) -> Any | None:
+    """Fingerprint underlying content without treating routes as independent facts.
+
+    The same release can arrive through several tools, URLs, or syndication mirrors.
+    Counting those routes as separate origins overstates corroboration.  Retaining
+    normalized structured content while dropping retrieval-route metadata is
+    deliberately conservative. Object keys and list-record boundaries remain
+    intact, while list order and duplicate route records do not affect identity.
+    """
+
+    normalized_key = re.sub(r"[^a-z0-9]", "", (key or "").casefold())
+    if normalized_key in _ORIGIN_ROUTE_KEYS:
+        return None
+    if isinstance(value, dict):
+        projected = {}
+        for child_key, child in value.items():
+            child_name = re.sub(r"[^a-z0-9]", "", str(child_key).casefold())
+            child_value = _origin_content_projection(child, key=str(child_key))
+            if child_name and child_value is not None:
+                projected[child_name] = child_value
+        return projected or None
+    if isinstance(value, list):
+        unique = {}
+        for child in value:
+            child_value = _origin_content_projection(child)
+            if child_value is None:
+                continue
+            encoded = json.dumps(
+                child_value,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+            unique[encoded] = child_value
+        return [unique[encoded] for encoded in sorted(unique)] or None
+    if isinstance(value, str):
+        without_routes = re.sub(r"https?://[^\s\"'<>\\]+", " ", value)
+        return " ".join(without_routes.split()).casefold() or None
+    if isinstance(value, (int, float, bool)):
+        return value
+    return None
 
 
 def _strict_schema_node(value: Any) -> Any:
@@ -226,12 +413,11 @@ def _tool_evidence(items: Sequence[Any]) -> tuple[ToolEvidenceDiscovery, ...]:
                 ),
                 4_000,
             )
+            origin_projection = _origin_content_projection(source_payload)
             origin_fingerprint = _canonical_hash(
-                {
-                    "tool_name": tool_name,
-                    "source_locator": locator,
-                    "source_payload": source_text,
-                }
+                {"content_projection": origin_projection}
+                if origin_projection is not None
+                else {"source_locator": locator}
             )
             content = {
                 "tool_call_id": tool_call_id,

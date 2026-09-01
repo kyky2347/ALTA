@@ -1,4 +1,9 @@
 import json
+import re
+import threading
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
@@ -33,6 +38,18 @@ from .research_diligence import ResearchDiligence, strongest_diligence
 from .research_operations import load_research_operations
 from .research_attention import ResearchAttentionProjector
 from .trader_mind import SCOUTS
+
+
+class AutonomousFenceLost(RuntimeError):
+    """The process no longer owns the durable autonomous writer epoch."""
+
+
+@dataclass(frozen=True)
+class _AutonomousFence:
+    owner_key: str
+    epoch: int
+    token_digest: str
+    session_validator: Callable[[], None]
 
 
 OPPORTUNITY_DETAIL_KEYS = (
@@ -201,9 +218,10 @@ def _opportunity_detail_payload(
                 "position": item[2],
                 "score": item[3],
                 "knownAt": item[4],
-                "components": item[5],
-                "gateStatus": item[6],
-                "reasonCodes": item[7],
+                "rankingRunId": item[5],
+                "components": item[6],
+                "gateStatus": item[7],
+                "reasonCodes": item[8],
             }
             for item in ranks
         ],
@@ -238,11 +256,143 @@ class Database:
             if pool_size
             else None
         )
+        self._fence_lock = threading.Lock()
+        self._fence_condition = threading.Condition(self._fence_lock)
+        self._autonomous_fence: _AutonomousFence | None = None
+        self._fenced_transactions = 0
+        self._fence_closing = False
 
-    def connect(self):
-        if self._pool is not None:
-            return self._pool.connection()
-        return psycopg.connect(self.dsn, connect_timeout=3)
+    def activate_autonomous_fence(
+        self,
+        *,
+        owner_key: str,
+        epoch: int,
+        token_digest: str,
+        session_validator: Callable[[], None],
+    ) -> None:
+        """Fence every transaction created by this database instance.
+
+        The durable row is locked for the transaction after its epoch and
+        token are validated. A successor therefore cannot publish a new epoch
+        in the middle of a transaction that began under the previous owner.
+        """
+
+        if not owner_key or len(owner_key) > 128:
+            raise ValueError("autonomous owner key is invalid")
+        if epoch <= 0:
+            raise ValueError("autonomous owner epoch must be positive")
+        if re.fullmatch(r"[a-f0-9]{64}", token_digest) is None:
+            raise ValueError("autonomous owner token digest is invalid")
+        fence = _AutonomousFence(
+            owner_key=owner_key,
+            epoch=epoch,
+            token_digest=token_digest,
+            session_validator=session_validator,
+        )
+        with self._fence_lock:
+            if self._autonomous_fence is not None:
+                raise RuntimeError("autonomous database fence is already active")
+            self._autonomous_fence = fence
+            self._fenced_transactions = 0
+            self._fence_closing = False
+
+    def drain_autonomous_fence(self, *, token_digest: str) -> None:
+        """Stop admission and wait for every fenced transaction to finish.
+
+        Draining before the owner-row update avoids a lock-order cycle between
+        transactions holding ``FOR KEY SHARE`` and the owner session revoking
+        that row. The fence remains closed until ``clear_autonomous_fence`` so
+        no unfenced transaction can enter before durable revocation completes.
+        """
+
+        with self._fence_condition:
+            current = self._autonomous_fence
+            if current is None:
+                return
+            if current.token_digest != token_digest:
+                raise AutonomousFenceLost("autonomous database fence changed owner")
+            self._fence_closing = True
+            while self._fenced_transactions:
+                self._fence_condition.wait()
+
+    def clear_autonomous_fence(self, *, token_digest: str) -> None:
+        self.drain_autonomous_fence(token_digest=token_digest)
+        with self._fence_condition:
+            current = self._autonomous_fence
+            if current is None:
+                return
+            if current.token_digest != token_digest:
+                raise AutonomousFenceLost("autonomous database fence changed owner")
+            self._autonomous_fence = None
+            self._fence_closing = False
+
+    def assert_autonomous_fence(self) -> None:
+        """Fail when the active autonomous writer session or epoch was lost."""
+
+        with self.connect() as connection:
+            connection.execute("SELECT 1")
+
+    def _fence_snapshot(self) -> _AutonomousFence | None:
+        with self._fence_lock:
+            return self._autonomous_fence
+
+    def _enter_fenced_transaction(self) -> _AutonomousFence | None:
+        with self._fence_condition:
+            fence = self._autonomous_fence
+            if fence is None:
+                return None
+            if self._fence_closing:
+                raise AutonomousFenceLost("autonomous database fence is draining")
+            self._fenced_transactions += 1
+            return fence
+
+    def _leave_fenced_transaction(self, fence: _AutonomousFence | None) -> None:
+        if fence is None:
+            return
+        with self._fence_condition:
+            self._fenced_transactions -= 1
+            if self._fenced_transactions < 0:
+                raise RuntimeError("autonomous fence transaction count underflow")
+            if self._fenced_transactions == 0:
+                self._fence_condition.notify_all()
+
+    @contextmanager
+    def connect(self) -> Iterator[psycopg.Connection]:
+        fence = self._enter_fenced_transaction()
+        try:
+            manager = (
+                self._pool.connection()
+                if self._pool is not None
+                else psycopg.connect(self.dsn, connect_timeout=3)
+            )
+            with manager as connection:
+                if fence is not None:
+                    try:
+                        fence.session_validator()
+                        durable = connection.execute(
+                            """SELECT epoch, token_digest
+                            FROM ops.autonomous_owner
+                            WHERE owner_key = %s
+                            FOR KEY SHARE""",
+                            (fence.owner_key,),
+                        ).fetchone()
+                    except AutonomousFenceLost:
+                        raise
+                    except psycopg.Error as error:
+                        raise AutonomousFenceLost(
+                            "autonomous owner validation is unavailable"
+                        ) from error
+                    if durable != (fence.epoch, fence.token_digest):
+                        raise AutonomousFenceLost(
+                            "autonomous owner epoch is stale or revoked"
+                        )
+                yield connection
+                if fence is not None:
+                    # A transaction that outlives the owner session must roll back,
+                    # even when no successor has published a newer epoch yet.
+                    fence.session_validator()
+        finally:
+            self._leave_fenced_transaction(fence)
 
     def close(self) -> None:
         if self._pool is not None:
@@ -384,7 +534,11 @@ class Database:
                 (environment, bounded_limit),
             ).fetchall()
             rank_rows = connection.execute(
-                """SELECT id, opportunity_id, book, position, score, known_at
+                """SELECT id, opportunity_id, book, position, score, known_at,
+                ranking_run_id,
+                count(*) OVER (PARTITION BY book, ranking_run_id),
+                min(position) OVER (PARTITION BY book, ranking_run_id),
+                max(position) OVER (PARTITION BY book, ranking_run_id)
                 FROM research.rank WHERE environment = %s
                 ORDER BY created_at DESC, id LIMIT %s""",
                 (environment, bounded_limit),
@@ -532,6 +686,11 @@ class Database:
                     "position": row[3],
                     "score": row[4],
                     "knownAt": row[5],
+                    "rankingRunId": row[6],
+                    "rankingRunItemCount": row[7],
+                    "rankingRunComplete": (
+                        row[7] > 0 and row[8] == 1 and row[9] == row[7]
+                    ),
                 }
                 for row in rank_rows
             ],
@@ -786,10 +945,11 @@ class Database:
                 evidence_ids, completeness, member_candidate_ids,
                 entity_key, event_key, catalyst_key, identity_version,
                 foundry_state, merge_parent_id, merge_revision,
-                (SELECT jsonb_agg(c.foundry_snapshot ORDER BY c.id)
-                 FROM research.candidate c
-                 WHERE c.id = ANY(research.opportunity.member_candidate_ids)
-                   AND c.foundry_snapshot IS NOT NULL)
+                (SELECT jsonb_agg(c.foundry_snapshot ORDER BY member.ordinality)
+                 FROM unnest(research.opportunity.member_candidate_ids)
+                      WITH ORDINALITY AS member(candidate_id, ordinality)
+                 JOIN research.candidate c ON c.id = member.candidate_id
+                 WHERE c.foundry_snapshot IS NOT NULL)
                 FROM research.opportunity WHERE id = %s AND environment = %s""",
                 (opportunity_id, environment),
             ).fetchone()
@@ -812,8 +972,8 @@ class Database:
                 (opportunity_id, environment),
             ).fetchall()
             ranks = connection.execute(
-                """SELECT id, book, position, score, known_at, components,
-                gate_status, reason_codes FROM research.rank
+                """SELECT id, book, position, score, known_at, ranking_run_id,
+                components, gate_status, reason_codes FROM research.rank
                 WHERE opportunity_id = %s AND environment = %s
                 ORDER BY known_at DESC, position""",
                 (opportunity_id, environment),

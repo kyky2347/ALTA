@@ -357,6 +357,7 @@ class ExitDecision(FrozenContract):
         "better_opportunity",
         "price_stale",
         "quote_not_known",
+        "capital_drain",
     ]
     observation_id: str
     policy_version: str

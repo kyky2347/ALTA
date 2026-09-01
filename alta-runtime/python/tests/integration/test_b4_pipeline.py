@@ -576,6 +576,22 @@ def test_cross_cycle_registry_suppresses_same_content_and_refreshes_new_evidence
         for item in initial.opportunities
         if item.member_candidate_ids == ("candidate_exact_a", "candidate_exact_b")
     )
+    reversed_member_ids = tuple(reversed(parent.member_candidate_ids))
+    with database.connect() as connection:
+        connection.execute(
+            "UPDATE research.opportunity SET member_candidate_ids = %s WHERE id = %s",
+            (list(reversed_member_ids), parent.opportunity_id),
+        )
+    detail = database.opportunity_detail(parent.opportunity_id, "replay")
+    assert detail is not None
+    assert [item["candidateId"] for item in detail["researchContributors"]] == list(
+        reversed_member_ids
+    )
+    with database.connect() as connection:
+        connection.execute(
+            "UPDATE research.opportunity SET member_candidate_ids = %s WHERE id = %s",
+            (list(parent.member_candidate_ids), parent.opportunity_id),
+        )
 
     def repeated_candidate(
         candidate_id: str,
@@ -584,6 +600,7 @@ def test_cross_cycle_registry_suppresses_same_content_and_refreshes_new_evidence
         *,
         source: str = "b4_fixture",
         fixture: bool = True,
+        origin_fingerprint: str | None = None,
         updates: dict | None = None,
     ) -> CandidateDraft:
         candidate = candidates[0].model_copy(
@@ -608,7 +625,17 @@ def test_cross_cycle_registry_suppresses_same_content_and_refreshes_new_evidence
                     source,
                     candidate_id,
                     content_hash,
-                    Jsonb({"fixture": fixture, "candidate_id": candidate_id}),
+                    Jsonb(
+                        {
+                            "fixture": fixture,
+                            "candidate_id": candidate_id,
+                            **(
+                                {"origin_fingerprint": origin_fingerprint}
+                                if origin_fingerprint is not None
+                                else {}
+                            ),
+                        }
+                    ),
                 ),
             )
             connection.execute(
@@ -655,7 +682,10 @@ def test_cross_cycle_registry_suppresses_same_content_and_refreshes_new_evidence
     )
 
     changed = repeated_candidate(
-        "candidate_exact_update", "evidence_exact_update", "f" * 64
+        "candidate_exact_update",
+        "evidence_exact_update",
+        "f" * 64,
+        origin_fingerprint="1" * 64,
     )
     changed_result = deduplicate("batch_registry_update", (changed,))
     foundry.materialize(changed_result, (changed,))
@@ -667,6 +697,15 @@ def test_cross_cycle_registry_suppresses_same_content_and_refreshes_new_evidence
     assert refreshed[0].opportunity_id == parent.opportunity_id
     assert refreshed[0].version == 2
     assert "evidence_exact_update" in refreshed[0].evidence_ids
+    mirror = repeated_candidate(
+        "candidate_exact_mirror",
+        "evidence_exact_mirror",
+        "0" * 64,
+        origin_fingerprint="1" * 64,
+    )
+    mirror_result = deduplicate("batch_registry_mirror", (mirror,))
+    foundry.materialize(mirror_result, (mirror,))
+    assert registry.resolve("batch_registry_mirror", mirror_result.opportunities) == ()
     with database.connect() as connection:
         connection.execute(
             "UPDATE research.opportunity SET status = 'shadow' WHERE id = %s",
@@ -705,6 +744,37 @@ def test_cross_cycle_registry_suppresses_same_content_and_refreshes_new_evidence
     assert registry.resolve("batch_registry_memory", memory_result.opportunities) == (
         memory_result.opportunities
     )
+    memory_update = repeated_candidate(
+        "candidate_zz_memory_update",
+        "evidence_zz_memory_update",
+        "c" * 64,
+        source="official_policy",
+        fixture=False,
+        updates={
+            "title": "Auditable memory candidate update",
+            "entity_key": "memory-entity",
+            "event_key": "memory-event",
+            "catalyst_key": "memory-catalyst",
+            "next_test": "Verify whether the revised operating signal reached estimates.",
+        },
+    )
+    memory_update_result = deduplicate("batch_registry_memory_update", (memory_update,))
+    foundry.materialize(memory_update_result, (memory_update,))
+    memory_refreshed = registry.resolve(
+        "batch_registry_memory_update", memory_update_result.opportunities
+    )
+    assert len(memory_refreshed) == 1
+    assert memory_refreshed[0].member_candidate_ids == (
+        "candidate_zz_memory_update",
+        "candidate_memory_real",
+    )
+    memory_detail = database.opportunity_detail(
+        memory_result.opportunities[0].opportunity_id, "replay"
+    )
+    assert memory_detail is not None
+    assert [
+        item["candidateId"] for item in memory_detail["researchContributors"]
+    ] == list(memory_refreshed[0].member_candidate_ids)
     memory, _ = DatabaseSourceFlow(
         database,
         ("SPY",),
@@ -723,7 +793,9 @@ def test_cross_cycle_registry_suppresses_same_content_and_refreshes_new_evidence
         if item.opportunity_id == memory_result.opportunities[0].opportunity_id
     )
     assert remembered.research_questions[0].origin == "scout_next_test"
-    assert remembered.research_questions[0].prompt.startswith("Verify whether")
+    assert remembered.research_questions[0].prompt == (
+        "Verify whether the revised operating signal reached estimates."
+    )
     queue = memory.opportunity_drive.research_queue
     assignments = memory.opportunity_drive.research_assignments
     assert 1 <= len(queue) <= 2
@@ -751,6 +823,20 @@ def test_cross_cycle_registry_suppresses_same_content_and_refreshes_new_evidence
             max_output_bytes=12_000,
             require_active_research=True,
         ),
+    )
+    completed_input = completed_input.model_copy(
+        update={
+            "prior_opportunities": (
+                remembered.model_copy(
+                    update={
+                        "opportunity_id": "opportunity_unassigned_decoy",
+                        "snapshot_hash": "0" * 64,
+                        "research_questions": (),
+                    }
+                ),
+                *completed_input.prior_opportunities,
+            )
+        }
     )
     completed_at = candidates[0].known_at + timedelta(hours=2, minutes=1)
     completed_content = {
@@ -835,6 +921,74 @@ def test_cross_cycle_registry_suppresses_same_content_and_refreshes_new_evidence
         for item in deferred.prior_opportunities
         for question in item.research_questions
     )
+    memory_parent_id = memory_result.opportunities[0].opportunity_id
+    with database.connect() as connection:
+        connection.execute(
+            "UPDATE research.opportunity SET status = 'closed' WHERE id = %s",
+            (memory_parent_id,),
+        )
+    after_closed = repeated_candidate(
+        "candidate_zzz_after_closed",
+        "evidence_zzz_after_closed",
+        "9" * 64,
+        source="official_policy",
+        fixture=False,
+        updates={
+            "title": "Independent thesis after a closed predecessor",
+            "entity_key": "memory-entity",
+            "event_key": "memory-event",
+            "catalyst_key": "memory-catalyst",
+            "next_test": "Test a new thesis without reviving the closed predecessor.",
+        },
+    )
+    after_closed_result = deduplicate("batch_after_closed", (after_closed,))
+    foundry.materialize(after_closed_result, (after_closed,))
+    assert (
+        registry.resolve("batch_after_closed", after_closed_result.opportunities)
+        == after_closed_result.opportunities
+    )
+    after_closed_id = after_closed_result.opportunities[0].opportunity_id
+    with database.connect() as connection:
+        connection.execute(
+            "UPDATE research.opportunity SET status = 'rejected' WHERE id = %s",
+            (after_closed_id,),
+        )
+    after_rejected = repeated_candidate(
+        "candidate_zzzz_after_rejected",
+        "evidence_zzzz_after_rejected",
+        "8" * 64,
+        source="official_policy",
+        fixture=False,
+        updates={
+            "title": "Independent thesis after a rejected predecessor",
+            "entity_key": "memory-entity",
+            "event_key": "memory-event",
+            "catalyst_key": "memory-catalyst",
+            "next_test": "Test a new thesis without reviving the rejected predecessor.",
+        },
+    )
+    after_rejected_result = deduplicate("batch_after_rejected", (after_rejected,))
+    foundry.materialize(after_rejected_result, (after_rejected,))
+    assert (
+        registry.resolve("batch_after_rejected", after_rejected_result.opportunities)
+        == after_rejected_result.opportunities
+    )
+    after_rejected_id = after_rejected_result.opportunities[0].opportunity_id
+    terminal_filtered, _ = DatabaseSourceFlow(
+        database,
+        ("SPY",),
+        environment=Environment.REPLAY,
+    ).schedule_and_wake(
+        "cycle_registry_terminal_filter",
+        candidates[0].known_at + timedelta(hours=3),
+        {},
+    )
+    terminal_ids = {
+        item.opportunity_id for item in terminal_filtered.prior_opportunities
+    }
+    assert memory_parent_id not in terminal_ids
+    assert after_closed_id not in terminal_ids
+    assert after_rejected_id in terminal_ids
     with database.connect() as connection:
         events = connection.execute(
             """SELECT event_type, payload->>'reason' FROM ops.event
@@ -849,6 +1003,7 @@ def test_cross_cycle_registry_suppresses_same_content_and_refreshes_new_evidence
                 [
                     duplicate_result.opportunities[0].opportunity_id,
                     changed_result.opportunities[0].opportunity_id,
+                    mirror_result.opportunities[0].opportunity_id,
                     position_result.opportunities[0].opportunity_id,
                 ],
             ),
@@ -856,10 +1011,12 @@ def test_cross_cycle_registry_suppresses_same_content_and_refreshes_new_evidence
     assert events == [
         ("foundry.cross_cycle.suppressed", "no_new_evidence_content"),
         ("foundry.cross_cycle.refreshed", "new_evidence_content"),
+        ("foundry.cross_cycle.suppressed", "no_new_evidence_content"),
         (
             "foundry.cross_cycle.position_updated",
             "new_evidence_for_active_position",
         ),
+        ("foundry.cross_cycle.refreshed", "new_evidence_content"),
     ]
     assert set(states) == {
         (
@@ -869,6 +1026,11 @@ def test_cross_cycle_registry_suppresses_same_content_and_refreshes_new_evidence
         ),
         (
             duplicate_result.opportunities[0].opportunity_id,
+            "merged",
+            parent.opportunity_id,
+        ),
+        (
+            mirror_result.opportunities[0].opportunity_id,
             "merged",
             parent.opportunity_id,
         ),

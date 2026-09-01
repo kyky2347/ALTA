@@ -19,19 +19,24 @@ from .database import Database
 from .expression import ExpressionProposal
 from .foundry import OpportunityDraft
 from .implementation import TradeImplementationPlan
+from .investment_thesis import ThesisPillar
 from .market_data import MassiveMarketData
 from .paper_execution import (
+    PaperCapitalCircuitOpen,
     PaperExecutionError,
     PaperExecutionResult,
     TigerPaperExecutor,
 )
+from .paper_intent import PaperIntentStore
 from .portfolio_construction import PortfolioConstructor
 from .position_performance import PositionPerformanceRecorder
 from .shadow import (
+    ExitDecision,
     LedgerTransaction,
     MonitorObservation,
     MonitorPolicy,
     PositionThesis,
+    ShadowFill,
     ShadowFillPolicy,
     ShadowIntent,
     close_ledger_transaction,
@@ -41,6 +46,21 @@ from .shadow import (
 )
 
 POSITION_MONITOR_PROMPT_VERSION = "position-monitor-v2"
+
+
+def position_next_catalyst(
+    thesis_pillars: tuple[ThesisPillar, ...], prediction: str | None
+) -> str:
+    """Select the next frozen thesis observable without confusing it with rejection."""
+
+    if thesis_pillars:
+        return min(
+            thesis_pillars,
+            key=lambda pillar: (pillar.due_at, pillar.pillar_id),
+        ).observable
+    if prediction is not None and prediction.strip():
+        return prediction.strip()
+    return "Next versioned evidence update."
 
 
 class PillarMonitorDecision(BaseModel):
@@ -131,6 +151,11 @@ class AgenticPositionBook:
         self.market_data = market_data
         self.max_open_positions = max_open_positions
         self.paper_executor = paper_executor
+        self.paper_intents = (
+            PaperIntentStore(database, paper_executor.account_sha256)
+            if paper_executor is not None
+            else None
+        )
         self.acceptance_hold_seconds = acceptance_hold_seconds
         self.portfolio_constructor = portfolio_constructor
         self.performance = PositionPerformanceRecorder(database, market_data)
@@ -237,41 +262,6 @@ class AgenticPositionBook:
                 cycle_id, proposal, "shadow.open.no_fill", fill.reason_code
             )
             return None
-        paper_result = None
-        if self.paper_executor is not None:
-            if proposal.kind not in ("stock", "etf"):
-                self._gate_event(
-                    cycle_id,
-                    proposal,
-                    "paper.open.rejected",
-                    "paper_equity_only",
-                )
-                return None
-            try:
-                paper_result = self.paper_executor.open(
-                    intent.symbol,
-                    quote.ask,
-                    cycle_id,
-                    limit_offset_bps=(
-                        execution.entry_limit_offset_bps
-                        if execution is not None
-                        else Decimal(25)
-                    ),
-                    absolute_limit_price=(
-                        execution.entry_limit_price if execution is not None else None
-                    ),
-                )
-            except Exception as error:
-                self._gate_event(
-                    cycle_id,
-                    proposal,
-                    "paper.open.rejected",
-                    f"paper_executor:{type(error).__name__}",
-                )
-                return None
-            self._paper_event(cycle_id, position_id, paper_result)
-            if paper_result.status != "filled":
-                return None
         ledger = open_ledger_transaction(fill)
         thesis = PositionThesis(
             thesis_id="thesis_" + canonical_hash([cycle_id, position_id])[:32],
@@ -302,25 +292,227 @@ class AgenticPositionBook:
                     )
                 )
             ),
-            next_catalyst=(
-                opportunity.first_rejection or "Next versioned evidence update."
+            next_catalyst=position_next_catalyst(
+                selected_pillars, opportunity.prediction
             ),
             better_opportunity_min_bps=Decimal("75"),
             alpha_contributors=alpha_contributors,
             implementation_plan=proposal.implementation_plan,
             thesis_pillars=selected_pillars,
         )
-        try:
-            self.runtime.shadow.open(intent, fill, ledger, thesis)
-        except Exception:
-            if self.paper_executor is not None and paper_result is not None:
-                cleanup = self.paper_executor.flatten(
-                    intent.symbol, quote.bid, cycle_id
+        if self.paper_executor is not None:
+            if proposal.kind not in ("stock", "etf"):
+                self._gate_event(
+                    cycle_id,
+                    proposal,
+                    "paper.open.rejected",
+                    "paper_equity_only",
                 )
-                self._paper_event(cycle_id, position_id, cleanup)
-            raise
+                return None
+            try:
+                committed = self._open_with_paper(
+                    cycle_id,
+                    proposal,
+                    intent,
+                    fill,
+                    ledger,
+                    thesis,
+                    quote.ask,
+                )
+            except PaperCapitalCircuitOpen:
+                raise
+            except Exception as error:
+                self._gate_event(
+                    cycle_id,
+                    proposal,
+                    "paper.open.rejected",
+                    f"paper_executor:{type(error).__name__}",
+                )
+                return None
+            if not committed:
+                return None
+        else:
+            self.runtime.shadow.open(intent, fill, ledger, thesis)
         self.performance.record_benchmark(position_id, proposal.expression_id)
         return thesis, ledger
+
+    def _open_with_paper(
+        self,
+        cycle_id: str,
+        proposal: ExpressionProposal,
+        intent: ShadowIntent,
+        fill: ShadowFill,
+        ledger: LedgerTransaction,
+        thesis: PositionThesis,
+        ask: Decimal,
+    ) -> bool:
+        if self.paper_executor is None or self.paper_intents is None:
+            raise PaperExecutionError("Paper durable execution is unavailable")
+        execution = (
+            proposal.implementation_plan.execution_plan
+            if proposal.implementation_plan is not None
+            else None
+        )
+        limit_offset = (
+            execution.entry_limit_offset_bps if execution is not None else Decimal(25)
+        )
+        absolute_limit = execution.entry_limit_price if execution is not None else None
+        limit_price = self.paper_executor.open_limit_price(
+            ask,
+            limit_offset_bps=limit_offset,
+            absolute_limit_price=absolute_limit,
+        )
+        with self.paper_executor.mutation():
+            self.paper_executor.assert_authorized("BUY")
+            durable = self.paper_intents.prepare(
+                cycle_id=cycle_id,
+                position_id=intent.position_id,
+                expression_id=proposal.expression_id,
+                operation="open",
+                symbol=intent.symbol,
+                limit_price=limit_price,
+                local_commit={
+                    "intent": intent.model_dump(mode="json"),
+                    "fill": fill.model_dump(mode="json"),
+                    "ledger": ledger.model_dump(mode="json"),
+                    "thesis": thesis.model_dump(mode="json"),
+                },
+            )
+            durable, result = self._dispatch_and_persist(
+                durable,
+                lambda: self.paper_executor.open(
+                    intent.symbol,
+                    ask,
+                    cycle_id,
+                    client_order_id=durable.client_order_id,
+                    limit_offset_bps=limit_offset,
+                    absolute_limit_price=absolute_limit,
+                ),
+            )
+            if result.status != "filled":
+                return False
+            try:
+                self.runtime.shadow.open(
+                    intent,
+                    fill,
+                    ledger,
+                    thesis,
+                    paper_intent_id=durable.intent_id,
+                    paper_cycle_id=cycle_id,
+                    paper_result=result,
+                )
+            except Exception as error:
+                raise PaperCapitalCircuitOpen(
+                    "Paper broker fill could not commit local open state"
+                ) from error
+        return True
+
+    def _dispatch_and_persist(self, durable, dispatch):
+        if self.paper_executor is None or self.paper_intents is None:
+            raise PaperExecutionError("Paper durable execution is unavailable")
+        self.paper_intents.mark_dispatching(durable.intent_id)
+        try:
+            result = dispatch()
+            durable = self.paper_intents.record_result(durable.intent_id, result)
+            return durable, result
+        except Exception as dispatch_error:
+            try:
+                result = self.paper_executor.reconcile(durable)
+            except Exception as reconcile_error:
+                try:
+                    self.paper_intents.mark_manual_review(
+                        durable.intent_id, "broker_reconcile_failed"
+                    )
+                except Exception as circuit_error:
+                    raise PaperCapitalCircuitOpen(
+                        "Paper capital circuit could not persist manual review"
+                    ) from circuit_error
+                raise PaperCapitalCircuitOpen(
+                    "Paper dispatch failed and broker reconciliation failed"
+                ) from reconcile_error
+            if result.status == "unresolved":
+                try:
+                    self.paper_intents.mark_manual_review(
+                        durable.intent_id, "broker_history_unresolved"
+                    )
+                except Exception as circuit_error:
+                    raise PaperCapitalCircuitOpen(
+                        "Paper capital circuit could not persist manual review"
+                    ) from circuit_error
+                raise PaperCapitalCircuitOpen(
+                    "Paper dispatch result is unresolved"
+                ) from dispatch_error
+            try:
+                durable = self.paper_intents.record_result(durable.intent_id, result)
+            except Exception as persist_error:
+                raise PaperCapitalCircuitOpen(
+                    "Paper reconciled result could not be persisted"
+                ) from persist_error
+            return durable, result
+
+    def recover_paper_intents(self) -> tuple[str, ...]:
+        """Resolve broker-first crash windows without ever replaying an order."""
+
+        if self.paper_executor is None or self.paper_intents is None:
+            return ()
+        recovered: list[str] = []
+        for durable in self.paper_intents.unresolved():
+            with self.paper_executor.mutation():
+                self._recover_paper_intent(durable)
+            recovered.append(durable.intent_id)
+        return tuple(recovered)
+
+    def _recover_paper_intent(self, durable) -> None:
+        if self.paper_executor is None or self.paper_intents is None:
+            raise PaperExecutionError("Paper durable execution is unavailable")
+        if durable.state == "prepared":
+            self.paper_intents.abandon_prepared(durable.intent_id)
+            return
+        if durable.state == "manual_review":
+            raise PaperExecutionError(
+                "Paper recovery is blocked pending operator review"
+            )
+        if durable.state == "dispatching":
+            result = self.paper_executor.reconcile(durable)
+            if result.status == "unresolved":
+                self.paper_intents.mark_manual_review(
+                    durable.intent_id, "broker_history_unresolved"
+                )
+                raise PaperExecutionError(
+                    "Paper broker history cannot prove the dispatched result"
+                )
+            durable = self.paper_intents.record_result(durable.intent_id, result)
+            if durable.state == "broker_not_filled":
+                return
+        if durable.state != "broker_filled":
+            raise PaperExecutionError("Paper recovery reached an invalid state")
+        result = PaperExecutionResult.model_validate(durable.broker_result)
+        payload = durable.local_commit
+        intent = ShadowIntent.model_validate(payload.get("intent"))
+        fill = ShadowFill.model_validate(payload.get("fill"))
+        ledger = LedgerTransaction.model_validate(payload.get("ledger"))
+        if durable.operation == "open":
+            thesis = PositionThesis.model_validate(payload.get("thesis"))
+            self.runtime.shadow.open(
+                intent,
+                fill,
+                ledger,
+                thesis,
+                paper_intent_id=durable.intent_id,
+                paper_cycle_id=durable.cycle_id,
+                paper_result=result,
+            )
+        else:
+            decision = ExitDecision.model_validate(payload.get("decision"))
+            self.runtime.shadow.close(
+                intent,
+                fill,
+                ledger,
+                decision,
+                paper_intent_id=durable.intent_id,
+                paper_cycle_id=durable.cycle_id,
+                paper_result=result,
+            )
 
     def _admit_entry(
         self,
@@ -576,6 +768,7 @@ class AgenticPositionBook:
     def monitor_existing(self, cycle_id: str, frozen_input) -> tuple[str, ...]:
         if self.market_data is None:
             return ()
+        drain = self._paper_drain_request()
         with self.database.connect() as connection:
             rows = connection.execute(
                 """SELECT p.id, p.symbol, p.quantity, p.position_thesis,
@@ -585,7 +778,11 @@ class AgenticPositionBook:
                 WHERE p.environment = 'shadow' AND p.status = 'open'
                 ORDER BY p.opened_at, p.id"""
             ).fetchall()
-        falsifier_flags = self._falsifier_flags(cycle_id, rows, frozen_input)
+        falsifier_flags = (
+            {}
+            if drain is not None
+            else self._falsifier_flags(cycle_id, rows, frozen_input)
+        )
         monitored: list[str] = []
         for row in rows:
             thesis = PositionThesis.model_validate(row[3])
@@ -607,7 +804,11 @@ class AgenticPositionBook:
                 quote=quote,
                 falsifier_triggered=falsifier_flags.get(row[0], False),
             )
-            decision = monitor_position(thesis, observation, MonitorPolicy())
+            decision = (
+                self._capital_drain_decision(thesis, observation)
+                if drain is not None
+                else monitor_position(thesis, observation, MonitorPolicy())
+            )
             self.runtime.shadow.record_monitor(observation, decision)
             monitored.append(row[0])
             if decision.action != "exit":
@@ -631,7 +832,47 @@ class AgenticPositionBook:
                 Decimal(row[4]),
                 Decimal(row[5]),
             )
+        if drain is not None:
+            self._complete_paper_drain_if_flat(drain.drain_id)
         return tuple(monitored)
+
+    def _paper_drain_request(self):
+        if self.paper_executor is None or self.paper_intents is None:
+            return None
+        generation = self.paper_executor.drain_generation()
+        if generation is None:
+            return None
+        drain = self.paper_intents.ensure_drain(generation)
+        self.paper_intents.mark_drain_draining(drain.drain_id)
+        return drain
+
+    @staticmethod
+    def _capital_drain_decision(
+        thesis: PositionThesis, observation: MonitorObservation
+    ) -> ExitDecision:
+        return ExitDecision(
+            decision_id="exit_"
+            + canonical_hash([observation.observation_id, "capital-drain-v1"])[:32],
+            position_id=thesis.position_id,
+            thesis_id=thesis.thesis_id,
+            thesis_version=thesis.version,
+            thesis_hash=thesis.hash(),
+            binding=thesis.binding,
+            known_at=observation.known_at,
+            action="exit",
+            reason_code="capital_drain",
+            observation_id=observation.observation_id,
+            policy_version="paper-capital-drain-v1",
+        )
+
+    def _complete_paper_drain_if_flat(self, drain_id: str) -> None:
+        if self.paper_executor is None or self.paper_intents is None:
+            raise PaperExecutionError("Paper durable drain is unavailable")
+        with self.paper_executor.mutation():
+            snapshot = self.paper_executor.snapshot()
+            if snapshot.get("positionCount") or snapshot.get("openOrderCount"):
+                return
+            self.paper_intents.complete_drain(drain_id, snapshot)
 
     def ensure_cycle_paper_flat(self, cycle_id: str) -> tuple[str, ...]:
         """Idempotently flattens every Paper position opened by one acceptance cycle."""
@@ -656,13 +897,6 @@ class AgenticPositionBook:
 
     def _ensure_paper_flat(self, cycle_id: str, position_id: str) -> None:
         with self.database.connect() as connection:
-            row = connection.execute(
-                """SELECT p.symbol, p.entry_price, e.kind, e.rationale
-                FROM research.shadow_position p
-                JOIN research.expression e ON e.id = p.expression_id
-                WHERE p.id = %s AND p.environment = 'shadow'""",
-                (position_id,),
-            ).fetchone()
             paper_row = connection.execute(
                 """SELECT payload FROM ops.event
                 WHERE aggregate_id = %s
@@ -675,55 +909,15 @@ class AgenticPositionBook:
                 ORDER BY sequence DESC LIMIT 1""",
                 (position_id, cycle_id),
             ).fetchone()
-            paper_open_row = connection.execute(
-                """SELECT payload FROM ops.event
-                WHERE aggregate_id = %s
-                  AND correlation_id = %s
-                  AND event_type = 'paper.order.filled'
-                  AND payload->>'action' = 'BUY'
-                ORDER BY sequence DESC LIMIT 1""",
-                (position_id, cycle_id),
-            ).fetchone()
         if paper_row is None:
             raise PaperExecutionError("Paper safety event binding is missing")
         paper_payload = paper_row[0]
         if Decimal(paper_payload["position_after"]) == 0:
             return
-        if row is None:
-            symbol = paper_payload["symbol"]
-            entry_price = paper_payload.get("average_fill_price")
-            if entry_price is None and paper_open_row is not None:
-                entry_price = paper_open_row[0].get("average_fill_price")
-            kind = "stock"
-            context = {}
-            if entry_price is None:
-                raise PaperExecutionError("Paper safety price binding is missing")
-        else:
-            symbol, entry_price, kind, rationale = row
-            context = self._rationale_context(rationale)
-        quote = (
-            self.market_data.quote(
-                kind,
-                symbol,
-                underlying_symbol=context.get("underlying_symbol"),
-            )
-            if self.market_data is not None
-            else None
+        raise PaperExecutionError(
+            "Paper position requires the durable audited close lifecycle; "
+            "unjournaled safety flatten is forbidden"
         )
-        reference_bid = (
-            quote.bid
-            if quote is not None
-            else max(Decimal(entry_price) * Decimal("0.50"), Decimal("0.01"))
-        )
-        result = self.paper_executor.flatten(symbol, reference_bid, cycle_id)
-        self._paper_event(cycle_id, position_id, result)
-        if (
-            result.status not in ("filled", "already_flat")
-            or Decimal(result.position_after) != 0
-        ):
-            raise PaperExecutionError(
-                "Paper safety flatten did not prove a flat position"
-            )
 
     def _falsifier_flags(
         self, cycle_id: str, rows: list[tuple], frozen_input
@@ -918,23 +1112,23 @@ class AgenticPositionBook:
                 fill.reason_code,
             )
             return False
+        ledger = close_ledger_transaction(
+            fill, position_cost_basis=entry_price * quantity
+        )
         if self.paper_executor is not None:
             try:
-                execution = (
-                    thesis.implementation_plan.execution_plan
-                    if thesis.implementation_plan is not None
-                    else None
-                )
-                paper_result = self.paper_executor.close(
+                committed = self._close_with_paper(
+                    cycle_id,
+                    thesis,
+                    intent,
+                    fill,
+                    ledger,
+                    decision,
                     symbol,
                     quote.bid,
-                    cycle_id,
-                    limit_offset_bps=(
-                        execution.exit_limit_offset_bps
-                        if execution is not None
-                        else Decimal(25)
-                    ),
                 )
+            except PaperCapitalCircuitOpen:
+                raise
             except Exception as error:
                 self._position_event(
                     cycle_id,
@@ -943,12 +1137,10 @@ class AgenticPositionBook:
                     f"paper_executor:{type(error).__name__}",
                 )
                 return False
-            self._paper_event(cycle_id, thesis.position_id, paper_result)
-            if paper_result.status not in ("filled", "already_flat"):
+            if not committed:
                 return False
-        cost_basis = entry_price * quantity
-        ledger = close_ledger_transaction(fill, position_cost_basis=cost_basis)
-        self.runtime.shadow.close(intent, fill, ledger, decision)
+        else:
+            self.runtime.shadow.close(intent, fill, ledger, decision)
         self.performance.record_result(
             thesis,
             entry_price,
@@ -957,6 +1149,74 @@ class AgenticPositionBook:
             fill.commission or Decimal(0),
             quantity,
         )
+        return True
+
+    def _close_with_paper(
+        self,
+        cycle_id: str,
+        thesis: PositionThesis,
+        intent: ShadowIntent,
+        fill: ShadowFill,
+        ledger: LedgerTransaction,
+        decision: ExitDecision,
+        symbol: str,
+        bid: Decimal,
+    ) -> bool:
+        if self.paper_executor is None or self.paper_intents is None:
+            raise PaperExecutionError("Paper durable execution is unavailable")
+        execution = (
+            thesis.implementation_plan.execution_plan
+            if thesis.implementation_plan is not None
+            else None
+        )
+        limit_offset = (
+            execution.exit_limit_offset_bps if execution is not None else Decimal(25)
+        )
+        limit_price = self.paper_executor.close_limit_price(
+            bid, limit_offset_bps=limit_offset
+        )
+        with self.paper_executor.mutation():
+            self.paper_executor.assert_authorized("SELL")
+            durable = self.paper_intents.prepare(
+                cycle_id=cycle_id,
+                position_id=thesis.position_id,
+                expression_id=thesis.expression_id,
+                operation="close",
+                symbol=symbol,
+                limit_price=limit_price,
+                local_commit={
+                    "intent": intent.model_dump(mode="json"),
+                    "fill": fill.model_dump(mode="json"),
+                    "ledger": ledger.model_dump(mode="json"),
+                    "decision": decision.model_dump(mode="json"),
+                },
+            )
+            durable, result = self._dispatch_and_persist(
+                durable,
+                lambda: self.paper_executor.close(
+                    symbol,
+                    bid,
+                    cycle_id,
+                    client_order_id=durable.client_order_id,
+                    limit_offset_bps=limit_offset,
+                ),
+            )
+            if result.status not in ("filled", "already_flat"):
+                return False
+            try:
+                self.runtime.shadow.close(
+                    intent,
+                    fill,
+                    ledger,
+                    decision,
+                    paper_intent_id=durable.intent_id,
+                    paper_cycle_id=cycle_id,
+                    paper_result=result,
+                )
+            except Exception as error:
+                raise PaperCapitalCircuitOpen(
+                    "Paper broker fill could not commit local close state"
+                ) from error
         return True
 
     def _paper_event(

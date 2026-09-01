@@ -32,6 +32,7 @@ from .research_attention import (
     apply_research_attention_to_market_agenda,
 )
 from .scouts import EvidenceSnapshot, FrozenScoutInput
+from .scout_repository import ScoutRepository
 from .trader_mind import SCOUTS, TraderMindMemory, bounded_mind_summary
 
 
@@ -210,6 +211,7 @@ class DatabaseSourceFlow:
         environment: Environment = Environment.SHADOW,
         max_evidence: int = 8,
         portfolio_policy: PortfolioRiskPolicy | None = None,
+        anchor_wakes: bool = True,
     ) -> None:
         if not 1 <= max_evidence <= 12:
             raise ValueError("live source max_evidence must be between 1 and 12")
@@ -217,6 +219,7 @@ class DatabaseSourceFlow:
         self.universe = universe
         self.environment = environment
         self.max_evidence = max_evidence
+        self.anchor_wakes = anchor_wakes
         self.portfolio_policy = portfolio_policy or PortfolioRiskPolicy()
         self.portfolio_constructor = PortfolioConstructor(
             database, self.portfolio_policy
@@ -239,7 +242,10 @@ class DatabaseSourceFlow:
             self._materialize_raw(connection, wake_at)
             rows = connection.execute(
                 """SELECT e.id, e.raw_id, r.source, r.content_hash, e.known_at,
-                e.summary, r.body FROM research.evidence e
+                e.summary, r.body, CASE
+                WHEN r.body->>'origin_fingerprint' ~ '^[a-f0-9]{64}$'
+                THEN r.body->>'origin_fingerprint' END
+                FROM research.evidence e
                 JOIN research.raw r ON r.id = e.raw_id
                 WHERE e.environment = %s AND r.environment = %s
                   AND e.known_at <= %s AND r.known_at <= %s
@@ -300,6 +306,7 @@ class DatabaseSourceFlow:
                 source_locator=(_public_locator(row[6]) or f"alta://database/{row[1]}"),
                 known_at=row[4],
                 content_hash=row[3],
+                origin_fingerprint=row[7],
                 summary=_text_prefix(row[5]),
             )
             for row in rows
@@ -339,6 +346,10 @@ class DatabaseSourceFlow:
                     portfolio_research_mandate=mandate,
                     expectation_posture=posture,
                 )
+                if self.anchor_wakes:
+                    ScoutRepository(self.database).start_batch(
+                        f"batch_{cycle_id}", frozen, postures
+                    )
                 return frozen, postures
             except ValidationError as error:
                 if "frozen input exceeds the hard byte budget" not in str(error):
@@ -436,10 +447,11 @@ class DatabaseSourceFlow:
             """SELECT o.id, o.version, o.known_at, o.title, o.entity_key,
             o.direction, o.status, o.thesis, o.horizon_days, o.snapshot_hash,
             deadline.decision_deadline_at,
-            (SELECT jsonb_agg(c.foundry_snapshot ORDER BY c.id)
-             FROM research.candidate c
-             WHERE c.id = ANY(o.member_candidate_ids)
-               AND c.foundry_snapshot IS NOT NULL),
+            (SELECT jsonb_agg(c.foundry_snapshot ORDER BY member.ordinality)
+             FROM unnest(o.member_candidate_ids) WITH ORDINALITY
+                  AS member(candidate_id, ordinality)
+             JOIN research.candidate c ON c.id = member.candidate_id
+             WHERE c.foundry_snapshot IS NOT NULL),
             count(*) OVER ()
             FROM research.opportunity o
             LEFT JOIN LATERAL (
@@ -454,7 +466,9 @@ class DatabaseSourceFlow:
                   AND pillar->>'due_at' ~
                       '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}'
             ) deadline ON true
-            WHERE o.environment = %s AND foundry_state = 'active' AND o.known_at < %s
+            WHERE o.environment = %s AND foundry_state = 'active'
+              AND o.status IN ('forming', 'ranked', 'shadow')
+              AND o.known_at < %s
               AND cardinality(o.evidence_ids) > 0
               AND NOT EXISTS (
                 SELECT 1 FROM unnest(o.evidence_ids) AS remembered(evidence_id)
@@ -484,8 +498,17 @@ class DatabaseSourceFlow:
                                                assigned->>'question_id')
                 assigned->>'opportunity_id', assigned->>'question_id',
                 run.known_at,
-                run.frozen_input->'input'->'prior_opportunities'->0
-                  ->>'snapshot_hash'
+                (SELECT prior.value->>'snapshot_hash'
+                 FROM jsonb_array_elements(
+                     coalesce(
+                         run.frozen_input->'input'->'prior_opportunities',
+                         '[]'::jsonb
+                     )
+                 ) WITH ORDINALITY AS prior(value, ordinality)
+                 WHERE prior.value->>'opportunity_id' =
+                       assigned->>'opportunity_id'
+                 ORDER BY prior.ordinality
+                 LIMIT 1)
                 FROM research.run run
                 JOIN research.run_artifact artifact ON artifact.run_id = run.id
                   AND artifact.environment = run.environment
@@ -726,6 +749,9 @@ class IngestingSourceFlow:
         massive_discovery_enabled: bool = False,
     ) -> None:
         self.database_flow = database_flow
+        # The outer flow owns the complete anchor because transport posture is
+        # part of the immutable wake contract.
+        self.database_flow.anchor_wakes = False
         self.finlight_adapter = finlight_adapter
         self.massive_adapter = massive_adapter
         self.massive_daily_cursor = massive_daily_cursor
@@ -744,7 +770,11 @@ class IngestingSourceFlow:
             frozen, postures = self.database_flow.schedule_and_wake(
                 cycle_id, wake_at, overrides
             )
-            return frozen, {**postures, **existing_transport}
+            combined_postures = {**postures, **existing_transport}
+            ScoutRepository(self.database_flow.database).start_batch(
+                f"batch_{cycle_id}", frozen, combined_postures
+            )
+            return frozen, combined_postures
         ingestion_posture = "disabled"
         reason = "finlight_key_not_injected"
         if self.finlight_adapter is not None:
@@ -808,11 +838,15 @@ class IngestingSourceFlow:
                     correlation_id=cycle_id,
                 ),
             )
-        return frozen, {
+        combined_postures = {
             **postures,
             "finlight_transport": ingestion_posture,
             "massive_transport": massive_posture,
         }
+        ScoutRepository(self.database_flow.database).start_batch(
+            f"batch_{cycle_id}", frozen, combined_postures
+        )
+        return frozen, combined_postures
 
     def _existing_transport_postures(self, cycle_id: str) -> dict[str, str] | None:
         with self.database_flow.database.connect() as connection:

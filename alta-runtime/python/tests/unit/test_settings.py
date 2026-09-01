@@ -2,7 +2,7 @@ import pytest
 from pydantic import ValidationError
 
 from alta_asterism.contracts import Environment, Settings
-from alta_asterism.service import _write_sse, serve
+from alta_asterism.service import _write_json_response, _write_sse, serve
 
 
 class _DisconnectedStream:
@@ -11,6 +11,20 @@ class _DisconnectedStream:
 
     def flush(self) -> None:
         raise AssertionError("flush must not follow a disconnected write")
+
+
+class _DisconnectedHandler:
+    close_connection = False
+    wfile = _DisconnectedStream()
+
+    def send_response(self, _status: int) -> None:
+        return
+
+    def send_header(self, _name: str, _value: str) -> None:
+        return
+
+    def end_headers(self) -> None:
+        return
 
 
 def test_settings_redact_runtime_urls_and_default_to_replay() -> None:
@@ -314,3 +328,11 @@ def test_service_fails_closed_for_remote_unauthenticated_or_autonomous_replay() 
 
 def test_sse_client_disconnect_is_a_normal_transport_outcome() -> None:
     _write_sse(_DisconnectedStream(), [])
+
+
+def test_json_client_disconnect_is_a_normal_transport_outcome() -> None:
+    handler = _DisconnectedHandler()
+
+    _write_json_response(handler, 200, {"status": "live"})
+
+    assert handler.close_connection is True

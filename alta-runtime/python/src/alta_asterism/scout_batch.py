@@ -154,34 +154,50 @@ class MindWorker:
         self.clock = clock
 
     def run_batch(
-        self, batch_id: str, frozen_input: FrozenScoutInput
+        self,
+        batch_id: str,
+        frozen_input: FrozenScoutInput,
+        *,
+        source_postures: dict[str, str] | None = None,
     ) -> tuple[ScoutRunOutcome, ...]:
         self.repository.validate_frozen_input(frozen_input)
-        job_id = self.repository.start_batch(batch_id, frozen_input)
+        durable_postures = source_postures or {
+            "direct_batch": ("healthy" if frozen_input.evidence else "unavailable")
+        }
+        job_id = self.repository.start_batch(batch_id, frozen_input, durable_postures)
         try:
+            started_at = self.clock()
+            specs = tuple(
+                self._build_run_spec(
+                    batch_id,
+                    frozen_input,
+                    config,
+                    started_at
+                    + timedelta(
+                        seconds=self.deadline_seconds
+                        * (index + 1 if self.max_concurrency == 1 else 1)
+                    ),
+                )
+                for index, config in enumerate(SCOUTS)
+            )
+            # Reservation and validation are one transaction. A recovered
+            # partial set either matches every prior frozen role before missing
+            # roles are inserted, or commits no new role at all.
+            inserted_runs = self.repository.start_runs(job_id, specs)
             if self.max_concurrency == 1:
                 completed = []
-                for config in SCOUTS:
-                    spec, inserted = self._prepare_run(
-                        job_id,
-                        batch_id,
-                        frozen_input,
-                        config,
-                        self.clock() + timedelta(seconds=self.deadline_seconds),
-                    )
+                for spec, inserted in zip(specs, inserted_runs, strict=True):
                     completed.append(
                         self._run_one(job_id, spec)
                         if inserted
                         else self.repository.existing_outcome(spec)
                     )
             else:
-                deadline_at = self.clock() + timedelta(seconds=self.deadline_seconds)
                 outcomes: list[ScoutRunOutcome | None] = [None] * len(SCOUTS)
                 pending: list[tuple[int, ScoutRunSpec]] = []
-                for index, config in enumerate(SCOUTS):
-                    spec, inserted = self._prepare_run(
-                        job_id, batch_id, frozen_input, config, deadline_at
-                    )
+                for index, (spec, inserted) in enumerate(
+                    zip(specs, inserted_runs, strict=True)
+                ):
                     if inserted:
                         pending.append((index, spec))
                     else:
@@ -205,14 +221,13 @@ class MindWorker:
         )
         return tuple(completed)
 
-    def _prepare_run(
+    def _build_run_spec(
         self,
-        job_id: str,
         batch_id: str,
         frozen_input: FrozenScoutInput,
         config: ScoutConfig,
         deadline_at: datetime,
-    ) -> tuple[ScoutRunSpec, bool]:
+    ) -> ScoutRunSpec:
         scoped_input = frozen_input.for_scout(config.scout_id, config.primary_sources)
         scout_budget = incentive_adjusted_budget(self.budget, scoped_input)
         scout_input = fit_frozen_input_for_scout(frozen_input, config, scout_budget)
@@ -222,7 +237,7 @@ class MindWorker:
         run_digest = hashlib.sha256(
             f"{batch_id}\0{config.scout_id}".encode()
         ).hexdigest()
-        spec = make_run_spec(
+        return make_run_spec(
             run_id=f"run_{run_digest[:32]}",
             trace_id=f"trace_{run_digest[32:]}",
             scout=config,
@@ -232,7 +247,6 @@ class MindWorker:
             model_provider=self.model_provider,
             model_id=self.model_id,
         )
-        return spec, self.repository.start_run(job_id, spec)
 
     def _run_one(self, job_id: str, spec: ScoutRunSpec) -> ScoutRunOutcome:
         retry_feedback: dict[str, object] | None = None
@@ -270,10 +284,7 @@ class MindWorker:
             except ScoutDeadlineExceeded as error:
                 outcome = self._failed(spec, "deadline_exceeded", turn, error)
                 spec = spec.model_copy(
-                    update={
-                        "deadline_at": self.clock()
-                        + timedelta(seconds=self.deadline_seconds)
-                    }
+                    update={"deadline_at": self._next_deadline(spec)}
                 )
                 if self.repository.start_run(job_id, spec):
                     continue
@@ -315,12 +326,14 @@ class MindWorker:
                 return outcome
 
     def _retry(self, job_id: str, spec: ScoutRunSpec) -> ScoutRunSpec | None:
-        retry_spec = spec.model_copy(
-            update={
-                "deadline_at": self.clock() + timedelta(seconds=self.deadline_seconds)
-            }
-        )
+        retry_spec = spec.model_copy(update={"deadline_at": self._next_deadline(spec)})
         return retry_spec if self.repository.start_run(job_id, retry_spec) else None
+
+    def _next_deadline(self, spec: ScoutRunSpec) -> datetime:
+        return max(
+            self.clock() + timedelta(seconds=self.deadline_seconds),
+            spec.deadline_at + timedelta(microseconds=1),
+        )
 
     def _validate_budget(self, spec: ScoutRunSpec, turn: ModelTurn) -> None:
         if budget_charge_tool_calls(turn) > spec.budget.max_tool_calls:

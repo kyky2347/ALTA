@@ -5,7 +5,12 @@ import re
 from decimal import Decimal
 from pathlib import Path
 
-from .paper_trade import PaperOrderRequest, PaperTradeConfig, TigerPaperSession
+from .paper_trade import (
+    PaperOrderRequest,
+    PaperOrderResult,
+    PaperTradeConfig,
+    TigerPaperSession,
+)
 
 
 def _safe_error_code(error: Exception) -> str | None:
@@ -19,7 +24,8 @@ def _safe_error_code(error: Exception) -> str | None:
 def parser() -> argparse.ArgumentParser:
     value = argparse.ArgumentParser(prog="alta_capitald")
     value.add_argument(
-        "action", choices=("preflight", "snapshot", "open", "close", "flatten")
+        "action",
+        choices=("preflight", "snapshot", "open", "close", "flatten", "reconcile"),
     )
     value.add_argument("--config-path", type=Path, required=True)
     value.add_argument("--account-sha256", required=True)
@@ -27,7 +33,12 @@ def parser() -> argparse.ArgumentParser:
     value.add_argument("--owner-id", required=True)
     value.add_argument("--symbol")
     value.add_argument("--limit-price", type=Decimal)
+    value.add_argument("--client-order-id")
+    value.add_argument("--order-action", choices=("BUY", "SELL"))
+    value.add_argument("--expected-position-before", type=Decimal)
     value.add_argument("--timeout-seconds", type=int, default=20)
+    value.add_argument("--authorization-path", type=Path)
+    value.add_argument("--authorization-generation", type=int)
     return value
 
 
@@ -42,6 +53,12 @@ def main(argv: list[str] | None = None) -> int:
             owner_id=args.owner_id,
             owner_lease_path=args.owner_lease_path.resolve(),
             timeout_seconds=args.timeout_seconds,
+            authorization_path=(
+                args.authorization_path.resolve(strict=True)
+                if args.authorization_path is not None
+                else None
+            ),
+            authorization_generation=args.authorization_generation,
         )
         with TigerPaperSession(config) as session:
             if args.action == "preflight":
@@ -49,22 +66,58 @@ def main(argv: list[str] | None = None) -> int:
             elif args.action == "snapshot":
                 output = session.snapshot()
             else:
-                if args.symbol is None or args.limit_price is None:
-                    raise ValueError("order commands require symbol and limit price")
+                if (
+                    args.symbol is None
+                    or args.limit_price is None
+                    or args.client_order_id is None
+                ):
+                    raise ValueError(
+                        "order commands require symbol, limit price, and client identity"
+                    )
                 symbol = args.symbol.upper()
                 if args.action == "flatten":
-                    result = session.flatten(symbol, args.limit_price)
-                else:
-                    result = session.execute(
-                        PaperOrderRequest(
-                            action="BUY" if args.action == "open" else "SELL",
-                            symbol=symbol,
-                            limit_price=args.limit_price,
-                            expected_position_before=(
-                                Decimal(0) if args.action == "open" else Decimal(1)
-                            ),
-                        )
+                    result = session.flatten_with_identity(
+                        symbol, args.limit_price, args.client_order_id
                     )
+                else:
+                    action = (
+                        args.order_action
+                        if args.action == "reconcile"
+                        else ("BUY" if args.action == "open" else "SELL")
+                    )
+                    expected_before = (
+                        args.expected_position_before
+                        if args.action == "reconcile"
+                        else (Decimal(0) if args.action == "open" else Decimal(1))
+                    )
+                    if action is None or expected_before is None:
+                        raise ValueError(
+                            "reconcile requires order action and expected position"
+                        )
+                    request = PaperOrderRequest(
+                        action=action,
+                        symbol=symbol,
+                        limit_price=args.limit_price,
+                        expected_position_before=expected_before,
+                        client_order_id=args.client_order_id,
+                    )
+                    result = (
+                        session.reconcile(request)
+                        if args.action == "reconcile"
+                        else session.execute(request)
+                    )
+                    if result is None:
+                        position = session.position(symbol)
+                        result = PaperOrderResult(
+                            status="unresolved",
+                            action=action,
+                            symbol=symbol,
+                            quantity="0",
+                            position_before=str(expected_before),
+                            position_after=str(position),
+                            average_fill_price=None,
+                            broker_order_hash=None,
+                        )
                 output = result.__dict__
         print(json.dumps({"ok": True, "result": output}, separators=(",", ":")))
         return 0

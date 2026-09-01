@@ -31,7 +31,7 @@ authoritative where an invariant must be reproducible.
 
 ```mermaid
 flowchart TB
-  scheduler["UTC scheduler<br/>single advisory-lock owner"]
+  scheduler["UTC scheduler<br/>advisory lock + durable owner epoch"]
   sources["Finlight · Massive · bounded public sources"]
   evidence[("PostgreSQL<br/>append-only Raw · Evidence · artifacts")]
   wake["Point-in-time frozen wake"]
@@ -437,6 +437,12 @@ testing. The isolated capital process:
 - rejects live and sandbox-debug configurations and never enumerates accounts;
 - permits only long stock/ETF, one-share, DAY limit orders outside extended
   hours, with broker preview and fill/position reconciliation;
+- persists a Paper intent before dispatch, revalidates a monotonic authorization
+  generation inside the account-global mutation lease, and commits the broker
+  result with the local Paper event and Shadow ledger;
+- associates recent broker history through a stable ALTA `user_mark`, but never
+  treats it as server-side idempotency: ambiguous history enters
+  `manual_review` and stops mutation;
 - starts with zero positions and zero open orders and re-verifies both in a
   `finally` block;
 - refuses shorts, options, more than one share, or more than USD 2,000 limit
@@ -455,13 +461,14 @@ Every model run records its role, provider, model, prompt version, frozen-input
 hash, deadline, budgets, thread and turn provenance, evidence references, and
 bounded output artifact. A succeeded run is recovered rather than called again.
 
-Scout snapshots are role-scoped and may be trimmed differently to fit the
-complete PostgreSQL audit row. Recovery therefore compares only the immutable
-wake identity, verifies that duplicate objects agree, and deterministically
-merges Evidence, prior Opportunities, Mind memory, and maturity-gated feedback.
-A frozen Mind version remains valid after the current Mind evolves only when
-that exact version already exists in the interrupted cycle's durable run
-history. This preserves point-in-time recovery without trusting current state.
+Before any role run is created, the complete global frozen wake, source posture,
+and canonical hash are stored atomically. Role-scoped snapshots may then be
+trimmed differently to fit their complete PostgreSQL audit rows, but partial
+recovery derives every missing role from the saved global wake and never polls
+sources again. A legacy partial cycle without that global anchor is quarantined
+instead of mixing late backfill into old evidence. A frozen Mind version remains
+valid after the current Mind evolves only when that exact version already exists
+in the interrupted cycle's durable run history.
 
 Structured judgment contracts enforce cross-field scenario coherence before a
 run succeeds. If bounded retries or a deadline are exhausted, the missing
@@ -469,11 +476,13 @@ private assessment or moderated debate makes the Opportunity unrankable. The
 cycle degrades to normal Idle/Wait while database and programming invariant
 failures remain visible rather than being broadly swallowed.
 
-Cycles use PostgreSQL advisory locking for a single scheduler owner. An
-interrupted cycle keeps the same cycle identity and resumes from durable
-checkpoints after backoff. Once a new scheduler owns the advisory lock, it
-closes expired orphan Scout runs and jobs through the durable failure state
-before starting work. Repeated failure is exposed
+Cycles combine PostgreSQL advisory locking with a durable, monotonic owner
+epoch. Each autonomous database transaction validates the epoch/token before
+work and before commit while holding the owner row, so a successor owner or
+terminated database session fences stale writes. An interrupted cycle keeps the
+same cycle identity and resumes from durable checkpoints after backoff. Once a
+new scheduler owns the next epoch, it closes expired orphan Scout runs and jobs
+through the durable failure state before starting work. Repeated failure is exposed
 through health state, discards the failed Agent runtime, and retries with capped
 exponential backoff. The inner supervisor separates liveness from dependency and
 heartbeat readiness, and terminates the full child process group before it

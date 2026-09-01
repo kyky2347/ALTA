@@ -1,4 +1,5 @@
 import hashlib
+import json
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
@@ -33,6 +34,21 @@ def config(tmp_path: Path) -> PaperTradeConfig:
     config_path = tmp_path / "tiger-paper.properties"
     config_path.write_text("synthetic=true\n")
     config_path.chmod(0o600)
+    authorization_path = tmp_path / "paper-authorization.json"
+    authorization_path.write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "enabled": True,
+                "generation": 1,
+                "accountSha256": hashlib.sha256(PAPER_ACCOUNT.encode()).hexdigest(),
+                "configurationSha256": hashlib.sha256(
+                    config_path.read_bytes()
+                ).hexdigest(),
+            }
+        )
+    )
+    authorization_path.chmod(0o600)
     return PaperTradeConfig(
         config_path=config_path,
         config_root=tmp_path,
@@ -40,6 +56,8 @@ def config(tmp_path: Path) -> PaperTradeConfig:
         owner_id="paper-test-owner",
         owner_lease_path=tmp_path / "capital.owner",
         timeout_seconds=5,
+        authorization_path=authorization_path,
+        authorization_generation=1,
     )
 
 
@@ -69,6 +87,7 @@ def test_paper_order_is_one_share_limit_only(update: dict) -> None:
         "symbol": "SPY",
         "limit_price": Decimal("500"),
         "expected_position_before": Decimal(0),
+        "client_order_id": "alta-" + "1" * 32,
     }
     with pytest.raises(PaperBoundaryError):
         PaperOrderRequest(**(values | update))
@@ -108,7 +127,8 @@ class _FakeClient:
         return []
 
     def get_orders(self, *, account, limit, is_brief):
-        assert (account, limit, is_brief) == (self.account, 100, True)
+        assert (account, limit) == (self.account, 100)
+        assert isinstance(is_brief, bool)
         return []
 
     def preview_order(self, _order):
@@ -173,9 +193,12 @@ def test_session_reconciles_one_share_open_and_close(
                 symbol="SPY",
                 limit_price=Decimal("500"),
                 expected_position_before=Decimal(0),
+                client_order_id="alta-" + "2" * 32,
             )
         )
-        closed = session.flatten("SPY", Decimal("495"))
+        closed = session.flatten_with_identity(
+            "SPY", Decimal("495"), "alta-" + "4" * 32
+        )
 
     assert (opened.status, opened.position_after) == ("filled", "1")
     assert (closed.status, closed.position_after) == ("filled", "0")
@@ -241,7 +264,7 @@ def test_snapshot_exposes_portfolio_without_raw_account_or_order_id(
             ]
 
         def get_orders(self, *, account, limit, is_brief):
-            assert (limit, is_brief) == (100, True)
+            assert limit == 100
             return [
                 SimpleNamespace(
                     account=account,
@@ -311,5 +334,122 @@ def test_unconfirmed_cancel_fails_closed(
                     symbol="SPY",
                     limit_price=Decimal("500"),
                     expected_position_before=Decimal(0),
+                    client_order_id="alta-" + "3" * 32,
                 )
             )
+
+
+def test_stable_client_identity_reconciles_without_a_second_order(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class IdempotentClient(_FakeClient):
+        placed = 0
+
+        def __init__(self, client_config) -> None:
+            super().__init__(client_config)
+            self.history = []
+
+        def get_orders(self, *, account, limit, is_brief):
+            assert (account, limit) == (self.account, 100)
+            return list(self.history)
+
+        def place_order(self, order):
+            type(self).placed += 1
+            self.pending = order
+            return 42
+
+        def get_order(self, *, account, id):
+            observed = super().get_order(account=account, id=id)
+            if not self.history:
+                self.history.append(
+                    SimpleNamespace(
+                        account=account,
+                        id=id,
+                        contract=self.pending.contract,
+                        action=self.pending.action,
+                        order_type="LMT",
+                        status="FILLED",
+                        quantity=1,
+                        filled=1,
+                        limit_price=self.pending.limit_price,
+                        avg_fill_price=self.pending.limit_price,
+                        time_in_force="DAY",
+                        outside_rth=False,
+                        user_mark=self.pending.user_mark,
+                    )
+                )
+            return observed
+
+    patch_sdk(monkeypatch, IdempotentClient)
+    request = PaperOrderRequest(
+        action="BUY",
+        symbol="SPY",
+        limit_price=Decimal("500"),
+        expected_position_before=Decimal(0),
+        client_order_id="alta-" + "5" * 32,
+    )
+    with TigerPaperSession(config(tmp_path)) as session:
+        first = session.execute(request)
+        second = session.execute(request)
+
+    assert first == second
+    assert IdempotentClient.placed == 1
+
+
+def test_revoked_authorization_is_rechecked_before_each_mutation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    patch_sdk(monkeypatch)
+    settings = config(tmp_path)
+    with TigerPaperSession(settings) as session:
+        authorization = json.loads(settings.authorization_path.read_text())
+        authorization["enabled"] = False
+        authorization["generation"] = 2
+        settings.authorization_path.write_text(json.dumps(authorization))
+        settings.authorization_path.chmod(0o600)
+        with pytest.raises(PaperBoundaryError, match="revoked or changed"):
+            session.execute(
+                PaperOrderRequest(
+                    action="BUY",
+                    symbol="SPY",
+                    limit_price=Decimal("500"),
+                    expected_position_before=Decimal(0),
+                    client_order_id="alta-" + "6" * 32,
+                )
+            )
+
+
+def test_drain_authorization_blocks_open_but_permits_one_share_close(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    patch_sdk(monkeypatch)
+    settings = config(tmp_path)
+    authorization = json.loads(settings.authorization_path.read_text())
+    authorization["closeOnly"] = True
+    settings.authorization_path.write_text(json.dumps(authorization))
+    settings.authorization_path.chmod(0o600)
+    with TigerPaperSession(settings) as session:
+        with pytest.raises(PaperBoundaryError, match="permits close orders only"):
+            session.execute(
+                PaperOrderRequest(
+                    action="BUY",
+                    symbol="SPY",
+                    limit_price=Decimal("500"),
+                    expected_position_before=Decimal(0),
+                    client_order_id="alta-" + "7" * 32,
+                )
+            )
+        authorization["generation"] = 2
+        settings.authorization_path.write_text(json.dumps(authorization))
+        settings.authorization_path.chmod(0o600)
+        session.client.quantity = Decimal(1)
+        result = session.execute(
+            PaperOrderRequest(
+                action="SELL",
+                symbol="SPY",
+                limit_price=Decimal("495"),
+                expected_position_before=Decimal(1),
+                client_order_id="alta-" + "8" * 32,
+            )
+        )
+    assert result.position_after == "0"

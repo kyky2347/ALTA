@@ -29,7 +29,11 @@ from .official_sources import (
     build_official_finlight_transport,
     build_official_massive_transport,
 )
-from .paper_execution import TigerPaperExecutor
+from .paper_execution import (
+    DurablePaperPosition,
+    TigerPaperExecutor,
+    reconcile_paper_startup,
+)
 from .scouts import FrozenScoutInput
 from .trader_mind import PRODUCTION_ACTIVE_RESEARCH_REQUIRED
 
@@ -175,6 +179,7 @@ class LiveRuntime:
                 database,
                 settings.universe,
                 portfolio_policy=portfolio_policy,
+                anchor_wakes=False,
             ),
             finlight_adapter,
             massive_adapter,
@@ -195,17 +200,74 @@ class LiveRuntime:
                 config_path=settings.tiger_config_path,
                 account_sha256=(settings.tiger_paper_account_sha256.get_secret_value()),
                 timeout_seconds=settings.tiger_order_timeout_seconds,
+                authorization_path=settings.tiger_paper_authorization_path,
+                authorization_generation=settings.tiger_paper_authorization_generation,
+                owner_lease_path=settings.tiger_paper_owner_lease_path,
+                mutation_lease_path=settings.tiger_paper_mutation_lease_path,
             )
-            preflight = paper_executor.preflight()
-            if preflight.get("paper") is not True:
-                raise ValueError("Tiger Paper preflight did not prove Paper mode")
-            if (
-                preflight.get("positionCount") != 0
-                or preflight.get("openOrderCount") != 0
-            ):
-                raise ValueError(
-                    "Tiger Paper acceptance requires an empty account and no open orders"
-                )
+        shadow_flow = AgenticExpressionFlow(
+            database,
+            expression_runner,
+            settings.universe,
+            market_data,
+            audit_runner=audit_runner,
+            position_runner=position_runner,
+            max_open_positions=1 if paper_executor else 8,
+            paper_executor=paper_executor,
+            acceptance_hold_seconds=settings.acceptance_hold_seconds,
+            portfolio_policy=portfolio_policy,
+        )
+        if paper_executor is not None:
+            shadow_flow.positions.recover_paper_intents()
+            with database.connect() as connection:
+                durable_rows = connection.execute(
+                    """SELECT position.id, position.symbol, position.quantity,
+                    expression.kind,
+                    coalesce((
+                        SELECT paper_event.event_type = 'paper.order.filled'
+                          AND paper_event.payload->>'broker' = 'tiger_paper'
+                          AND paper_event.payload->>'status' = 'filled'
+                          AND paper_event.payload->>'action' = 'BUY'
+                          AND paper_event.payload->>'symbol' = position.symbol
+                          AND paper_event.payload->>'quantity' = '1'
+                          AND paper_event.payload->>'position_before' = '0'
+                          AND paper_event.payload->>'position_after' = '1'
+                          AND paper_event.payload->>'broker_order_hash'
+                              ~ '^[a-f0-9]{64}$'
+                        FROM ops.event paper_event
+                        WHERE paper_event.environment = 'shadow'
+                          AND paper_event.aggregate_type = 'shadow_position'
+                          AND paper_event.aggregate_id = position.id
+                          AND paper_event.event_type IN (
+                              'paper.order.filled',
+                              'paper.position.verified_flat'
+                          )
+                        ORDER BY paper_event.sequence DESC
+                        LIMIT 1
+                    ), false) AS paper_entry_proven
+                    FROM research.shadow_position position
+                    JOIN research.expression expression
+                      ON expression.id = position.expression_id
+                     AND expression.environment = position.environment
+                    WHERE position.environment = 'shadow'
+                      AND position.status = 'open'
+                    ORDER BY position.known_at, position.id"""
+                ).fetchall()
+            self.paper_startup_reconciliation = reconcile_paper_startup(
+                paper_executor.snapshot(),
+                tuple(
+                    DurablePaperPosition(
+                        position_id=row[0],
+                        symbol=row[1],
+                        quantity=row[2],
+                        expression_kind=row[3],
+                        paper_entry_proven=row[4],
+                    )
+                    for row in durable_rows
+                ),
+            )
+        else:
+            self.paper_startup_reconciliation = None
         self.paper_executor = paper_executor
         self.market_data = market_data
         self.orchestrator = MvpOrchestrator(
@@ -213,18 +275,7 @@ class LiveRuntime:
             fixture,
             self.client,
             source_flow=source_flow,
-            shadow_flow=AgenticExpressionFlow(
-                database,
-                expression_runner,
-                settings.universe,
-                market_data,
-                audit_runner=audit_runner,
-                position_runner=position_runner,
-                max_open_positions=1 if paper_executor else 8,
-                paper_executor=paper_executor,
-                acceptance_hold_seconds=settings.acceptance_hold_seconds,
-                portfolio_policy=portfolio_policy,
-            ),
+            shadow_flow=shadow_flow,
             research_config=ResearchRuntimeConfig(
                 model_provider=settings.agent_provider,
                 model_id=settings.agent_model,

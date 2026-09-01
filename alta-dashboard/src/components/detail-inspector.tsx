@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Bot,
   Braces,
@@ -6,15 +6,26 @@ import {
   FileKey2,
   FileText,
   Fingerprint,
+  RefreshCw,
   ShieldCheck,
   Sparkles,
+  TriangleAlert,
   Waypoints,
 } from "lucide-react";
+import { OpportunityDossier } from "@/components/opportunity-dossier";
+import {
+  Alert,
+  AlertAction,
+  AlertDescription,
+  AlertTitle,
+} from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { entityDetailPath, getJson } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
+import { recordList } from "@/lib/readable-record";
 import type { MvpStatus, SelectedEntity } from "@/lib/types";
 
 const DOMAIN_VALUE_FIELDS = new Set(["status", "direction", "kind", "side"]);
@@ -24,6 +35,14 @@ const detailCache = new Map<
   string,
   { loadedAt: number; detail: Record<string, unknown> }
 >();
+
+type DetailRequest = {
+  path: string;
+  status: "loaded" | "error";
+  detail: Record<string, unknown> | null;
+  error: string | null;
+  loadedAt: number | null;
+};
 
 function cacheDetail(path: string, detail: Record<string, unknown>) {
   detailCache.delete(path);
@@ -39,64 +58,158 @@ export function DetailInspector({
   selected,
   status,
   preview,
+  selectionExpired,
+  liveFallbackAvailable,
 }: {
   selected: SelectedEntity | null;
   status: MvpStatus | null;
   preview: boolean;
+  selectionExpired: boolean;
+  liveFallbackAvailable: boolean;
 }) {
   const { domain, systemMessage, t } = useI18n();
-  const [request, setRequest] = useState<{
+  const [request, setRequest] = useState<DetailRequest | null>(null);
+  const [forcedRefresh, setForcedRefresh] = useState<{
     path: string;
-    detail: Record<string, unknown> | null;
-    error: string | null;
+    nonce: number;
   } | null>(null);
+  const [pageVisible, setPageVisible] = useState(
+    () => document.visibilityState !== "hidden",
+  );
+  const retryAttempts = useRef(new Map<string, number>());
   const path = selected ? entityDetailPath(selected.kind, selected.id) : null;
-  const cachedDetail = path ? (detailCache.get(path)?.detail ?? null) : null;
+  const cachedEntry = path ? (detailCache.get(path) ?? null) : null;
 
   useEffect(() => {
-    if (preview || !path) return;
+    const updateVisibility = () =>
+      setPageVisible(document.visibilityState !== "hidden");
+    document.addEventListener("visibilitychange", updateVisibility);
+    return () =>
+      document.removeEventListener("visibilitychange", updateVisibility);
+  }, []);
+
+  useEffect(() => {
+    if (preview || !path || !pageVisible) return;
     const cached = detailCache.get(path);
-    if (cached && Date.now() - cached.loadedAt < DETAIL_CACHE_TTL_MS) return;
+    const force = forcedRefresh?.path === path;
+    if (
+      cached &&
+      Date.now() - cached.loadedAt < DETAIL_CACHE_TTL_MS &&
+      !force
+    ) {
+      const refreshIn = Math.max(
+        250,
+        DETAIL_CACHE_TTL_MS - (Date.now() - cached.loadedAt),
+      );
+      const timer = window.setTimeout(
+        () =>
+          setForcedRefresh((current) => ({
+            path,
+            nonce: current?.path === path ? current.nonce + 1 : 1,
+          })),
+        refreshIn,
+      );
+      return () => window.clearTimeout(timer);
+    }
     let active = true;
+    let retryTimer: number | null = null;
     const controller = new AbortController();
     getJson<Record<string, unknown>>(path, { signal: controller.signal })
       .then((detail) => {
         if (!active) return;
+        retryAttempts.current.delete(path);
         cacheDetail(path, detail);
-        setRequest({ path, detail, error: null });
+        const loadedAt = detailCache.get(path)?.loadedAt ?? Date.now();
+        setRequest({
+          path,
+          status: "loaded",
+          detail,
+          error: null,
+          loadedAt,
+        });
+        setForcedRefresh((current) =>
+          current?.path === path ? null : current,
+        );
       })
-      .catch(
-        (reason) =>
-          active && setRequest({ path, detail: null, error: reason.message }),
-      );
+      .catch((reason) => {
+        if (!active) return;
+        const message =
+          reason instanceof Error
+            ? reason.message
+            : "The durable record could not be loaded.";
+        setRequest((current) => ({
+          path,
+          status: "error",
+          detail:
+            cached?.detail ?? (current?.path === path ? current.detail : null),
+          error: message,
+          loadedAt:
+            cached?.loadedAt ??
+            (current?.path === path ? current.loadedAt : null),
+        }));
+        const attempt = (retryAttempts.current.get(path) ?? 0) + 1;
+        retryAttempts.current.set(path, attempt);
+        const retryIn = Math.min(60_000, 2_000 * 2 ** Math.min(attempt - 1, 5));
+        retryTimer = window.setTimeout(
+          () =>
+            setForcedRefresh((current) => ({
+              path,
+              nonce: current?.path === path ? current.nonce + 1 : 1,
+            })),
+          retryIn,
+        );
+      });
     return () => {
       active = false;
       controller.abort();
+      if (retryTimer !== null) window.clearTimeout(retryTimer);
     };
-  }, [path, preview]);
+  }, [forcedRefresh, pageVisible, path, preview]);
 
+  const activeRequest = request?.path === path ? request : null;
   const detail =
     preview || !path
       ? (selected?.summary ?? null)
-      : request?.path === path
-        ? (request.detail ?? cachedDetail)
-        : cachedDetail;
+      : (activeRequest?.detail ?? cachedEntry?.detail ?? null);
+  const error = activeRequest?.status === "error" ? activeRequest.error : null;
   const loading = Boolean(
-    path && !preview && !cachedDetail && request?.path !== path,
+    path &&
+      !preview &&
+      !error &&
+      (forcedRefresh?.path === path || !cachedEntry),
   );
-  const error = request?.path === path ? request.error : null;
+  const loadedAt = activeRequest?.loadedAt ?? cachedEntry?.loadedAt ?? null;
+  const stale = Boolean(detail && (error || (loading && loadedAt)));
 
-  const opportunityAssessments =
-    selected?.kind === "opportunity"
-      ? (status?.assessments.filter(
-          (item) => item.opportunityId === selected.id,
-        ) ?? [])
+  const retryDetail = () => {
+    if (!path) return;
+    retryAttempts.current.delete(path);
+    setRequest((current) =>
+      current?.path === path
+        ? { ...current, status: "loaded", error: null }
+        : current,
+    );
+    setForcedRefresh((current) => ({
+      path,
+      nonce: current?.path === path ? current.nonce + 1 : 1,
+    }));
+  };
+
+  const savedAssessments = recordList(detail?.assessments);
+  const savedDiscussions = recordList(detail?.discussions);
+  const opportunityAssessments = savedAssessments.length
+    ? savedAssessments
+    : selected?.kind === "opportunity"
+      ? (status?.assessments
+          .filter((item) => item.opportunityId === selected.id)
+          .map((item) => item as unknown as Record<string, unknown>) ?? [])
       : [];
-  const discussions =
-    selected?.kind === "opportunity"
-      ? (status?.discussions.filter(
-          (item) => item.opportunityId === selected.id,
-        ) ?? [])
+  const discussions = savedDiscussions.length
+    ? savedDiscussions
+    : selected?.kind === "opportunity"
+      ? (status?.discussions
+          .filter((item) => item.opportunityId === selected.id)
+          .map((item) => item as unknown as Record<string, unknown>) ?? [])
       : [];
   const Icon =
     selected?.kind === "opportunity"
@@ -130,6 +243,12 @@ export function DetailInspector({
           </Badge>
         ) : null}
       </div>
+      {selectionExpired && (
+        <SelectionExpiredNotice hasFallback={liveFallbackAvailable} />
+      )}
+      {selected?.kind === "position" && !preview && (
+        <BoundedPositionNotice snapshotOnly={selected.snapshotOnly === true} />
+      )}
       {!selected ? (
         <div className="inspector-empty">
           <Fingerprint />
@@ -148,12 +267,17 @@ export function DetailInspector({
               <TabsTrigger value="evidence">{t("evidence")}</TabsTrigger>
               <TabsTrigger value="record">{t("record")}</TabsTrigger>
             </TabsList>
+            <DetailFreshnessNotice
+              error={error ? (systemMessage(error) ?? error) : null}
+              loading={loading}
+              loadedAt={loadedAt}
+              stale={stale}
+              onRetry={retryDetail}
+            />
             <ScrollArea className="inspector-scroll">
               <TabsContent value="brief">
-                {loading ? (
+                {loading && !detail ? (
                   <InspectorLoading />
-                ) : error ? (
-                  <InspectorError error={systemMessage(error) ?? error} />
                 ) : (
                   <Brief
                     detail={detail}
@@ -190,6 +314,40 @@ export function DetailInspector({
   );
 }
 
+function BoundedPositionNotice({ snapshotOnly }: { snapshotOnly: boolean }) {
+  const { t } = useI18n();
+  return (
+    <Alert className="inspector-data-notice" role="status">
+      <ShieldCheck />
+      <AlertTitle>
+        {snapshotOnly
+          ? t("positionSnapshotExpired")
+          : t("boundedPositionSnapshot")}
+      </AlertTitle>
+      <AlertDescription>
+        {snapshotOnly
+          ? t("positionSnapshotExpiredDetail")
+          : t("boundedPositionSnapshotDetail")}
+      </AlertDescription>
+    </Alert>
+  );
+}
+
+function SelectionExpiredNotice({ hasFallback }: { hasFallback: boolean }) {
+  const { t } = useI18n();
+  return (
+    <Alert className="inspector-data-notice" role="status" aria-live="polite">
+      <TriangleAlert />
+      <AlertTitle>{t("selectionExpired")}</AlertTitle>
+      <AlertDescription>
+        {hasFallback
+          ? t("selectionExpiredFallbackDetail")
+          : t("selectionExpiredEmptyDetail")}
+      </AlertDescription>
+    </Alert>
+  );
+}
+
 function Brief({
   detail,
   selected,
@@ -207,9 +365,16 @@ function Brief({
     "thesis",
     "whyNow",
     "mechanism",
+    "observedChange",
     "direction",
+    "expectation",
+    "expectationPosture",
+    "variantWedge",
     "horizonDays",
     "falsifier",
+    "prediction",
+    "investability",
+    "completeness",
     "recommendation",
     "rationale",
     "kind",
@@ -248,14 +413,20 @@ function Brief({
           )}
         </div>
       </section>
+      {selected.kind === "opportunity" && (
+        <OpportunityDossier detail={detail} />
+      )}
       {assessments.length > 0 && (
         <section className="inspector-section">
           <h3>
             <Bot /> {t("independentAssessments")}
           </h3>
           <div className="assessment-stack">
-            {assessments.map((assessment) => (
-              <article className="assessment-card" key={String(assessment.id)}>
+            {assessments.map((assessment, index) => (
+              <article
+                className="assessment-card"
+                key={String(assessment.id ?? index)}
+              >
                 <div>
                   <strong>{domain(String(assessment.assessor))}</strong>
                   <Badge variant="outline">
@@ -281,15 +452,24 @@ function Brief({
           <h3>
             <Clock3 /> {t("committeeExchange")}
           </h3>
-          {discussions.map((item) => (
-            <article className="discussion-item" key={String(item.id)}>
-              <span>{domain(String(item.eventType))}</span>
-              <p>{summaryFrom(item.detail, t("noPublicSummary"))}</p>
-              <small>
-                {clock(String(item.knownAt))} · {relative(String(item.knownAt))}
-              </small>
-            </article>
-          ))}
+          {discussions.map((item, index) => {
+            const knownAt =
+              typeof item.knownAt === "string" ? item.knownAt : null;
+            return (
+              <article
+                className="discussion-item"
+                key={String(item.id ?? index)}
+              >
+                <span>{domain(String(item.eventType ?? "committee"))}</span>
+                <p>{summaryFrom(item.detail, t("noPublicSummary"))}</p>
+                <small>
+                  {knownAt
+                    ? `${clock(knownAt)} · ${relative(knownAt)}`
+                    : t("unavailable")}
+                </small>
+              </article>
+            );
+          })}
         </section>
       )}
     </div>
@@ -370,9 +550,63 @@ function summaryFrom(value: unknown, fallback: string) {
   const object = value as Record<string, unknown>;
   const summary =
     object.summary ?? object.rationale ?? object.thesis ?? object.text;
-  return typeof summary === "string"
-    ? summary
-    : JSON.stringify(object).slice(0, 240);
+  return typeof summary === "string" ? summary : fallback;
+}
+
+function DetailFreshnessNotice({
+  error,
+  loading,
+  loadedAt,
+  stale,
+  onRetry,
+}: {
+  error: string | null;
+  loading: boolean;
+  loadedAt: number | null;
+  stale: boolean;
+  onRetry: () => void;
+}) {
+  const { relative, t } = useI18n();
+  if (!loading && !error) return null;
+  const savedTime = loadedAt
+    ? relative(new Date(loadedAt).toISOString())
+    : t("unavailable");
+  return (
+    <Alert
+      variant={error ? "destructive" : "default"}
+      className="inspector-data-notice"
+    >
+      {error ? <TriangleAlert /> : <RefreshCw />}
+      <AlertTitle>
+        {error
+          ? stale
+            ? t("staleDetailRefreshFailed")
+            : t("detailUnavailable")
+          : stale
+            ? t("refreshingSavedDetail")
+            : t("loadingDurableRecord")}
+      </AlertTitle>
+      <AlertDescription>
+        {error
+          ? stale
+            ? t("staleDetailRefreshFailedDetail", {
+                time: savedTime,
+                error,
+              })
+            : t("detailUnavailableDetail", { error })
+          : stale
+            ? t("refreshingSavedDetailDetail", { time: savedTime })
+            : t("loadingDurableRecordDetail")}
+      </AlertDescription>
+      {error && (
+        <AlertAction>
+          <Button variant="outline" size="xs" onClick={onRetry}>
+            <RefreshCw data-icon="inline-start" /> {t("retry")}
+          </Button>
+        </AlertAction>
+      )}
+    </Alert>
+  );
 }
 
 function InspectorLoading() {
@@ -381,14 +615,6 @@ function InspectorLoading() {
     <div className="inspector-state">
       <span className="loading-orbit" />
       <p>{t("loadingDurableRecord")}</p>
-    </div>
-  );
-}
-function InspectorError({ error }: { error: string }) {
-  return (
-    <div className="inspector-state is-error">
-      <ShieldCheck />
-      <p>{error}</p>
     </div>
   );
 }

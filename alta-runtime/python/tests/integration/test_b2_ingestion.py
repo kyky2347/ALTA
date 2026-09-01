@@ -105,6 +105,49 @@ def test_raw_store_is_idempotent_preserves_first_known_at_and_redacts(
     assert body.count("[REDACTED]") == 2
 
 
+def test_ingress_redacts_presigned_and_oauth_url_credentials(
+    empty_b2_database: str,
+) -> None:
+    database = Database(empty_b2_database)
+    database.upgrade()
+    canary = "URL_SECRET_CANARY"
+    envelope = load_finlight().model_copy(
+        update={
+            "source_record_id": "fixture-url-redaction",
+            "source_url": (
+                "https://user:password@fixture.invalid/item?public=kept"
+                f"&X-Amz-Credential={canary}&X-Amz-Signature={canary}#oauth-fragment"
+            ),
+            "payload": {
+                "oauth": (
+                    "See https://oauth.invalid/callback?state=public"
+                    f"&code={canary}&auth={canary}#access_token={canary}"
+                ),
+                "signed": (
+                    "https://cdn.invalid/object?download=1"
+                    f"&sig={canary}&credential={canary}&key={canary}"
+                ),
+            },
+        }
+    )
+
+    RawStore(database, clock=lambda: datetime(2026, 8, 23, 13, tzinfo=UTC)).save(
+        envelope
+    )
+
+    with database.connect() as connection:
+        body = connection.execute(
+            "SELECT body::text FROM research.raw WHERE source_key = %s",
+            ("fixture-url-redaction",),
+        ).fetchone()[0]
+    assert canary not in body
+    assert "user:password@" not in body
+    assert "oauth-fragment" not in body
+    assert "access_token" not in body
+    assert "public=kept" in body
+    assert "download=1" in body
+
+
 def test_raw_store_identity_isolated_by_environment(empty_b2_database: str) -> None:
     database = Database(empty_b2_database)
     database.upgrade()

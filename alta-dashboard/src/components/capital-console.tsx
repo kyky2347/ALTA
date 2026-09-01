@@ -80,6 +80,14 @@ export function CapitalConsole({
   const [confirmation, setConfirmation] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
   const snapshot = capital?.snapshot ?? null;
+  const recoveryOnly = Boolean(
+    capital?.closeOnly ||
+      capital?.drainRequired ||
+      capital?.posture === "paper_recovery_required",
+  );
+  const ineffectiveRequest = Boolean(
+    capital?.requestedEnabled && !capital.enabled,
+  );
   const runtimeActive = Boolean(
     control?.runtime.ready ||
       control?.runtime.host?.processAlive ||
@@ -111,7 +119,12 @@ export function CapitalConsole({
         }).format(number);
   };
   const canRequestEnable = Boolean(
-    capital?.configured && !runtimeActive && online && !preview && !pending,
+    capital?.configured &&
+      !capital.requestedEnabled &&
+      !runtimeActive &&
+      online &&
+      !preview &&
+      !pending,
   );
   const canRevoke = Boolean(
     capital?.requestedEnabled && online && !preview && !pending,
@@ -201,11 +214,17 @@ export function CapitalConsole({
           <Field orientation="horizontal" className="capital-switch-field">
             <FieldContent>
               <FieldLabel htmlFor="paper-capital-switch">
-                {capital?.enabled
-                  ? t("authorizationArmed")
-                  : t("authorizationDisarmed")}
+                {recoveryOnly
+                  ? t("recoveryOnlyAuthorization")
+                  : capital?.enabled
+                    ? t("authorizationArmed")
+                    : t("authorizationDisarmed")}
               </FieldLabel>
-              <FieldDescription>{t("capitalGateDetail")}</FieldDescription>
+              <FieldDescription>
+                {recoveryOnly
+                  ? t("recoveryOnlyAuthorizationDetail")
+                  : t("capitalGateDetail")}
+              </FieldDescription>
             </FieldContent>
             <Switch
               id="paper-capital-switch"
@@ -214,18 +233,32 @@ export function CapitalConsole({
                   ? t("revokeAuthorization")
                   : t("authorizePaper")
               }
-              checked={capital?.requestedEnabled ?? false}
+              checked={capital?.enabled ?? false}
               disabled={
-                capital?.requestedEnabled ? !canRevoke : !canRequestEnable
+                ineffectiveRequest
+                  ? true
+                  : capital?.enabled
+                    ? !canRevoke
+                    : !canRequestEnable
               }
               onCheckedChange={requestChange}
             />
           </Field>
           <div className="capital-gate-state" aria-live="polite">
-            <Badge variant={capital?.enabled ? "default" : "secondary"}>
-              {capital?.enabled
-                ? t("capitalEnabled")
-                : t("capitalDisabledSafe")}
+            <Badge
+              variant={
+                recoveryOnly
+                  ? "secondary"
+                  : capital?.enabled
+                    ? "default"
+                    : "secondary"
+              }
+            >
+              {recoveryOnly
+                ? t("paperRecoveryOnly")
+                : capital?.enabled
+                  ? t("capitalEnabled")
+                  : t("capitalDisabledSafe")}
             </Badge>
             <span>{domain(capital?.posture ?? "disabled")}</span>
           </div>
@@ -242,9 +275,37 @@ export function CapitalConsole({
               {t("configurationChanged")}
             </p>
           )}
+          {ineffectiveRequest && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!canRevoke}
+              onClick={() => setConfirming("disable")}
+            >
+              {t("clearAuthorizationRequest")}
+            </Button>
+          )}
         </div>
 
         <dl className="capital-proof-list">
+          <div>
+            <dt>{t("requestedAuthorization")}</dt>
+            <dd>
+              {capital?.requestedEnabled
+                ? t("authorizationRequested")
+                : t("authorizationNotRequested")}
+            </dd>
+          </div>
+          <div>
+            <dt>{t("effectiveAuthorization")}</dt>
+            <dd>
+              {recoveryOnly
+                ? t("paperRecoveryOnly")
+                : capital?.enabled
+                  ? t("effectiveEnabled")
+                  : t("effectiveDisabled")}
+            </dd>
+          </div>
           <div>
             <dt>{t("lastVerified")}</dt>
             <dd>
@@ -279,6 +340,16 @@ export function CapitalConsole({
           </div>
         </dl>
       </div>
+
+      {recoveryOnly && (
+        <Alert className="paper-boundary-alert">
+          <TriangleAlert />
+          <AlertTitle>{t("paperRecoveryRequired")}</AlertTitle>
+          <AlertDescription>
+            {t("paperRecoveryRequiredDetail")}
+          </AlertDescription>
+        </Alert>
+      )}
 
       <Alert className="paper-boundary-alert">
         <ShieldCheck />

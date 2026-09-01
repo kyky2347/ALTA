@@ -448,15 +448,6 @@ export function CredentialsCenter({
               </div>
 
               <form onSubmit={(event) => void submit(event)}>
-                <input
-                  className="sr-only"
-                  name="provider"
-                  autoComplete="username"
-                  value={selected.label}
-                  readOnly
-                  tabIndex={-1}
-                  aria-hidden="true"
-                />
                 <FieldGroup>
                   <Field data-invalid={Boolean(actionError)}>
                     <FieldLabel htmlFor="provider-secret">
@@ -465,7 +456,10 @@ export function CredentialsCenter({
                     <Input
                       id="provider-secret"
                       type="password"
-                      autoComplete="new-password"
+                      autoComplete="off"
+                      data-1p-ignore
+                      data-bwignore="true"
+                      data-lpignore="true"
                       spellCheck={false}
                       value={secret}
                       disabled={mutationLocked || saving}

@@ -16,7 +16,7 @@ from .opportunity_identity import (
     normalize_key,
     structural_identity_key,
 )
-from .research_diligence import ResearchDiligence, strongest_diligence
+from .research_diligence import ResearchDiligence
 from .research_agenda import ResearchMode
 
 Direction = Literal["positive", "negative", "neutral"]
@@ -255,6 +255,7 @@ class OpportunityDraft(BaseModel):
     horizon_days: int
     confidence: float
     evidence_ids: tuple[str, ...]
+    audit_evidence_ids: tuple[str, ...] = Field(default=(), max_length=400)
     completeness: Literal["complete", "enriching"]
     beneficiary_path: str | None = None
     disconfirming_evidence: str | None = None
@@ -379,51 +380,62 @@ def _opportunity_from_group(
     batch_id: str, members: tuple[CandidateDraft, ...]
 ) -> OpportunityDraft:
     ordered = tuple(sorted(members, key=lambda item: item.candidate_id))
-    anchor = ordered[0]
-    lineage = next(
-        (item for item in ordered if item.research_mode == "follow_up"), anchor
-    )
-
-    def first(field: str) -> Any:
-        return next(
-            (
-                value
-                for item in ordered
-                if (value := getattr(item, field)) not in (None, "")
-            ),
-            None,
+    identity_anchor = ordered[0]
+    follow_ups = tuple(item for item in ordered if item.research_mode == "follow_up")
+    lineage = (
+        max(
+            follow_ups,
+            key=lambda item: (item.known_at, item.version, item.candidate_id),
         )
+        if follow_ups
+        else identity_anchor
+    )
+    # A merged Opportunity must remain one coherent claim bundle.  Choosing
+    # fields independently across Candidates can synthesize a thesis no Trader
+    # Mind actually proposed and for which no single evidence lineage exists.
+    # A follow-up owns the refreshed claim; otherwise the deterministic identity
+    # anchor owns it.  Other members remain frozen contributors for audit and
+    # duplicate/competing analysis, never silent co-authors of the main claim.
+    claim_anchor = lineage
 
     member_ids = tuple(item.candidate_id for item in ordered)
-    evidence_ids = tuple(
+    audit_evidence_ids = tuple(
         dict.fromkeys(
             evidence_id for item in ordered for evidence_id in item.evidence_ids
         )
     )
-    frozen_pillars = materialized_thesis_pillars(ordered)
-    observed_change = first("observed_change")
-    mechanism = first("mechanism")
-    variant_wedge = first("variant_wedge")
+    evidence_ids = claim_anchor.evidence_ids
+    # Decision inputs must remain bound to the selected claim. Contributor
+    # evidence is retained separately for Foundry/group audit and may not boost
+    # the claim's pillars, diligence score, assessment, ranking, or expression.
+    frozen_pillars = materialized_thesis_pillars((claim_anchor,))
+    observed_change = claim_anchor.observed_change
+    mechanism = claim_anchor.mechanism
+    variant_wedge = claim_anchor.variant_wedge
     thesis_parts = [observed_change, mechanism, variant_wedge]
-    thesis = " | ".join(part for part in thesis_parts if part) or anchor.title
-    exact_key = anchor.exact_key() or canonical_hash([batch_id, member_ids, "exact"])
-    structural_key = anchor.structural_key() or canonical_hash(
+    thesis = " | ".join(part for part in thesis_parts if part) or claim_anchor.title
+    exact_key = identity_anchor.exact_key() or canonical_hash(
+        [batch_id, member_ids, "exact"]
+    )
+    structural_key = identity_anchor.structural_key() or canonical_hash(
         [batch_id, member_ids, "structural"]
     )
-    values = {field: first(field) for field in COMPLETENESS_FIELDS}
+    values = {field: getattr(claim_anchor, field) for field in COMPLETENESS_FIELDS}
     completeness = (
         "complete"
         if all(values[field] not in (None, "") for field in COMPLETENESS_FIELDS)
         else "enriching"
     )
     return OpportunityDraft(
-        opportunity_id="opportunity_" + canonical_hash(anchor.candidate_id)[:32],
-        candidate_id=anchor.candidate_id,
+        opportunity_id=(
+            "opportunity_" + canonical_hash(identity_anchor.candidate_id)[:32]
+        ),
+        candidate_id=claim_anchor.candidate_id,
         member_candidate_ids=member_ids,
         research_mode=lineage.research_mode,
         parent_opportunity_id=lineage.parent_opportunity_id,
         research_question=lineage.research_question,
-        environment=anchor.environment,
+        environment=identity_anchor.environment,
         version=max(item.version for item in ordered),
         known_at=max(item.known_at for item in ordered),
         snapshot_hash=canonical_hash(
@@ -431,42 +443,33 @@ def _opportunity_from_group(
         ),
         exact_key=exact_key,
         structural_key=structural_key,
-        title=anchor.title,
+        title=claim_anchor.title,
         thesis=thesis,
-        entity_key=first("entity_key"),
-        event_key=first("event_key"),
-        catalyst_key=first("catalyst_key"),
+        entity_key=claim_anchor.entity_key,
+        event_key=claim_anchor.event_key,
+        catalyst_key=claim_anchor.catalyst_key,
         observed_change=observed_change,
         mechanism=mechanism,
-        direction=first("direction"),
-        expectation=first("expectation"),
-        expectation_posture=(
-            "unavailable"
-            if any(item.expectation_posture == "unavailable" for item in ordered)
-            else (
-                "proxy_only"
-                if any(item.expectation_posture == "proxy_only" for item in ordered)
-                else "available"
-            )
-        ),
+        direction=claim_anchor.direction,
+        expectation=claim_anchor.expectation,
+        expectation_posture=claim_anchor.expectation_posture,
         variant_wedge=variant_wedge,
-        why_now=first("why_now"),
-        falsifier=first("falsifier"),
-        first_rejection=first("first_rejection"),
-        prediction=first("prediction"),
-        investability=first("investability"),
-        freshness_at=first("freshness_at"),
-        horizon_days=anchor.horizon_days,
-        confidence=sum(item.confidence for item in ordered) / len(ordered),
+        why_now=claim_anchor.why_now,
+        falsifier=claim_anchor.falsifier,
+        first_rejection=claim_anchor.first_rejection,
+        prediction=claim_anchor.prediction,
+        investability=claim_anchor.investability,
+        freshness_at=claim_anchor.freshness_at,
+        horizon_days=claim_anchor.horizon_days,
+        confidence=claim_anchor.confidence,
         evidence_ids=evidence_ids,
+        audit_evidence_ids=audit_evidence_ids,
         completeness=completeness,
-        beneficiary_path=first("beneficiary_path"),
-        disconfirming_evidence=first("disconfirming_evidence"),
-        next_test=first("next_test"),
+        beneficiary_path=claim_anchor.beneficiary_path,
+        disconfirming_evidence=claim_anchor.disconfirming_evidence,
+        next_test=claim_anchor.next_test,
         thesis_pillars=frozen_pillars,
-        research_diligence=strongest_diligence(
-            tuple(item.research_diligence for item in ordered)
-        ),
+        research_diligence=claim_anchor.research_diligence,
     )
 
 

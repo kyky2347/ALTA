@@ -379,6 +379,9 @@ def test_fixture_e2e_replay_is_stable_and_projects_every_mvp_stage(
         "disconfirming_assessor",
     }
     assert all(status[key] for key in ("candidates", "opportunities", "ranks"))
+    assert all(item["rankingRunId"] for item in status["ranks"])
+    assert all(item["rankingRunComplete"] for item in status["ranks"])
+    assert all(item["rankingRunItemCount"] >= 1 for item in status["ranks"])
     assert status["expressions"][0]["status"] == "closed"
     assert status["shadowPositions"][0]["status"] == "closed"
     with database.connect() as connection:
@@ -1205,6 +1208,9 @@ def test_one_click_demo_api_sse_reconnect_and_supervisor_crash_recovery(
         assert status["data"]["candidates"]
         assert status["data"]["opportunities"]
         assert status["data"]["ranks"]
+        assert all(item["rankingRunId"] for item in status["data"]["ranks"])
+        assert all(item["rankingRunComplete"] for item in status["data"]["ranks"])
+        assert all(item["rankingRunItemCount"] >= 1 for item in status["data"]["ranks"])
         assert status["data"]["expressions"]
         assert status["data"]["shadowPositions"]
         assert status["data"]["assessments"]
@@ -1220,6 +1226,7 @@ def test_one_click_demo_api_sse_reconnect_and_supervisor_crash_recovery(
         )
         assert opportunity_detail["data"]["assessments"]
         assert opportunity_detail["data"]["ranks"]
+        assert all(item["rankingRunId"] for item in opportunity_detail["data"]["ranks"])
         assert opportunity_detail["data"]["researchLineage"]["mode"] == "explore"
         assert opportunity_detail["data"]["researchContributors"]
         assert opportunity_detail["data"]["openResearchQuestions"]

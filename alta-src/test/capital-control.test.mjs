@@ -3,9 +3,47 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { PaperCapitalControl } from "../capital-control.mjs";
+import {
+  acquirePaperMutationLease,
+  PaperCapitalControl,
+} from "../capital-control.mjs";
 
 const PAPER_ACCOUNT = "00000000000000000";
+
+test("Paper mutation lease fences PID reuse and token replacement", (context) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "alta-mutation-lease-"));
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const file = path.join(root, "account.mutation");
+  const account = "a".repeat(64);
+  const original = acquirePaperMutationLease(file, account);
+  assert.ok(original);
+  const stale = JSON.parse(fs.readFileSync(file, "utf8"));
+  stale.processStartIdentity = "ps:PID was reused";
+  fs.writeFileSync(file, `${JSON.stringify(stale)}\n`, { mode: 0o600 });
+
+  const replacement = acquirePaperMutationLease(file, account);
+  assert.ok(replacement);
+  assert.throws(() => original.release(), /ownership changed/);
+  replacement.release();
+  assert.equal(fs.existsSync(file), false);
+});
+
+test("Paper mutation lease recovers a crashed process owner", (context) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "alta-mutation-crash-"));
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const file = path.join(root, "account.mutation");
+  const account = "b".repeat(64);
+  const first = acquirePaperMutationLease(file, account);
+  const crashed = JSON.parse(fs.readFileSync(file, "utf8"));
+  first.release();
+  crashed.pid = 2_147_483_647;
+  crashed.processStartIdentity = "ps:dead";
+  fs.writeFileSync(file, `${JSON.stringify(crashed)}\n`, { mode: 0o600 });
+
+  const recovered = acquirePaperMutationLease(file, account);
+  assert.ok(recovered);
+  recovered.release();
+});
 
 function fixture(context) {
   const rootDir = fs.mkdtempSync(
@@ -98,7 +136,25 @@ test("Paper capital authorization refuses existing positions or orders", async (
   const { controller } = fixture(context);
   const accountFingerprint = controller.configuration().accountFingerprint;
   controller.invoke = async () =>
-    snapshot(accountFingerprint, { positionCount: 1 });
+    snapshot(accountFingerprint, {
+      positionCount: 1,
+      positions: [
+        {
+          symbol: "SPY",
+          securityType: "STK",
+          currency: "USD",
+          quantity: "1",
+          averageCost: "500",
+          marketPrice: "501",
+          marketValue: "501",
+          unrealizedPnl: "1",
+          unrealizedPnlPercent: "0.002",
+          realizedPnl: "0",
+          todayPnl: "1",
+          salableQuantity: "1",
+        },
+      ],
+    });
 
   await assert.rejects(
     () => controller.setEnabled(true),
@@ -106,6 +162,48 @@ test("Paper capital authorization refuses existing positions or orders", async (
   );
   assert.equal(controller.status().enabled, false);
   assert.equal(controller.status().audit[0].result, "failed");
+});
+
+test("Paper revocation drains an existing position before disabling", async (context) => {
+  const { controller } = fixture(context);
+  const accountFingerprint = controller.configuration().accountFingerprint;
+  controller.invoke = async () => snapshot(accountFingerprint);
+  await controller.setEnabled(true);
+
+  controller.invoke = async () =>
+    snapshot(accountFingerprint, {
+      positionCount: 1,
+      positions: [
+        {
+          symbol: "SPY",
+          securityType: "STK",
+          currency: "USD",
+          quantity: "1",
+          averageCost: "500",
+          marketPrice: "501",
+          marketValue: "501",
+          unrealizedPnl: "1",
+          unrealizedPnlPercent: "0.002",
+          realizedPnl: "0",
+          todayPnl: "1",
+          salableQuantity: "1",
+        },
+      ],
+    });
+  const draining = await controller.setEnabled(false);
+  assert.equal(draining.enabled, true);
+  assert.equal(draining.closeOnly, true);
+  assert.equal(draining.drainRequired, true);
+  assert.equal(draining.posture, "paper_recovery_required");
+  assert.equal(draining.audit[0].action, "authorization_drain_requested");
+  assert.equal(controller.runtimeEnvironment().ALTA_TIGER_PAPER_ENABLED, "1");
+
+  controller.invoke = async () => snapshot(accountFingerprint);
+  const disabled = await controller.setEnabled(false);
+  assert.equal(disabled.enabled, false);
+  assert.equal(disabled.closeOnly, false);
+  assert.equal(disabled.drainRequired, false);
+  assert.equal(controller.runtimeEnvironment().ALTA_TIGER_PAPER_ENABLED, "0");
 });
 
 test("Paper capital refresh stores only sanitized broker state", async (context) => {

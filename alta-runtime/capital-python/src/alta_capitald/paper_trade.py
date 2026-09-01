@@ -1,4 +1,5 @@
 import hashlib
+import json
 import re
 import time
 from dataclasses import dataclass
@@ -16,6 +17,7 @@ from .boundary import PaperBoundaryError, SingleOwnerLease
 
 PAPER_ACCOUNT_PATTERN = re.compile(r"^\d{17}$")
 SYMBOL_PATTERN = re.compile(r"^[A-Z][A-Z0-9.-]{0,14}$")
+CLIENT_ORDER_ID_PATTERN = re.compile(r"^alta-[a-f0-9]{32}$")
 TERMINAL_ORDER_STATES = {"CANCELLED", "EXPIRED", "FILLED", "REJECTED"}
 
 
@@ -32,6 +34,15 @@ def _decimal(value: object) -> Decimal:
 def _order_status(value: object) -> str:
     raw = getattr(value, "value", value)
     return str(raw).rsplit(".", maxsplit=1)[-1].upper()
+
+
+def _order_client_id(order: object) -> str | None:
+    value = getattr(order, "user_mark", None)
+    return (
+        value
+        if isinstance(value, str) and CLIENT_ORDER_ID_PATTERN.fullmatch(value)
+        else None
+    )
 
 
 def _optional_decimal(value: object) -> str | None:
@@ -123,6 +134,8 @@ class PaperTradeConfig:
     owner_lease_path: Path
     timeout_seconds: int = 20
     max_limit_notional: Decimal = Decimal("2000")
+    authorization_path: Path | None = None
+    authorization_generation: int | None = None
 
     def __post_init__(self) -> None:
         if not self.config_path.is_absolute() or not self.config_root.is_absolute():
@@ -145,6 +158,16 @@ class PaperTradeConfig:
             raise PaperBoundaryError("Paper order timeout must be between 5 and 60")
         if self.max_limit_notional <= 0 or self.max_limit_notional > 10_000:
             raise PaperBoundaryError("Paper order notional guard is invalid")
+        if (self.authorization_path is None) != (self.authorization_generation is None):
+            raise PaperBoundaryError("Paper authorization binding is incomplete")
+        if self.authorization_path is not None:
+            if not self.authorization_path.is_absolute():
+                raise PaperBoundaryError("Paper authorization path must be absolute")
+            if (
+                self.authorization_generation is None
+                or self.authorization_generation < 1
+            ):
+                raise PaperBoundaryError("Paper authorization generation is invalid")
 
 
 @dataclass(frozen=True)
@@ -153,11 +176,14 @@ class PaperOrderRequest:
     symbol: str
     limit_price: Decimal
     expected_position_before: Decimal
+    client_order_id: str
     quantity: Decimal = Decimal("1")
 
     def __post_init__(self) -> None:
         if self.action not in ("BUY", "SELL"):
             raise PaperBoundaryError("Paper action is not allowed")
+        if CLIENT_ORDER_ID_PATTERN.fullmatch(self.client_order_id) is None:
+            raise PaperBoundaryError("Paper client order identity is invalid")
         if SYMBOL_PATTERN.fullmatch(self.symbol) is None:
             raise PaperBoundaryError("Paper symbol is invalid")
         if self.quantity != 1:
@@ -173,7 +199,7 @@ class PaperOrderRequest:
 
 @dataclass(frozen=True)
 class PaperOrderResult:
-    status: Literal["filled", "not_filled", "already_flat"]
+    status: Literal["filled", "not_filled", "already_flat", "unresolved"]
     action: Literal["BUY", "SELL"]
     symbol: str
     quantity: str
@@ -335,8 +361,16 @@ class TigerPaperSession:
     def execute(self, request: PaperOrderRequest) -> PaperOrderResult:
         client, account = self._ready()
         self.lease.assert_owned()
+        self._assert_mutation_authorized(request.action)
         if request.limit_price * request.quantity > self.config.max_limit_notional:
             raise PaperBoundaryError("Paper order exceeds the notional guard")
+        existing = self.reconcile(request)
+        if existing is not None:
+            if existing.status == "unresolved":
+                raise PaperBoundaryError(
+                    "Paper client order identity has an unresolved broker history"
+                )
+            return existing
         before = self.position(request.symbol)
         if before != request.expected_position_before:
             raise PaperBoundaryError("Paper position changed before order admission")
@@ -353,6 +387,7 @@ class TigerPaperSession:
             time_in_force="DAY",
         )
         order.outside_rth = False
+        order.user_mark = request.client_order_id
         preview = client.preview_order(order)
         warning = (
             preview.get("warning_text")
@@ -452,6 +487,11 @@ class TigerPaperSession:
         )
 
     def flatten(self, symbol: str, limit_price: Decimal) -> PaperOrderResult:
+        raise PaperBoundaryError("flatten requires a stable client order identity")
+
+    def flatten_with_identity(
+        self, symbol: str, limit_price: Decimal, client_order_id: str
+    ) -> PaperOrderResult:
         before = self.position(symbol)
         if before == 0:
             return PaperOrderResult(
@@ -474,7 +514,97 @@ class TigerPaperSession:
                 symbol=symbol,
                 limit_price=limit_price,
                 expected_position_before=before,
+                client_order_id=client_order_id,
             )
+        )
+
+    def reconcile(self, request: PaperOrderRequest) -> PaperOrderResult | None:
+        """Read one stable broker identity without ever placing or cancelling."""
+
+        client, account = self._ready()
+        self.lease.assert_owned()
+        orders = client.get_orders(account=account, limit=100, is_brief=False) or []
+        if any(str(getattr(item, "account", "")) != account for item in orders):
+            raise PaperBoundaryError("Paper order history crossed account binding")
+        matches = [
+            item for item in orders if _order_client_id(item) == request.client_order_id
+        ]
+        if not matches:
+            return None
+        if len(matches) != 1:
+            raise PaperBoundaryError("Paper client order identity is not unique")
+        order = matches[0]
+        contract = getattr(order, "contract", None)
+        observed = (
+            str(getattr(order, "action", "")).rsplit(".", 1)[-1].upper(),
+            _contract_symbol(contract),
+            _contract_type(contract),
+            _decimal(getattr(order, "quantity", 0)),
+            _decimal(getattr(order, "limit_price", 0)),
+            str(getattr(order, "time_in_force", "")).rsplit(".", 1)[-1].upper(),
+            bool(getattr(order, "outside_rth", False)),
+        )
+        expected = (
+            request.action,
+            request.symbol,
+            "STK",
+            request.quantity,
+            request.limit_price,
+            "DAY",
+            False,
+        )
+        if observed != expected:
+            raise PaperBoundaryError(
+                "Paper client order identity changed request fields"
+            )
+        status = _order_status(getattr(order, "status", "UNKNOWN"))
+        filled = _decimal(getattr(order, "filled", 0))
+        broker_hash = hashlib.sha256(
+            str(getattr(order, "id", "unavailable")).encode()
+        ).hexdigest()
+        position = self.position(request.symbol)
+        expected_after = request.expected_position_before + (
+            1 if request.action == "BUY" else -1
+        )
+        if filled == request.quantity and position == expected_after:
+            return PaperOrderResult(
+                status="filled",
+                action=request.action,
+                symbol=request.symbol,
+                quantity=str(request.quantity),
+                position_before=str(request.expected_position_before),
+                position_after=str(position),
+                average_fill_price=_optional_decimal(
+                    getattr(order, "avg_fill_price", request.limit_price)
+                ),
+                broker_order_hash=broker_hash,
+            )
+        if (
+            status in TERMINAL_ORDER_STATES
+            and filled == 0
+            and position == request.expected_position_before
+        ):
+            return PaperOrderResult(
+                status="not_filled",
+                action=request.action,
+                symbol=request.symbol,
+                quantity="0",
+                position_before=str(request.expected_position_before),
+                position_after=str(position),
+                average_fill_price=None,
+                broker_order_hash=broker_hash,
+            )
+        return PaperOrderResult(
+            status="unresolved",
+            action=request.action,
+            symbol=request.symbol,
+            quantity=str(filled),
+            position_before=str(request.expected_position_before),
+            position_after=str(position),
+            average_fill_price=_optional_decimal(
+                getattr(order, "avg_fill_price", None)
+            ),
+            broker_order_hash=broker_hash,
         )
 
     def _wait_for_position(self, symbol: str, expected: Decimal) -> Decimal:
@@ -484,6 +614,51 @@ class TigerPaperSession:
             time.sleep(0.5)
             observed = self.position(symbol)
         return observed
+
+    def _assert_mutation_authorized(self, action: Literal["BUY", "SELL"]) -> None:
+        path = self.config.authorization_path
+        generation = self.config.authorization_generation
+        if path is None or generation is None:
+            raise PaperBoundaryError("Paper mutation authorization is unavailable")
+        try:
+            metadata = path.lstat()
+            if path.is_symlink() or not path.is_file():
+                raise PaperBoundaryError(
+                    "Paper mutation authorization must be a regular file"
+                )
+            if metadata.st_mode & 0o077:
+                raise PaperBoundaryError(
+                    "Paper mutation authorization must be owner-only"
+                )
+            raw = path.read_text()
+            value = json.loads(raw)
+        except (OSError, ValueError, TypeError) as error:
+            raise PaperBoundaryError(
+                "Paper mutation authorization is unreadable"
+            ) from error
+        configuration_hash = hashlib.sha256(
+            self.config.config_path.read_bytes()
+        ).hexdigest()
+        generation_matches = value.get("generation") == generation or (
+            action == "SELL"
+            and value.get("closeOnly") is True
+            and isinstance(value.get("generation"), int)
+            and value["generation"] > generation
+        )
+        if (
+            value.get("version") != 2
+            or value.get("enabled") is not True
+            or not generation_matches
+            or value.get("accountSha256") != self.config.account_sha256
+            or value.get("configurationSha256") != configuration_hash
+        ):
+            raise PaperBoundaryError(
+                "Paper mutation authorization was revoked or changed"
+            )
+        if value.get("closeOnly") is True and action != "SELL":
+            raise PaperBoundaryError(
+                "Paper authorization is draining and permits close orders only"
+            )
 
     def _ready(self) -> tuple[TradeClient, str]:
         if self.client is None or self.account is None:

@@ -8,6 +8,7 @@ from .contracts import Environment
 from .database import Database
 from .expression import contract_hash
 from .mvp_fixture import FixtureSource, MvpFixture
+from .scout_repository import ScoutRepository
 from .scouts import EvidenceSnapshot, FrozenScoutInput
 
 SourcePosture = Literal[
@@ -55,17 +56,16 @@ class MvpSourceFlow:
                     snapshots.append(snapshot)
         if not snapshots:
             raise ValueError("all fixture sources are unavailable")
-        return (
-            FrozenScoutInput(
-                wake_id=demo_id,
-                environment=Environment.SHADOW,
-                known_at=wake_at,
-                universe=self.fixture.universe,
-                evidence=tuple(snapshots),
-                expectation_posture="available",
-            ),
-            postures,
+        frozen = FrozenScoutInput(
+            wake_id=demo_id,
+            environment=Environment.SHADOW,
+            known_at=wake_at,
+            universe=self.fixture.universe,
+            evidence=tuple(snapshots),
+            expectation_posture="available",
         )
+        ScoutRepository(self.database).start_batch(f"batch_{demo_id}", frozen, postures)
+        return frozen, postures
 
     def _record_wake(self, connection, demo_id: str, wake_at: datetime) -> None:
         values = (

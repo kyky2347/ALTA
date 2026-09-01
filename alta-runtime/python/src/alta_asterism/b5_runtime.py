@@ -11,6 +11,8 @@ from .expression import (
     VersionBinding,
     contract_hash,
 )
+from .paper_execution import PaperExecutionResult
+from .paper_intent import PaperIntentStore
 from .shadow import (
     ExitDecision,
     LedgerTransaction,
@@ -255,6 +257,10 @@ class ShadowRepository:
         fill: ShadowFill,
         transaction: LedgerTransaction,
         thesis: PositionThesis,
+        *,
+        paper_intent_id: str | None = None,
+        paper_cycle_id: str | None = None,
+        paper_result: PaperExecutionResult | None = None,
     ) -> None:
         self._validate_open_contracts(intent, fill, transaction, thesis)
         if fill.fill_price is None or fill.commission is None:
@@ -300,6 +306,14 @@ class ShadowRepository:
                         "closed expression has a different Shadow position"
                     )
                 self._append_open_events(connection, intent, fill, transaction, thesis)
+                self._commit_paper(
+                    connection,
+                    paper_intent_id,
+                    paper_cycle_id,
+                    paper_result,
+                    fill.known_at,
+                    intent.position_id,
+                )
                 return
             inserted = connection.execute(
                 """INSERT INTO research.shadow_position
@@ -359,6 +373,14 @@ class ShadowRepository:
                 (intent.binding.opportunity_id,),
             )
             self._append_open_events(connection, intent, fill, transaction, thesis)
+            self._commit_paper(
+                connection,
+                paper_intent_id,
+                paper_cycle_id,
+                paper_result,
+                fill.known_at,
+                intent.position_id,
+            )
 
     @staticmethod
     def _append_open_events(connection, intent, fill, transaction, thesis) -> None:
@@ -434,6 +456,10 @@ class ShadowRepository:
         fill: ShadowFill,
         transaction: LedgerTransaction,
         decision: ExitDecision,
+        *,
+        paper_intent_id: str | None = None,
+        paper_cycle_id: str | None = None,
+        paper_result: PaperExecutionResult | None = None,
     ) -> None:
         close_state = (intent.action, fill.action, fill.status, decision.action)
         if close_state != ("close", "close", "filled", "exit"):
@@ -527,6 +553,59 @@ class ShadowRepository:
                         correlation_id=intent.expression_id,
                     ),
                 )
+            self._commit_paper(
+                connection,
+                paper_intent_id,
+                paper_cycle_id,
+                paper_result,
+                fill.known_at,
+                intent.position_id,
+            )
+
+    @staticmethod
+    def _commit_paper(
+        connection,
+        paper_intent_id: str | None,
+        paper_cycle_id: str | None,
+        paper_result: PaperExecutionResult | None,
+        known_at,
+        position_id: str,
+    ) -> None:
+        supplied = (
+            paper_intent_id is not None,
+            paper_cycle_id is not None,
+            paper_result is not None,
+        )
+        if not any(supplied):
+            return
+        if not all(supplied):
+            raise ValueError("Paper local commit binding is incomplete")
+        if paper_result.status not in ("filled", "already_flat"):
+            raise ValueError("Paper local commit requires broker completion")
+        PaperIntentStore.commit_local(connection, paper_intent_id)
+        event_type = (
+            "paper.order.filled"
+            if paper_result.status == "filled"
+            else "paper.position.verified_flat"
+        )
+        _append_event(
+            connection,
+            _contract_event(
+                event_type=event_type,
+                aggregate_type="shadow_position",
+                aggregate_id=position_id,
+                environment=Environment.SHADOW,
+                known_at=known_at,
+                payload={
+                    "cycle_id": paper_cycle_id,
+                    "broker": "tiger_paper",
+                    "paper_intent_id": paper_intent_id,
+                    **paper_result.model_dump(mode="json"),
+                },
+                correlation_id=paper_cycle_id,
+                causation_id=paper_intent_id,
+            ),
+        )
 
     def ledger(self, position_id: str) -> tuple[LedgerTransaction, ...]:
         with self.database.connect() as connection:

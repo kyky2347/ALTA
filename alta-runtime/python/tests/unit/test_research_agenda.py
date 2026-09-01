@@ -91,7 +91,7 @@ def test_opportunity_drive_balances_follow_up_and_independent_exploration() -> N
             ),
             ResearchQueueInput(
                 opportunity_id="opportunity_b",
-                status="ranked",
+                status="shadow",
                 known_at=wake_at - timedelta(days=1),
                 horizon_days=30,
                 research_questions=(
@@ -115,6 +115,7 @@ def test_opportunity_drive_balances_follow_up_and_independent_exploration() -> N
     assert drive.route_change_required is True
     assert len(drive.follow_up_scout_ids) == 2
     assert len(drive.research_assignments) == 2
+    assert any(item.reason_codes[0] == "open_position" for item in drive.research_queue)
     assert len({item.question_id for item in drive.research_assignments}) == 2
     for assignment in drive.research_assignments:
         scoped = drive.for_scout(assignment.scout_id)
@@ -161,7 +162,7 @@ def test_opportunity_drive_changes_route_after_repeated_empty_cycles() -> None:
     assert drive.follow_up_scout_ids == ()
 
 
-def test_research_queue_prioritizes_decision_gaps_and_excludes_expired_work() -> None:
+def test_research_queue_prioritizes_open_positions_and_excludes_expired_work() -> None:
     wake_at = datetime(2026, 8, 27, 12, tzinfo=UTC)
     queue = build_research_queue(
         wake_at=wake_at,
@@ -206,7 +207,7 @@ def test_research_queue_prioritizes_decision_gaps_and_excludes_expired_work() ->
                     OpenResearchQuestion(
                         question_id="d" * 16,
                         origin="disconfirming_assessor",
-                        prompt="The position monitor owns this question.",
+                        prompt="Retest the strongest threat to the open position.",
                     ),
                 ),
             ),
@@ -215,7 +216,7 @@ def test_research_queue_prioritizes_decision_gaps_and_excludes_expired_work() ->
 
     assert [item.opportunity_id for item in queue] == [
         "opportunity_live",
-        "opportunity_live",
+        "opportunity_shadow",
     ]
     assert queue[0].question_id == "b" * 16
     assert queue[0].priority_score > queue[1].priority_score
@@ -223,6 +224,12 @@ def test_research_queue_prioritizes_decision_gaps_and_excludes_expired_work() ->
         "forming",
         "disconfirming",
         "urgent",
+    )
+    assert queue[1].question_id == "d" * 16
+    assert queue[1].reason_codes == (
+        "open_position",
+        "disconfirming",
+        "open",
     )
 
 

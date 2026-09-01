@@ -10,8 +10,13 @@ import {
   ShieldCheck,
   Waypoints,
 } from "lucide-react";
+import { RuntimeRecovery } from "@/components/runtime-recovery";
 import { StatusPill } from "@/components/status-pill";
 import { useI18n } from "@/lib/i18n";
+import {
+  recordedSourceIssue,
+  summarizeSourceRecords,
+} from "@/lib/source-posture";
 import type { MvpStatus, RuntimeDetail, SelectedEntity } from "@/lib/types";
 import { readableMindSummary } from "@/lib/utils";
 
@@ -24,10 +29,22 @@ export function SystemOverview({
   runtime: RuntimeDetail | null;
   onSelect: (entity: SelectedEntity) => void;
 }) {
-  const { domain, number, relative, t } = useI18n();
+  const { domain, number, relative, systemMessage, t } = useI18n();
   const attention = runtime?.researchAttention;
   const continuity = runtime?.opportunityContinuity;
   const research = runtime?.researchOperations;
+  const sourceSummary = summarizeSourceRecords(status.sources);
+  const sourcePostures = sourceSummary.visible.map((summary) => {
+    const latest = sourcePosture(summary.latest, relative, domain);
+    const previousDifferent = summary.history
+      .map((source) => sourcePosture(source, relative, domain))
+      .find(
+        (previous) =>
+          previous.posture !== latest.posture ||
+          previous.issue !== latest.issue,
+      );
+    return { ...summary, ...latest, previousDifferent };
+  });
   const percent = (value?: string | null) => {
     const parsed = value === null || value === undefined ? NaN : Number(value);
     return Number.isFinite(parsed)
@@ -72,6 +89,7 @@ export function SystemOverview({
         value={status.eventCursor}
         detail={t("appendOnlyLedger")}
       />
+      <RuntimeRecovery runtime={runtime} fallbackStatus={status.status} />
       <div className="overview-wide">
         <div className="overview-wide-head">
           <span>
@@ -80,17 +98,69 @@ export function SystemOverview({
           <StatusPill status={status.sources.length ? "observed" : "waiting"} />
         </div>
         <div className="source-list">
-          {status.sources.slice(0, 5).map((source) => (
-            <div key={source.id}>
-              <strong>{domain(source.id)}</strong>
-              <span>
-                {domain(String(source.posture ?? source.status ?? "recorded"))}
-              </span>
-              <small>{relative(source.knownAt)}</small>
-            </div>
-          ))}
+          {sourcePostures.map(
+            ({
+              identity,
+              history,
+              posture,
+              freshness,
+              issue,
+              previousDifferent,
+            }) => (
+              <div className={issue ? "has-source-issue" : ""} key={identity}>
+                <span className="source-list-heading">
+                  <strong>{domain(identity)}</strong>
+                  <StatusPill status={posture} />
+                </span>
+                <span>{t("sourceFreshness", { freshness })}</span>
+                <small>
+                  {issue
+                    ? t("sourceIssue", {
+                        issue: localizeSourceIssue(
+                          issue,
+                          systemMessage,
+                          domain,
+                        ),
+                      })
+                    : t("sourceNoKnownIssue")}
+                </small>
+                {previousDifferent ? (
+                  <small className="source-previous-state">
+                    {t("sourcePreviousState", {
+                      posture: domain(previousDifferent.posture),
+                      freshness: previousDifferent.freshness,
+                    })}
+                  </small>
+                ) : null}
+                {history.length ? (
+                  <small className="source-folded-count">
+                    {t("sourcePriorRecordsHidden", { count: history.length })}
+                  </small>
+                ) : null}
+              </div>
+            ),
+          )}
           {!status.sources.length && <p>{t("noSourcePosture")}</p>}
         </div>
+        {sourceSummary.foldedRecordCount ||
+        sourceSummary.hiddenIdentityCount ? (
+          <p className="source-list-boundary" role="status">
+            {sourceSummary.foldedRecordCount
+              ? t("sourceHistoryFolded", {
+                  count: sourceSummary.foldedRecordCount,
+                })
+              : null}
+            {sourceSummary.foldedRecordCount &&
+            sourceSummary.hiddenIdentityCount
+              ? " · "
+              : null}
+            {sourceSummary.hiddenIdentityCount
+              ? t("sourceIdentitiesHidden", {
+                  count: sourceSummary.hiddenIdentityCount,
+                })
+              : null}
+          </p>
+        ) : null}
       </div>
       <div className="overview-wide research-operations">
         <div className="overview-wide-head">
@@ -114,6 +184,30 @@ export function SystemOverview({
               <div>
                 <small>{t("completedRetrievals")}</small>
                 <strong>{number(research.completedToolCalls)}</strong>
+              </div>
+              <div>
+                <small>{t("failedRetrievals")}</small>
+                <strong>{number(research.failedToolCalls)}</strong>
+              </div>
+              <div>
+                <small>{t("researchTokens")}</small>
+                <strong>
+                  {number(research.totalTokens, {
+                    notation: "compact",
+                    maximumFractionDigits: 1,
+                  })}
+                </strong>
+              </div>
+              <div>
+                <small>{t("meanResearchLatency")}</small>
+                <strong>
+                  {research.averageLatencyMs === null ||
+                  research.averageLatencyMs === undefined
+                    ? t("unavailable")
+                    : t("milliseconds", {
+                        value: number(Math.round(research.averageLatencyMs)),
+                      })}
+                </strong>
               </div>
               <div>
                 <small>{t("independentEvidenceOrigins")}</small>
@@ -476,6 +570,33 @@ export function SystemOverview({
       </div>
     </section>
   );
+}
+
+function sourcePosture(
+  source: MvpStatus["sources"][number],
+  relative: (value?: string) => string,
+  domain: (value: string) => string,
+) {
+  const posture = String(source.posture ?? source.status ?? "recorded");
+  const freshnessValue =
+    typeof source.freshness === "string"
+      ? domain(source.freshness)
+      : relative(source.knownAt);
+  return {
+    source,
+    posture,
+    freshness: freshnessValue,
+    issue: recordedSourceIssue(source),
+  };
+}
+
+function localizeSourceIssue(
+  issue: string,
+  systemMessage: (message: string | null | undefined) => string | null,
+  domain: (value: string) => string,
+) {
+  const localized = systemMessage(issue);
+  return localized && localized !== issue ? localized : domain(issue);
 }
 
 function OverviewBlock({

@@ -266,10 +266,17 @@ prove Paper mode, the configured 17-digit account, an empty position book, and
 zero open orders. The resulting authorization is stored outside source files
 with owner-only permissions and is invalidated by any account or configuration
 change. On the next runtime start, only audited stock expressions can reach the
-isolated one-share DAY-limit, regular-hours Paper mirror. Disabling writes the
-revocation before stopping an active runtime and dependencies. Research Agents
-never receive the credentials or executor, and the console deliberately has no
-general brokerage-order endpoint.
+isolated one-share DAY-limit, regular-hours Paper mirror. Every mutation first
+persists an intent and revalidates the current authorization generation while
+holding the account-global lease. Disabling an empty account fully revokes
+mutation. If the one managed position remains, revocation enters a close-only,
+recovery-required generation: it blocks new buys but lets the durable exit
+drain before the operator disables it again. Restart reconciliation uses the
+stable ALTA `user_mark` in recent Tiger order history; an absent, duplicate,
+partial, non-terminal, or mismatched record becomes `manual_review` and never
+causes an automatic repeat order. Research Agents never receive the credentials
+or executor, and the console deliberately has no general brokerage-order
+endpoint.
 
 The dashboard process intentionally remains alive after a safe stop so the
 operator can inspect the stopped state and start the system later. Dashboard

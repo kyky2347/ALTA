@@ -66,6 +66,14 @@ Broker credentials are not accepted by this surface.
   exact Paper account while the runtime is stopped, or through the explicit
   bounded acceptance command. Every expression must still pass the research,
   deterministic risk, and independent-audit gates.
+- Every broker mutation is preceded by a durable Paper intent and revalidates
+  the monotonic authorization generation while holding the account-global
+  mutation lease. Ambiguous recent broker history enters `manual_review` and
+  is never retried automatically; Tiger `user_mark` is not treated as a
+  server-side idempotency guarantee.
+- Revocation on an empty account disables mutation. Revocation while the one
+  managed position remains enters close-only recovery: new buys are blocked,
+  while only the durable exit may drain before final disablement.
 - The acceptance executor requires an owner-only non-symlink config, exact
   17-digit Paper account SHA-256 binding, empty starting account, one-share DAY
   limit orders, fill reconciliation, confirmed cancellation, and final

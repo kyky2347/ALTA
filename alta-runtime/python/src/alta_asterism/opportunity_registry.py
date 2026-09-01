@@ -53,6 +53,7 @@ class OpportunityRegistry:
                          ELSE 'structural_identity_v2' END
                     FROM research.opportunity
                     WHERE environment = %s AND foundry_state = 'active'
+                      AND status IN ('forming', 'ranked', 'shadow')
                       AND identity_version = 2
                       AND NOT (id = ANY(%s))
                       AND (exact_key = %s OR structural_key = %s)
@@ -183,7 +184,10 @@ class OpportunityRegistry:
     @staticmethod
     def _evidence_hashes(connection, evidence_ids) -> dict[str, str]:
         rows = connection.execute(
-            """SELECT e.id, r.content_hash FROM research.evidence e
+            """SELECT e.id, CASE
+            WHEN r.body->>'origin_fingerprint' ~ '^[a-f0-9]{64}$'
+            THEN r.body->>'origin_fingerprint' ELSE r.content_hash END
+            FROM research.evidence e
             JOIN research.raw r ON r.id = e.raw_id
             WHERE e.id = ANY(%s)""",
             (list(evidence_ids),),
@@ -196,7 +200,9 @@ class OpportunityRegistry:
     @staticmethod
     def _seen_content_hashes(connection, canonical_id: str) -> set[str]:
         rows = connection.execute(
-            """SELECT DISTINCT r.content_hash
+            """SELECT DISTINCT CASE
+            WHEN r.body->>'origin_fingerprint' ~ '^[a-f0-9]{64}$'
+            THEN r.body->>'origin_fingerprint' ELSE r.content_hash END
             FROM research.opportunity o
             CROSS JOIN LATERAL unnest(o.evidence_ids) AS seen(evidence_id)
             JOIN research.evidence e ON e.id = seen.evidence_id

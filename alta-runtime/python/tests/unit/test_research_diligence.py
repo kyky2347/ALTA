@@ -339,3 +339,42 @@ def test_repeated_source_records_cannot_masquerade_as_three_origin_checks() -> N
     assert len(result.independent_source_domains) == 4
     assert len(result.independent_evidence_origins) == 2
     assert "independent_evidence_origins_limited" in result.reason_codes
+
+
+def test_frozen_mirror_keeps_origin_identity_across_research_cycles() -> None:
+    origin = "a" * 64
+    output = SimpleNamespace(
+        kind="candidate",
+        beneficiary_path="A measurable operating path is stated.",
+        disconfirming_evidence="A rival explanation is stated.",
+        next_test="Check the next versioned update.",
+        tool_evidence_refs=(
+            SimpleNamespace(
+                tool_call_id="mirror_call",
+                evidence_role="primary_fact",
+                source_locator="https://mirror.example/release-copy",
+            ),
+        ),
+    )
+    result = build_research_diligence(
+        tools=(
+            SimpleNamespace(
+                tool_call_id="mirror_call",
+                tool_name="alta_web_batch_fetch",
+                status="completed",
+            ),
+        ),
+        discoveries=(
+            SimpleNamespace(
+                tool_call_id="mirror_call",
+                source_locator="https://mirror.example/release-copy",
+                origin_fingerprint=origin,
+            ),
+        ),
+        frozen_source_locators=("https://issuer.example/release",),
+        frozen_origin_fingerprints=(origin,),
+        output=output,
+    )
+
+    assert result.independent_evidence_origins == (origin,)
+    assert "independent_evidence_origins_limited" in result.reason_codes

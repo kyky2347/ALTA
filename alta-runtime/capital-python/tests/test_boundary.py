@@ -1,3 +1,5 @@
+import json
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -11,6 +13,7 @@ from alta_capitald import (
     PaperBoundaryConfig,
     PaperBoundaryError,
     PaperSnapshot,
+    SingleOwnerLease,
 )
 
 
@@ -87,6 +90,132 @@ def test_explicit_path_exact_account_and_unique_owner(
         assert transport.calls == [("paper-account-fixture", str(config.config_path))]
     finally:
         first.stop()
+
+
+def test_dead_owner_lease_is_recovered_but_live_owner_is_never_replaced(
+    tmp_path: Path,
+) -> None:
+    config = enabled_config(tmp_path)
+    config.owner_lease_path.write_text(
+        json.dumps(
+            {
+                "owner_id": "dead-owner",
+                "token": "dead-token",
+                "pid": 999_999_999,
+                "acquired_at": "2026-08-01T00:00:00+00:00",
+            }
+        )
+    )
+    config.owner_lease_path.chmod(0o600)
+    recovered = PaperBoundary(config, FakeReadTransport(snapshot()))
+
+    recovered.start()
+    try:
+        payload = json.loads(config.owner_lease_path.read_text())
+        assert payload["pid"] == os.getpid()
+        assert payload["owner_id"] == config.owner_id
+        assert payload["process_identity"]
+
+        contender = PaperBoundary(
+            PaperBoundaryConfig(
+                **{**config.__dict__, "owner_id": "capitald-owner-two"}
+            ),
+            FakeReadTransport(snapshot()),
+        )
+        with pytest.raises(PaperBoundaryError, match="already has an owner"):
+            contender.start()
+    finally:
+        recovered.stop()
+
+
+def test_reused_pid_does_not_keep_a_stale_owner_lease(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "capitald.owner"
+    path.write_text(
+        json.dumps(
+            {
+                "owner_id": "dead-owner",
+                "token": "dead-token",
+                "pid": 42,
+                "process_identity": "process-before-pid-reuse",
+                "acquired_at": "2026-08-01T00:00:00+00:00",
+            }
+        )
+    )
+    path.chmod(0o600)
+    lease = SingleOwnerLease(path, "replacement-owner")
+    real_identity = SingleOwnerLease._process_identity
+    monkeypatch.setattr(
+        SingleOwnerLease,
+        "_process_alive",
+        staticmethod(lambda pid: pid == 42),
+    )
+    monkeypatch.setattr(
+        SingleOwnerLease,
+        "_process_identity",
+        staticmethod(
+            lambda pid: "different-process-after-pid-reuse"
+            if pid == 42
+            else real_identity(pid)
+        ),
+    )
+
+    lease.acquire()
+    try:
+        payload = json.loads(path.read_text())
+        assert payload["owner_id"] == "replacement-owner"
+        assert payload["pid"] == os.getpid()
+    finally:
+        lease.release()
+
+
+def test_live_process_identity_is_never_reclaimed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "capitald.owner"
+    path.write_text(
+        json.dumps(
+            {
+                "owner_id": "active-owner",
+                "token": "active-token",
+                "pid": 42,
+                "process_identity": "same-process-lifetime",
+                "acquired_at": "2026-08-01T00:00:00+00:00",
+            }
+        )
+    )
+    path.chmod(0o600)
+    monkeypatch.setattr(
+        SingleOwnerLease,
+        "_process_alive",
+        staticmethod(lambda _pid: True),
+    )
+    monkeypatch.setattr(
+        SingleOwnerLease,
+        "_process_identity",
+        staticmethod(lambda _pid: "same-process-lifetime"),
+    )
+
+    with pytest.raises(PaperBoundaryError, match="already has an owner"):
+        SingleOwnerLease(path, "contender").acquire()
+
+
+def test_failed_atomic_publish_never_leaves_a_partial_owner_lease(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "capitald.owner"
+    lease = SingleOwnerLease(path, "capitald-owner")
+
+    def reject_publish(*_args, **_kwargs):
+        raise OSError("synthetic link failure")
+
+    monkeypatch.setattr(os, "link", reject_publish)
+    with pytest.raises(OSError, match="synthetic link failure"):
+        lease.acquire()
+
+    assert not path.exists()
+    assert list(tmp_path.glob(".capitald.owner.*.tmp")) == []
 
 
 @pytest.mark.parametrize(

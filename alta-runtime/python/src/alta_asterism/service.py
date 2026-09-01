@@ -22,6 +22,7 @@ from .database import Database, event_json
 from .forward_evaluation import ForwardEvaluationReader
 from .implementation import PortfolioRiskPolicy
 from .projection_cache import ProjectionCache
+from .paper_intent import PaperIntentStore
 from .research_incentive import (
     MAX_REWARD_TOKENS,
     MAX_REWARD_TOOL_CALLS,
@@ -40,6 +41,18 @@ from .version import __version__
 
 def _json_bytes(value) -> bytes:
     return json.dumps(value, separators=(",", ":"), default=str).encode()
+
+
+def _write_json_response(handler, status: int, value) -> None:
+    body = _json_bytes(value)
+    try:
+        handler.send_response(status)
+        handler.send_header("Content-Type", "application/json")
+        handler.send_header("Content-Length", str(len(body)))
+        handler.end_headers()
+        handler.wfile.write(body)
+    except (BrokenPipeError, ConnectionResetError):
+        handler.close_connection = True
 
 
 def _write_sse(stream, events: list[dict]) -> None:
@@ -105,12 +118,7 @@ def _handler(
             return
 
         def json_response(self, status: int, value) -> None:
-            body = _json_bytes(value)
-            self.send_response(status)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+            _write_json_response(self, status, value)
 
         def do_GET(self) -> None:  # noqa: N802
             request = urlsplit(self.path)
@@ -146,11 +154,17 @@ def _handler(
                     and isinstance(heartbeat, str)
                     and heartbeat_fresh
                 )
-                ready = database.ready() and autonomous_ready
+                database_ready = database.ready()
+                capital_ready = not settings.tiger_paper_enabled or (
+                    database_ready and not PaperIntentStore.circuit_open(database)
+                )
+                ready = database_ready and autonomous_ready and capital_ready
                 response = {"ready": ready}
                 if settings.autonomous_enabled:
                     response["autonomousStatus"] = state.get("autonomousStatus")
                     response["heartbeatFresh"] = heartbeat_fresh
+                if settings.tiger_paper_enabled:
+                    response["capitalCircuitClosed"] = capital_ready
                 return self.json_response(
                     200 if ready else 503,
                     response,
