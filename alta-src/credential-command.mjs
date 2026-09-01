@@ -69,8 +69,7 @@ async function reloadActiveService(service) {
   const before = await service.status();
   if (!before.installed || !before.platformActive)
     return { restarted: false, reason: "loaded by the next ALTA process" };
-  service.platform.restart();
-  await service.waitForReadiness();
+  await service.restart();
   return { restarted: true, reason: "active service restarted and ready" };
 }
 
@@ -117,8 +116,7 @@ export async function credentialCommand(
   } catch (error) {
     replacement.restore();
     try {
-      service.platform.restart();
-      await service.waitForReadiness();
+      await service.restart();
     } catch {
       throw new Error(
         `${replacement.slot} reload failed and the previous file was restored; service recovery also failed: ${error.message}`,

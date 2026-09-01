@@ -18,6 +18,7 @@ from . import (
     b17_0015,
     b18_0016,
     b19_0017,
+    b20_0018,
 )
 
 MIGRATIONS = (
@@ -38,6 +39,7 @@ MIGRATIONS = (
     b17_0015,
     b18_0016,
     b19_0017,
+    b20_0018,
 )
 LATEST_REVISION = MIGRATIONS[-1].REVISION
 CURRENT_TABLES = (

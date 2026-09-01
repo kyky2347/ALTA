@@ -265,6 +265,18 @@ class HybridAgentClient:
                         "basis_risk",
                         "Broad market beta can overwhelm the fixture event payoff.",
                     ),
+                    "requested_position_nav_bps": item.get(
+                        "requested_position_nav_bps",
+                        100 if item["kind"] != "wait" else None,
+                    ),
+                    "requested_trade_loss_nav_bps": item.get(
+                        "requested_trade_loss_nav_bps",
+                        25 if item["kind"] != "wait" else None,
+                    ),
+                    "sizing_rationale": item.get(
+                        "sizing_rationale",
+                        "Fixture size follows evidence strength, invalidation distance, and liquidity.",
+                    ),
                     "thesis_pillar_ids": (
                         item.get("thesis_pillar_ids", pillar_ids[:1])
                         if item["kind"] != "wait"

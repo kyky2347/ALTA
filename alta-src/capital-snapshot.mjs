@@ -148,7 +148,11 @@ export function sanitizeCapitalSnapshot(value) {
     mutationPolicy: boundedString(
       payload.mutationPolicy,
       "mutation policy",
-      /^one_share_limit_day$/,
+      /^risk_budgeted_limit_day_v1$/,
+    ),
+    maxOrderNotional: decimal(
+      payload.maxOrderNotional,
+      "maximum order notional",
     ),
     assets: {
       currency: boundedString(

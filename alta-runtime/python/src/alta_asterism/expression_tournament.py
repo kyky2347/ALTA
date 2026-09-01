@@ -35,6 +35,12 @@ class ExpressionHypothesis(BaseModel):
     basis_risk: str = Field(
         default="Not classified by a legacy proposal.", max_length=800
     )
+    requested_position_nav_bps: Decimal | None = Field(gt=0, le=Decimal("1000"))
+    requested_trade_loss_nav_bps: Decimal | None = Field(gt=0, le=Decimal("250"))
+    sizing_rationale: str = Field(
+        min_length=1,
+        max_length=800,
+    )
 
     @model_validator(mode="after")
     def validate_identity(self) -> "ExpressionHypothesis":
@@ -46,6 +52,18 @@ class ExpressionHypothesis(BaseModel):
             raise ValueError("expression systematic exposures must be unique")
         if "none" in self.systematic_exposures and len(self.systematic_exposures) != 1:
             raise ValueError("none cannot be combined with systematic exposures")
+        has_complete_sizing = (
+            self.requested_position_nav_bps is not None
+            and self.requested_trade_loss_nav_bps is not None
+        )
+        has_any_sizing = (
+            self.requested_position_nav_bps is not None
+            or self.requested_trade_loss_nav_bps is not None
+        )
+        if self.kind == "wait" and has_any_sizing:
+            raise ValueError("wait cannot request a capital allocation")
+        if self.kind != "wait" and not has_complete_sizing:
+            raise ValueError("an instrument hypothesis must request its own risk size")
         return self
 
 
@@ -76,15 +94,22 @@ class EvaluatedExpression:
                 "hypothesis_id": self.hypothesis.hypothesis_id,
                 "kind": self.hypothesis.kind,
                 "symbol": self.hypothesis.symbol,
-                "payoff_thesis": self.hypothesis.payoff_thesis[:160],
+                "payoff_thesis": self.hypothesis.payoff_thesis[:64],
                 "thesis_purity": self.hypothesis.thesis_purity,
                 "timing_fit": self.hypothesis.timing_fit,
-                "primary_tradeoff": self.hypothesis.primary_tradeoff[:96],
+                "primary_tradeoff": self.hypothesis.primary_tradeoff[:48],
                 "thesis_pillar_ids": self.hypothesis.thesis_pillar_ids,
                 "alpha_source": self.hypothesis.alpha_source,
                 "systematic_exposures": self.hypothesis.systematic_exposures,
                 "hedge_posture": self.hypothesis.hedge_posture,
-                "basis_risk": self.hypothesis.basis_risk[:96],
+                "basis_risk": self.hypothesis.basis_risk[:48],
+                "requested_position_nav_bps": _text(
+                    self.hypothesis.requested_position_nav_bps
+                ),
+                "requested_trade_loss_nav_bps": _text(
+                    self.hypothesis.requested_trade_loss_nav_bps
+                ),
+                "sizing_rationale": self.hypothesis.sizing_rationale[:48],
             },
             "market_gate": self.market_gate,
             "admissible": self.ready,
@@ -172,6 +197,84 @@ class EvaluatedExpression:
             ),
         }
 
+    def audit_value(self) -> dict[str, object]:
+        """Compact decision brief that keeps a three-entry slate under budget."""
+
+        value = self.prompt_value()
+        hypothesis = value["hypothesis"]
+        metrics = value["decision_metrics"]
+        instrument = value["instrument"]
+        implementation = value["implementation"]
+        allocation = value["capital_allocation"]
+        assert isinstance(hypothesis, dict)
+        return {
+            "hypothesis": {
+                key: hypothesis.get(key)
+                for key in (
+                    "hypothesis_id",
+                    "kind",
+                    "symbol",
+                    "payoff_thesis",
+                    "thesis_purity",
+                    "timing_fit",
+                    "thesis_pillar_ids",
+                    "alpha_source",
+                    "systematic_exposures",
+                    "hedge_posture",
+                    "basis_risk",
+                    "requested_position_nav_bps",
+                    "requested_trade_loss_nav_bps",
+                    "sizing_rationale",
+                )
+            },
+            "market_gate": value["market_gate"],
+            "admissible": value["admissible"],
+            "decision_metrics": (
+                {
+                    key: metrics.get(key)
+                    for key in (
+                        "time_adjusted_expected_net_alpha_bps",
+                        "time_adjusted_expected_alpha_dollars",
+                        "estimated_cost_bps",
+                        "target_notional_dollars",
+                        "estimated_stress_loss_dollars",
+                        "expected_alpha_per_stress_dollar",
+                        "execution_reserve_headroom_bps",
+                    )
+                }
+                if isinstance(metrics, dict)
+                else None
+            ),
+            "instrument": (
+                {
+                    key: instrument.get(key)
+                    for key in (
+                        "kind",
+                        "symbol",
+                        "underlying_symbol",
+                        "quantity",
+                        "bid",
+                        "ask",
+                        "quote_as_of",
+                    )
+                }
+                if isinstance(instrument, dict)
+                else None
+            ),
+            "implementation": (
+                {
+                    "status": implementation.get("status"),
+                    "reason_codes": implementation.get("reason_codes"),
+                    "binding_constraint": implementation.get("binding_constraint"),
+                    "exposure_binding_tag": implementation.get("exposure_binding_tag"),
+                    "execution": implementation.get("execution"),
+                }
+                if isinstance(implementation, dict)
+                else None
+            ),
+            "capital_allocation": allocation,
+        }
+
 
 def normalized_hypotheses(
     hypotheses: tuple[ExpressionHypothesis, ...],
@@ -198,6 +301,16 @@ def normalized_hypotheses(
             thesis_purity=0.5,
             timing_fit=0.5,
             primary_tradeoff="Legacy single-expression fallback; independently audit.",
+            requested_position_nav_bps=(
+                None if preferred_kind == "wait" else Decimal("100")
+            ),
+            requested_trade_loss_nav_bps=(
+                None if preferred_kind == "wait" else Decimal("25")
+            ),
+            sizing_rationale=(
+                "Legacy fallback requests the audited baseline risk budget; a live "
+                "agent slate must supply an explicit sizing decision."
+            ),
         ),
     )
 

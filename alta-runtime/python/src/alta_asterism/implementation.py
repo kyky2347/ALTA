@@ -217,6 +217,13 @@ class TradeImplementationPlan(FrozenContract):
     exposure_capacity: Decimal | None = Field(default=None, ge=0)
     exposure_binding_tag: SystematicExposure | None = None
     monitoring_triggers: tuple[str, ...] = Field(default=(), max_length=8)
+    agent_requested_position_nav_bps: Decimal | None = Field(
+        default=None, gt=0, le=Decimal("1000")
+    )
+    agent_requested_trade_loss_nav_bps: Decimal | None = Field(
+        default=None, gt=0, le=Decimal("250")
+    )
+    agent_sizing_rationale: str | None = Field(default=None, max_length=800)
     reason_codes: tuple[str, ...] = Field(default=(), max_length=12)
 
     @model_validator(mode="after")

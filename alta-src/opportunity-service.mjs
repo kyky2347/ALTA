@@ -82,6 +82,9 @@ const PAPER_SERVICE_SETTINGS = Object.freeze([
   "ALTA_TIGER_CONFIG_PATH",
   "ALTA_TIGER_PAPER_ACCOUNT_SHA256",
   "ALTA_TIGER_ORDER_TIMEOUT_SECONDS",
+  "ALTA_TIGER_PAPER_MAX_ORDER_NOTIONAL",
+  "ALTA_TIGER_PAPER_MAX_OPEN_POSITIONS",
+  "ALTA_TIGER_PAPER_MAX_DISPATCH_QUOTE_AGE_SECONDS",
 ]);
 
 const DEFAULT_SETTINGS = Object.freeze({
@@ -453,12 +456,28 @@ export class OpportunityService {
     );
   }
 
+  async start() {
+    await this.assertEndpointAvailable();
+    this.platform.start();
+    return this.waitForReadiness();
+  }
+
+  async restart() {
+    await this.stop();
+    await this.assertEndpointAvailable();
+    this.platform.start();
+    return this.waitForReadiness();
+  }
+
   async stop(timeoutMilliseconds = 60_000) {
     this.platform.stop();
     const deadline = Date.now() + timeoutMilliseconds;
     while (Date.now() < deadline) {
       const host = readJson(this.stateFile);
-      if (!host || !processIsAlive(host.processId)) {
+      const supervisor = readJson(this.supervisorStateFile);
+      const hostAlive = processIsAlive(host?.processId);
+      const childAlive = processIsAlive(supervisor?.childPid);
+      if (!hostAlive && !childAlive) {
         if (host?.state !== "stopped")
           this.writeState("stopped", { exitCode: host?.exitCode ?? null });
         return;
@@ -516,27 +535,45 @@ export class OpportunityService {
         error: String(error.message).split("\n")[0].slice(0, 300),
       };
     }
-    let ready = false;
-    try {
-      const response = await fetch(
-        `http://${configured.ALTA_SERVICE_HOST}:${configured.ALTA_SERVICE_PORT}/health/ready`,
-        { signal: AbortSignal.timeout(1_000) },
-      );
-      ready = response.ok && (await response.json()).ready === true;
-    } catch {
-      ready = false;
-    }
     const platform = this.platform.status();
+    const hostProcessAlive = processIsAlive(host?.processId);
+    let currentSupervisor = supervisor;
+    let childProcessAlive = processIsAlive(currentSupervisor?.childPid);
+    let ready = false;
+    if (platform.code === 0 && hostProcessAlive && childProcessAlive) {
+      try {
+        const origin = `http://${configured.ALTA_SERVICE_HOST}:${configured.ALTA_SERVICE_PORT}`;
+        const liveResponse = await fetch(`${origin}/health/live`, {
+          signal: AbortSignal.timeout(1_000),
+        });
+        const live = await liveResponse.json();
+        const readyResponse = await fetch(`${origin}/health/ready`, {
+          signal: AbortSignal.timeout(1_000),
+        });
+        const readiness = await readyResponse.json();
+        currentSupervisor = readJson(this.supervisorStateFile);
+        childProcessAlive = processIsAlive(currentSupervisor?.childPid);
+        ready = Boolean(
+          liveResponse.ok &&
+            readyResponse.ok &&
+            readiness.ready === true &&
+            childProcessAlive &&
+            live.processId === currentSupervisor?.childPid,
+        );
+      } catch {
+        ready = false;
+      }
+    }
     return {
       installed: this.installed(),
       platformActive: platform.code === 0,
       host: host
         ? { ...host, processAlive: processIsAlive(host.processId) }
         : null,
-      supervisor: supervisor
+      supervisor: currentSupervisor
         ? {
-            ...supervisor,
-            childProcessAlive: processIsAlive(supervisor.childPid),
+            ...currentSupervisor,
+            childProcessAlive,
           }
         : null,
       ready,

@@ -14,13 +14,17 @@ def _bar(
     *,
     volume: Decimal = Decimal("1000000"),
     known_at: datetime | None = None,
+    open_price: Decimal | None = None,
+    session_days_ago: int | None = None,
 ) -> tuple:
-    session = WAKE_AT.date() - timedelta(days=6 - day_offset)
-    open_price = close * Decimal("0.995")
+    session = WAKE_AT.date() - timedelta(
+        days=(6 - day_offset if session_days_ago is None else session_days_ago)
+    )
+    open_price = open_price or close * Decimal("0.995")
     return (
         f"raw_{symbol}_{day_offset}",
         f"{day_offset + 1:064x}"[-64:],
-        known_at or WAKE_AT - timedelta(hours=12 - day_offset),
+        known_at or WAKE_AT - timedelta(minutes=max(1, 60 - day_offset)),
         {
             "semanticTimes": {
                 "eventAt": datetime.combine(
@@ -50,6 +54,7 @@ def _history(
             index,
             Decimal(close),
             volume=Decimal(last_volume if index == len(closes) - 1 else 1_000_000),
+            session_days_ago=len(closes) - index,
         )
         for index, close in enumerate(closes)
     )
@@ -131,3 +136,59 @@ def test_thin_history_is_visible_but_cannot_manufacture_a_seed() -> None:
     assert agenda.posture == "thin_history"
     assert agenda.completed_sessions == 3
     assert agenda.seeds == ()
+
+
+def test_quiet_persistent_drift_gets_volatility_normalized_expectation_work() -> None:
+    universe = ("SPY", "AAPL")
+    rows = (
+        *_history("SPY", tuple(100 for _ in range(21))),
+        *_history(
+            "AAPL",
+            (
+                *tuple(100 for _ in range(16)),
+                101,
+                102,
+                104,
+                106,
+                108,
+            ),
+        ),
+    )
+
+    agenda = build_market_research_agenda(
+        rows=rows, universe=universe, known_at=WAKE_AT
+    )
+    seed = agenda.for_scout("expectation_gap_scout").seeds[0]
+    observation = seed.observations[0]
+
+    assert agenda.version == "alta-market-research-agenda-v2"
+    assert agenda.completed_sessions == 21
+    assert seed.screen_type == "persistent_expectation_drift"
+    assert observation.relative_five_day_surprise is not None
+    assert observation.relative_five_day_surprise >= Decimal("4")
+    assert observation.one_day_surprise is not None
+    assert "accumulating evidence" in seed.research_question
+
+
+def test_price_discovery_is_decomposed_into_overnight_and_intraday_moves() -> None:
+    history = list(_history("AAPL", (100, 100, 100, 100, 100, 110)))
+    latest = _bar(
+        "AAPL",
+        5,
+        Decimal("110"),
+        open_price=Decimal("108"),
+        session_days_ago=1,
+    )
+    history[-1] = latest
+    rows = (
+        *_history("SPY", (100, 100, 100, 100, 100, 100)),
+        *history,
+    )
+
+    agenda = build_market_research_agenda(
+        rows=rows, universe=("SPY", "AAPL"), known_at=WAKE_AT
+    )
+    observation = agenda.for_scout("market_dislocation_scout").seeds[0].observations[0]
+
+    assert observation.overnight_gap_bps == Decimal("800.00")
+    assert observation.intraday_return_bps == Decimal("185.19")

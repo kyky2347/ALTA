@@ -2,6 +2,7 @@ import argparse
 import hashlib
 import json
 import re
+from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -33,10 +34,14 @@ def parser() -> argparse.ArgumentParser:
     value.add_argument("--owner-id", required=True)
     value.add_argument("--symbol")
     value.add_argument("--limit-price", type=Decimal)
+    value.add_argument("--quantity", type=Decimal)
     value.add_argument("--client-order-id")
     value.add_argument("--order-action", choices=("BUY", "SELL"))
     value.add_argument("--expected-position-before", type=Decimal)
     value.add_argument("--timeout-seconds", type=int, default=20)
+    value.add_argument("--max-limit-notional", type=Decimal, default=Decimal("10000"))
+    value.add_argument("--quote-known-at", type=datetime.fromisoformat)
+    value.add_argument("--max-dispatch-quote-age-seconds", type=int, default=10)
     value.add_argument("--authorization-path", type=Path)
     value.add_argument("--authorization-generation", type=int)
     return value
@@ -53,6 +58,8 @@ def main(argv: list[str] | None = None) -> int:
             owner_id=args.owner_id,
             owner_lease_path=args.owner_lease_path.resolve(),
             timeout_seconds=args.timeout_seconds,
+            max_limit_notional=args.max_limit_notional,
+            max_dispatch_quote_age_seconds=args.max_dispatch_quote_age_seconds,
             authorization_path=(
                 args.authorization_path.resolve(strict=True)
                 if args.authorization_path is not None
@@ -70,10 +77,13 @@ def main(argv: list[str] | None = None) -> int:
                     args.symbol is None
                     or args.limit_price is None
                     or args.client_order_id is None
+                    or args.quantity is None
                 ):
                     raise ValueError(
                         "order commands require symbol, limit price, and client identity"
                     )
+                if args.action == "open" and args.quote_known_at is None:
+                    raise ValueError("open requires a fresh quote timestamp")
                 symbol = args.symbol.upper()
                 if args.action == "flatten":
                     result = session.flatten_with_identity(
@@ -88,7 +98,7 @@ def main(argv: list[str] | None = None) -> int:
                     expected_before = (
                         args.expected_position_before
                         if args.action == "reconcile"
-                        else (Decimal(0) if args.action == "open" else Decimal(1))
+                        else (Decimal(0) if args.action == "open" else args.quantity)
                     )
                     if action is None or expected_before is None:
                         raise ValueError(
@@ -100,6 +110,10 @@ def main(argv: list[str] | None = None) -> int:
                         limit_price=args.limit_price,
                         expected_position_before=expected_before,
                         client_order_id=args.client_order_id,
+                        quantity=args.quantity,
+                        quote_known_at=(
+                            args.quote_known_at if args.action == "open" else None
+                        ),
                     )
                     result = (
                         session.reconcile(request)

@@ -83,7 +83,8 @@ function snapshot(accountFingerprint, update = {}) {
     positionCount: 0,
     openOrderCount: 0,
     recentOrderCount: 0,
-    mutationPolicy: "one_share_limit_day",
+    mutationPolicy: "risk_budgeted_limit_day_v1",
+    maxOrderNotional: "10000",
     assets: {
       currency: "USD",
       cashBalance: null,

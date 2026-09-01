@@ -44,11 +44,9 @@ function boundedSetting(value, fallback, minimum, maximum) {
 
 function safeBaseUrl(value, env) {
   const parsed = new URL(value);
-  const loopback = ["127.0.0.1", "::1", "localhost"].includes(parsed.hostname);
-  if (
-    parsed.protocol !== "https:" &&
-    !(loopback && env.ALTA_MASSIVE_ALLOW_INSECURE_HTTP === "1")
-  )
+  const insecureHttpExplicitlyAllowed =
+    parsed.protocol === "http:" && env.ALTA_MASSIVE_ALLOW_INSECURE_HTTP === "1";
+  if (parsed.protocol !== "https:" && !insecureHttpExplicitlyAllowed)
     throw new Error("Credential probe endpoints must use HTTPS");
   if (parsed.username || parsed.password || parsed.search || parsed.hash)
     throw new Error("Credential probe endpoints cannot contain credentials");

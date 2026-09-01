@@ -129,25 +129,39 @@ def evaluate_shadow_fill(
     multiplier = (
         Decimal(1) + slippage if intent.action == "open" else Decimal(1) - slippage
     )
-    fill_price = (reference * multiplier).quantize(
+    modeled_fill_price = (reference * multiplier).quantize(
         MONEY_QUANTUM, rounding=ROUND_HALF_UP
     )
-    if intent.limit_price is not None and (
-        (intent.action == "open" and fill_price > intent.limit_price)
-        or (intent.action == "close" and fill_price < intent.limit_price)
-    ):
-        return ShadowFill(
-            fill_id=fill_id,
-            intent_id=intent.intent_id,
-            position_id=intent.position_id,
-            action=intent.action,
-            binding=intent.binding,
-            status="no_fill",
-            reason_code="guarded_limit_not_market",
-            known_at=quote.known_at,
-            quote=quote,
-            quantity=intent.quantity,
-            fill_model_version=policy.version,
+    fill_price = modeled_fill_price
+    if intent.limit_price is not None:
+        # A marketable limit at the observed touch can fill at the limit or
+        # better. Applying modeled market-order slippage first and then
+        # rejecting it for crossing the limit made an ask-priced BUY (and a
+        # bid-priced SELL) mechanically impossible. Preserve conservative
+        # accounting without inventing a price worse than the frozen limit.
+        touch_is_marketable = (
+            quote.ask <= intent.limit_price
+            if intent.action == "open"
+            else quote.bid >= intent.limit_price
+        )
+        if not touch_is_marketable:
+            return ShadowFill(
+                fill_id=fill_id,
+                intent_id=intent.intent_id,
+                position_id=intent.position_id,
+                action=intent.action,
+                binding=intent.binding,
+                status="no_fill",
+                reason_code="guarded_limit_not_market",
+                known_at=quote.known_at,
+                quote=quote,
+                quantity=intent.quantity,
+                fill_model_version=policy.version,
+            )
+        fill_price = (
+            min(modeled_fill_price, intent.limit_price)
+            if intent.action == "open"
+            else max(modeled_fill_price, intent.limit_price)
         )
     notional = (fill_price * intent.quantity).quantize(
         MONEY_QUANTUM, rounding=ROUND_HALF_UP

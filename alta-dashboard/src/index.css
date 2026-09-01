@@ -3450,6 +3450,13 @@ html[lang="zh-CN"] .status-pill {
   font-weight: 580;
   overflow-wrap: anywhere;
 }
+.capital-policy-detail {
+  display: block;
+  margin-top: 4px;
+  color: #767c77;
+  font-size: 9px;
+  font-weight: 450;
+}
 .paper-boundary-alert {
   margin: 16px 20px 0;
   border-color: #d8dfdb;

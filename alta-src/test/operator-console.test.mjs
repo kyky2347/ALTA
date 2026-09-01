@@ -146,13 +146,11 @@ test("operator console installs an unconfigured runtime during the first start",
       installed = true;
       actions.push("install");
     },
-    platform: {
-      start() {
-        actions.push("start");
-        ready = true;
-      },
+    async start() {
+      actions.push("start");
+      ready = true;
+      actions.push("ready");
     },
-    waitForReadiness: async () => actions.push("ready"),
     status: async () => ({
       installed,
       ready,
@@ -363,7 +361,12 @@ test("operator console enforces real Tiger Paper authorization boundaries", asyn
     posture: enabled ? "paper_enabled" : "paper_ready_disabled",
     accountFingerprint: "0123456789ab",
     configurationFingerprint: "abcdef012345",
-    mutationPolicy: "one_share_limit_day",
+    mutationPolicy: "risk_budgeted_limit_day_v1",
+    riskPolicy: {
+      maxOrderNotional: "10000",
+      maxOpenPositions: "4",
+      maxDispatchQuoteAgeSeconds: "10",
+    },
     instrumentPolicy: "us_stock_only",
     outsideRegularHours: false,
     requiresStoppedRuntime: true,

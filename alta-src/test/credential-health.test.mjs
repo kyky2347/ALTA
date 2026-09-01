@@ -56,6 +56,38 @@ test("credential health classifies provider responses without persisting secrets
   assert.equal(fs.statSync(monitor.file).mode & 0o777, 0o600);
 });
 
+test("credential health probes an explicitly allowed Massive HTTP proxy", async (t) => {
+  const stateDir = fixture(t);
+  const secret = "massive_http_proxy_fixture_1234567890";
+  const monitor = new CredentialHealthMonitor({
+    stateDir,
+    fetchImpl: async (target, options) => {
+      assert.equal(
+        String(target),
+        "http://192.0.2.10:8081/v3/reference/tickers/AAPL",
+      );
+      assert.equal(options.headers["X-Proxy-Key"], secret);
+      assert.equal(options.headers.Authorization, undefined);
+      return new Response(null, { status: 200 });
+    },
+  });
+
+  const health = await monitor.verify({
+    revision: "0123456789abcdef",
+    values: { massive: secret },
+    env: {
+      ALTA_MASSIVE_BASE_URL: "http://192.0.2.10:8081",
+      ALTA_MASSIVE_ALLOW_INSECURE_HTTP: "1",
+      ALTA_MASSIVE_AUTH_MODE: "x_proxy_key",
+    },
+    force: true,
+  });
+
+  assert.equal(health.slots.massive.status, "healthy");
+  assert.equal(health.slots.massive.httpStatus, 200);
+  assert.equal(JSON.stringify(health).includes(secret), false);
+});
+
 test("credential health is revision-bound, cached, and degrades network errors safely", async (t) => {
   const stateDir = fixture(t);
   let calls = 0;

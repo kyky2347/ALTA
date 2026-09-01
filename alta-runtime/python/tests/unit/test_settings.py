@@ -121,6 +121,9 @@ def test_settings_redact_runtime_urls_and_default_to_replay() -> None:
         "tiger_paper_enabled": False,
         "tiger_paper_configured": False,
         "tiger_order_timeout_seconds": 20,
+        "tiger_paper_max_order_notional": "10000",
+        "tiger_paper_max_open_positions": 4,
+        "tiger_paper_max_dispatch_quote_age_seconds": 10,
         "acceptance_hold_seconds": None,
     }
     assert "database-secret" not in repr(settings)

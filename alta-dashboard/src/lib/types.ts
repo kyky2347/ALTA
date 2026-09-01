@@ -170,7 +170,8 @@ export type PaperCapitalSnapshot = {
   positionCount: number;
   openOrderCount: number;
   recentOrderCount: number;
-  mutationPolicy: "one_share_limit_day";
+  mutationPolicy: "risk_budgeted_limit_day_v1";
+  maxOrderNotional: string | null;
   assets: {
     currency?: string;
     cashBalance?: string | null;
@@ -216,7 +217,12 @@ export type PaperCapitalStatus = {
     | "paper_ready_disabled";
   accountFingerprint: string | null;
   configurationFingerprint: string | null;
-  mutationPolicy: "one_share_limit_day";
+  mutationPolicy: "risk_budgeted_limit_day_v1";
+  riskPolicy: {
+    maxOrderNotional: string;
+    maxOpenPositions: string;
+    maxDispatchQuoteAgeSeconds: string;
+  };
   instrumentPolicy: "us_stock_only";
   outsideRegularHours: false;
   requiresStoppedRuntime: true;

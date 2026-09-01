@@ -272,7 +272,7 @@ The scheduler owns the cadence internally; cron or another Agent must not call
 `autonomous --once` repeatedly. Use `./alta service run` only as a portable
 foreground fallback.
 
-The optional one-share Tiger Paper acceptance is documented separately in the
+The optional risk-sized Tiger Paper acceptance is documented separately in the
 [operations runbook](autonomous-shadow.md). It is never enabled by these normal
 service commands and must not receive live credentials.
 

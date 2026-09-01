@@ -317,6 +317,24 @@ class Settings(BaseSettings):
         le=60,
         validation_alias="ALTA_TIGER_ORDER_TIMEOUT_SECONDS",
     )
+    tiger_paper_max_order_notional: Decimal = Field(
+        default=Decimal("10000"),
+        gt=0,
+        le=Decimal("1000000"),
+        validation_alias="ALTA_TIGER_PAPER_MAX_ORDER_NOTIONAL",
+    )
+    tiger_paper_max_open_positions: int = Field(
+        default=4,
+        ge=1,
+        le=8,
+        validation_alias="ALTA_TIGER_PAPER_MAX_OPEN_POSITIONS",
+    )
+    tiger_paper_max_dispatch_quote_age_seconds: int = Field(
+        default=10,
+        ge=1,
+        le=30,
+        validation_alias="ALTA_TIGER_PAPER_MAX_DISPATCH_QUOTE_AGE_SECONDS",
+    )
     tiger_paper_authorization_path: Path | None = Field(
         default=None,
         validation_alias="ALTA_TIGER_PAPER_AUTHORIZATION_PATH",
@@ -404,6 +422,10 @@ class Settings(BaseSettings):
             )
         if not self.tiger_paper_enabled:
             return self
+        if self.tiger_paper_max_order_notional > self.shadow_max_position_notional:
+            raise ValueError(
+                "Tiger Paper max order notional cannot exceed the audited Shadow position limit"
+            )
         if self.environment is not Environment.SHADOW:
             raise ValueError("Tiger Paper mirroring requires ALTA_ENVIRONMENT=shadow")
         if self.tiger_config_path is None or not self.tiger_config_path.is_absolute():
@@ -573,6 +595,11 @@ class Settings(BaseSettings):
                 and self.tiger_paper_account_sha256 is not None
             ),
             "tiger_order_timeout_seconds": self.tiger_order_timeout_seconds,
+            "tiger_paper_max_order_notional": str(self.tiger_paper_max_order_notional),
+            "tiger_paper_max_open_positions": self.tiger_paper_max_open_positions,
+            "tiger_paper_max_dispatch_quote_age_seconds": (
+                self.tiger_paper_max_dispatch_quote_age_seconds
+            ),
             "acceptance_hold_seconds": self.acceptance_hold_seconds,
         }
 

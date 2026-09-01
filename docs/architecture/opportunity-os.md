@@ -6,7 +6,7 @@ that future work must preserve. It is the detailed companion to the concise
 
 > [!IMPORTANT]
 > ALTA is research software. Replay and internal Shadow are the defaults. An
-> explicit acceptance command can mirror one share in one exact Tiger Paper
+> explicit acceptance command can mirror an audited risk-sized position in one exact Tiger Paper
 > account. It is not an investment adviser, live execution system, or claim of
 > profitable Alpha. Live brokerage credentials and real capital are outside the
 > system.
@@ -62,7 +62,7 @@ flowchart TB
   monitor["Position Monitor Agent<br/>append-only pillar review"]
   measure["Deterministic exit, ledger, and benchmark"]
   governance["Rolling Alpha survival governance<br/>current policy · latest closes · drawdown"]
-  paper["Optional isolated Tiger Paper mirror<br/>one share · limit DAY · forced flat"]
+  paper["Optional isolated Tiger Paper mirror<br/>agent-requested risk size · limit DAY · fresh quote"]
   api["Read-only API and SSE"]
 
   scheduler --> sources --> evidence --> wake --> scouts --> ledger --> foundry --> registry
@@ -410,6 +410,15 @@ hard request budget (8 in the verified configuration). SDK retries and automatic
 pagination are disabled so ALTA owns concurrency, pacing, cooldown, and
 observability.
 
+When bounded Massive discovery is explicitly enabled, the non-Evidence market
+funnel uses up to 24 completed sessions. It measures a robust, security-specific
+return surprise, benchmark-relative persistent drift, overnight versus intraday
+price discovery, price/volume and range behavior, and cross-sectional breadth.
+The result only allocates a research question. It cannot become Evidence,
+direction, rank, expression, or capital, and the assigned Mind must independently
+recheck corporate actions, bar integrity, regime change, factor exposure, causal
+mechanism, expectations, and the strongest rival explanation.
+
 A non-Wait expression must pass all of the following:
 
 - the exact instrument exists and has a quote known at decision time;
@@ -428,15 +437,16 @@ events and conservative side-of-spread pricing.
 Tiger is disabled in Replay and by default in Shadow, service, and
 `autonomous --once` operation. An authenticated operator may authorize the
 exact Paper account only while the runtime is stopped; the next service start
-can then mirror one share only after every research and deterministic gate
+can then mirror an audited risk-sized whole-share order only after every research and deterministic gate
 passes. The explicit acceptance command remains available for bounded lifecycle
 testing. The isolated capital process:
 
 - resolves an owner-only, non-symlink config inside an approved root;
 - requires a 17-digit Paper account and an exact SHA-256 account binding;
 - rejects live and sandbox-debug configurations and never enumerates accounts;
-- permits only long stock/ETF, one-share, DAY limit orders outside extended
-  hours, with broker preview and fill/position reconciliation;
+- permits only long stock/ETF, positive whole-share, DAY limit orders outside
+  extended hours, with a ten-second dispatch-quote deadline, broker tradable-
+  quantity admission, preview, and fill/position reconciliation;
 - persists a Paper intent before dispatch, revalidates a monotonic authorization
   generation inside the account-global mutation lease, and commits the broker
   result with the local Paper event and Shadow ledger;
@@ -445,8 +455,8 @@ testing. The isolated capital process:
   `manual_review` and stops mutation;
 - starts with zero positions and zero open orders and re-verifies both in a
   `finally` block;
-- refuses shorts, options, more than one share, or more than USD 2,000 limit
-  notional.
+- refuses shorts, options, non-integral quantities, stale dispatch quotes, or
+  any order above the configured audited notional ceiling.
 
 Research Agents cannot call this executor. There is no HTTP order endpoint and
 no live-account type or fallback.

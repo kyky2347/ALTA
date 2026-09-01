@@ -336,7 +336,18 @@ export function CapitalConsole({
           </div>
           <div>
             <dt>{t("executionPolicy")}</dt>
-            <dd>{t("oneShareLimitDay")}</dd>
+            <dd>
+              {t("riskSizedLimitDay", {
+                notional: formatMoney(capital?.riskPolicy.maxOrderNotional),
+                positions: capital?.riskPolicy.maxOpenPositions ?? "4",
+              })}
+              <span className="capital-policy-detail">
+                {t("dispatchQuoteWindow", {
+                  seconds:
+                    capital?.riskPolicy.maxDispatchQuoteAgeSeconds ?? "10",
+                })}
+              </span>
+            </dd>
           </div>
         </dl>
       </div>

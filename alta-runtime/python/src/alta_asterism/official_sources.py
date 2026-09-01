@@ -195,10 +195,10 @@ class OfficialMassiveRestTransport:
         client: Any,
         *,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
-        lookback_days: int = 7,
+        lookback_days: int = 30,
     ) -> None:
-        if not 1 <= lookback_days <= 30:
-            raise ValueError("Massive lookback_days must be between 1 and 30")
+        if not 1 <= lookback_days <= 60:
+            raise ValueError("Massive lookback_days must be between 1 and 60")
         self.client = client
         self.clock = clock
         self.lookback_days = lookback_days
@@ -332,7 +332,7 @@ class OfficialMassiveRestTransport:
                 to=end.isoformat(),
                 adjusted=True,
                 sort="asc",
-                limit=min(self.lookback_days + 5, 50),
+                limit=min(self.lookback_days + 5, 75),
             )
             for record in records:
                 timestamp = _field(record, "timestamp")

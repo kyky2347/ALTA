@@ -55,14 +55,20 @@ class DurablePaperIntent(BaseModel):
     failure_code: str | None = None
 
     @model_validator(mode="after")
-    def request_is_one_share_and_directionally_bound(self) -> "DurablePaperIntent":
+    def request_is_risk_sized_and_directionally_bound(self) -> "DurablePaperIntent":
+        if (
+            not self.quantity.is_finite()
+            or self.quantity <= 0
+            or self.quantity != self.quantity.to_integral_value()
+        ):
+            raise ValueError("Paper intent quantity must be positive whole shares")
         expected = (
-            ("BUY", Decimal(0)) if self.operation == "open" else ("SELL", Decimal(1))
+            ("BUY", Decimal(0)) if self.operation == "open" else ("SELL", self.quantity)
         )
         if (self.action, self.expected_position_before) != expected:
             raise ValueError("Paper intent operation is not directionally bound")
-        if self.quantity != 1 or self.limit_price <= 0:
-            raise ValueError("Paper intent violates one-share limit policy")
+        if not self.limit_price.is_finite() or self.limit_price <= 0:
+            raise ValueError("Paper intent requires a positive limit price")
         return self
 
 
@@ -102,17 +108,18 @@ class PaperIntentStore:
         expression_id: str,
         operation: Literal["open", "close"],
         symbol: str,
+        quantity: Decimal,
         limit_price: Decimal,
         local_commit: dict[str, object],
     ) -> DurablePaperIntent:
         action = "BUY" if operation == "open" else "SELL"
-        expected_before = Decimal(0) if operation == "open" else Decimal(1)
+        expected_before = Decimal(0) if operation == "open" else quantity
         request = {
             "account_sha256": self.account_sha256,
             "operation": operation,
             "action": action,
             "symbol": symbol,
-            "quantity": "1",
+            "quantity": format(quantity, "f"),
             "limit_price": format(limit_price, "f"),
             "expected_position_before": format(expected_before, "f"),
             "position_id": position_id,
@@ -130,7 +137,7 @@ class PaperIntentStore:
                  client_order_id, cycle_id, position_id, expression_id, operation,
                  action, symbol, quantity, limit_price, expected_position_before,
                  request_hash, state, local_commit)
-                VALUES (%s,'shadow',1,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,1,%s,%s,%s,
+                VALUES (%s,'shadow',1,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
                         'prepared',%s)
                 ON CONFLICT (id) DO NOTHING RETURNING id""",
                 (
@@ -145,6 +152,7 @@ class PaperIntentStore:
                     operation,
                     action,
                     symbol,
+                    quantity,
                     limit_price,
                     expected_before,
                     request_hash,
@@ -170,7 +178,7 @@ class PaperIntentStore:
             operation=operation,
             action=action,
             symbol=symbol,
-            quantity=Decimal(1),
+            quantity=quantity,
             limit_price=limit_price,
             expected_position_before=expected_before,
             request_hash=request_hash,

@@ -312,7 +312,9 @@ class _BrokerPaperSnapshot(BaseModel):
 
     paper: Literal[True]
     account_binding: Literal[True] = Field(alias="accountBinding")
-    mutation_policy: Literal["one_share_limit_day"] = Field(alias="mutationPolicy")
+    mutation_policy: Literal["risk_budgeted_limit_day_v1"] = Field(
+        alias="mutationPolicy"
+    )
     position_count: int = Field(alias="positionCount", ge=0, le=500)
     open_order_count: int = Field(alias="openOrderCount", ge=0, le=500)
     positions: tuple[_BrokerPaperPosition, ...] = Field(default=(), max_length=500)
@@ -329,15 +331,17 @@ class PaperStartupReconciliation(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    posture: Literal["empty", "bound_position"]
-    position_id: str | None = None
-    symbol: str | None = None
+    posture: Literal["empty", "bound_portfolio"]
+    position_ids: tuple[str, ...] = ()
+    symbols: tuple[str, ...] = ()
 
     @model_validator(mode="after")
     def binding_is_complete(self) -> "PaperStartupReconciliation":
-        bound = self.posture == "bound_position"
-        if bound != (self.position_id is not None and self.symbol is not None):
+        bound = self.posture == "bound_portfolio"
+        if bound != bool(self.position_ids and self.symbols):
             raise ValueError("Paper startup binding is incomplete")
+        if len(self.position_ids) != len(self.symbols):
+            raise ValueError("Paper startup binding counts do not match")
         return self
 
 
@@ -353,25 +357,35 @@ def reconcile_paper_startup(
         raise PaperExecutionError("Paper startup snapshot is invalid") from error
     if broker.open_order_count != 0:
         raise PaperExecutionError("Paper startup found an unresolved broker order")
-    if len(durable_positions) > 1:
-        raise PaperExecutionError("Paper startup found multiple durable positions")
+    if len(durable_positions) > 8:
+        raise PaperExecutionError("Paper startup exceeds the durable position limit")
     if not durable_positions and not broker.positions:
         return PaperStartupReconciliation(posture="empty")
-    if len(durable_positions) != 1 or len(broker.positions) != 1:
+    if len(durable_positions) != len(broker.positions):
         raise PaperExecutionError("Paper startup found an orphan position")
-
-    durable = durable_positions[0]
-    observed = broker.positions[0]
-    if durable.quantity != Decimal(1):
-        raise PaperExecutionError("Paper durable position is outside one-share policy")
-    if observed.security_type.upper() != "STK" or observed.quantity != Decimal(1):
-        raise PaperExecutionError("Paper broker position is outside one-share policy")
-    if observed.symbol != durable.symbol:
-        raise PaperExecutionError("Paper broker position does not match durable state")
+    durable_by_symbol = {item.symbol: item for item in durable_positions}
+    broker_by_symbol = {item.symbol: item for item in broker.positions}
+    if (
+        len(durable_by_symbol) != len(durable_positions)
+        or len(broker_by_symbol) != len(broker.positions)
+        or set(durable_by_symbol) != set(broker_by_symbol)
+    ):
+        raise PaperExecutionError("Paper broker portfolio does not match durable state")
+    for symbol, durable in durable_by_symbol.items():
+        observed = broker_by_symbol[symbol]
+        if (
+            durable.quantity != durable.quantity.to_integral_value()
+            or observed.security_type.upper() != "STK"
+            or observed.quantity != durable.quantity
+        ):
+            raise PaperExecutionError(
+                "Paper broker quantity does not match durable state"
+            )
+    ordered = sorted(durable_positions, key=lambda item: item.symbol)
     return PaperStartupReconciliation(
-        posture="bound_position",
-        position_id=durable.position_id,
-        symbol=durable.symbol,
+        posture="bound_portfolio",
+        position_ids=tuple(item.position_id for item in ordered),
+        symbols=tuple(item.symbol for item in ordered),
     )
 
 
@@ -385,6 +399,8 @@ class TigerPaperExecutor:
         config_path: Path,
         account_sha256: str,
         timeout_seconds: int,
+        max_limit_notional: Decimal = Decimal("10000"),
+        max_dispatch_quote_age_seconds: int = 10,
         authorization_path: Path | None = None,
         authorization_generation: int | None = None,
         owner_lease_path: Path | None = None,
@@ -398,6 +414,18 @@ class TigerPaperExecutor:
         self.config_path = config_path
         self.account_sha256 = account_sha256
         self.timeout_seconds = timeout_seconds
+        if (
+            not max_limit_notional.is_finite()
+            or max_limit_notional <= 0
+            or max_limit_notional > Decimal("1000000")
+        ):
+            raise PaperExecutionError("Paper max order notional is invalid")
+        self.max_limit_notional = max_limit_notional
+        if not 1 <= max_dispatch_quote_age_seconds <= 30:
+            raise PaperExecutionError(
+                "Paper dispatch quote age must be between 1 and 30 seconds"
+            )
+        self.max_dispatch_quote_age_seconds = max_dispatch_quote_age_seconds
         self.uv = uv
         expected_owner = _global_paper_lease_path(account_sha256)
         self.lease_path = owner_lease_path or expected_owner
@@ -488,6 +516,8 @@ class TigerPaperExecutor:
         cycle_id: str,
         *,
         client_order_id: str,
+        quantity: Decimal,
+        quote_known_at: datetime,
         limit_offset_bps: Decimal = ENTRY_LIMIT_OFFSET_BPS,
         absolute_limit_price: Decimal | None = None,
     ) -> PaperExecutionResult:
@@ -503,6 +533,8 @@ class TigerPaperExecutor:
                 symbol=symbol,
                 limit_price=limit_price,
                 client_order_id=client_order_id,
+                quantity=quantity,
+                quote_known_at=quote_known_at,
             )
         )
 
@@ -513,6 +545,7 @@ class TigerPaperExecutor:
         cycle_id: str,
         *,
         client_order_id: str,
+        quantity: Decimal,
         limit_offset_bps: Decimal = EXIT_LIMIT_OFFSET_BPS,
     ) -> PaperExecutionResult:
         limit_price = self.close_limit_price(bid, limit_offset_bps=limit_offset_bps)
@@ -523,6 +556,7 @@ class TigerPaperExecutor:
                 symbol=symbol,
                 limit_price=limit_price,
                 client_order_id=client_order_id,
+                quantity=quantity,
             )
         )
 
@@ -533,6 +567,7 @@ class TigerPaperExecutor:
         cycle_id: str,
         *,
         client_order_id: str,
+        quantity: Decimal,
     ) -> PaperExecutionResult:
         limit_price = (bid * Decimal("0.97")).quantize(
             Decimal("0.01"), rounding=ROUND_DOWN
@@ -544,6 +579,7 @@ class TigerPaperExecutor:
                 symbol=symbol,
                 limit_price=limit_price,
                 client_order_id=client_order_id,
+                quantity=quantity,
             )
         )
 
@@ -557,6 +593,7 @@ class TigerPaperExecutor:
                 client_order_id=intent.client_order_id,
                 order_action=intent.action,
                 expected_position_before=intent.expected_position_before,
+                quantity=intent.quantity,
             )
         )
 
@@ -601,6 +638,8 @@ class TigerPaperExecutor:
         client_order_id: str | None = None,
         order_action: str | None = None,
         expected_position_before: Decimal | None = None,
+        quantity: Decimal | None = None,
+        quote_known_at: datetime | None = None,
     ) -> dict:
         command = self._command(
             action,
@@ -610,6 +649,8 @@ class TigerPaperExecutor:
             client_order_id=client_order_id,
             order_action=order_action,
             expected_position_before=expected_position_before,
+            quantity=quantity,
+            quote_known_at=quote_known_at,
         )
         completed = subprocess.run(
             command,
@@ -632,6 +673,8 @@ class TigerPaperExecutor:
         client_order_id: str | None,
         order_action: str | None,
         expected_position_before: Decimal | None,
+        quantity: Decimal | None,
+        quote_known_at: datetime | None,
     ) -> list[str]:
         command = [
             self.uv,
@@ -653,6 +696,10 @@ class TigerPaperExecutor:
             owner_id,
             "--timeout-seconds",
             str(self.timeout_seconds),
+            "--max-limit-notional",
+            format(self.max_limit_notional, "f"),
+            "--max-dispatch-quote-age-seconds",
+            str(self.max_dispatch_quote_age_seconds),
         ]
         if symbol is not None and limit_price is not None:
             command.extend(
@@ -660,6 +707,10 @@ class TigerPaperExecutor:
             )
         if client_order_id is not None:
             command.extend(["--client-order-id", client_order_id])
+        if quantity is not None:
+            command.extend(["--quantity", format(quantity, "f")])
+        if quote_known_at is not None:
+            command.extend(["--quote-known-at", quote_known_at.isoformat()])
         if order_action is not None:
             command.extend(["--order-action", order_action])
         if expected_position_before is not None:

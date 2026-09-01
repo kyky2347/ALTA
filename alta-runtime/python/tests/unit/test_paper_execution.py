@@ -1,4 +1,5 @@
 import json
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
@@ -25,9 +26,9 @@ def test_executor_uses_frozen_isolated_process_and_secret_allowlist(
             "status": "filled",
             "action": "BUY",
             "symbol": "SPY",
-            "quantity": "1",
+            "quantity": "12",
             "position_before": "0",
-            "position_after": "1",
+            "position_after": "12",
             "average_fill_price": "100.50",
             "broker_order_hash": "a" * 64,
         }
@@ -58,9 +59,11 @@ def test_executor_uses_frozen_isolated_process_and_secret_allowlist(
         "paper-cycle",
         limit_offset_bps=Decimal("10"),
         client_order_id="alta-" + "1" * 32,
+        quantity=Decimal("12"),
+        quote_known_at=datetime(2026, 9, 1, 14, 30, tzinfo=UTC),
     )
 
-    assert (result.status, result.position_after) == ("filled", "1")
+    assert (result.status, result.position_after) == ("filled", "12")
     assert captured["command"][0:3] == ["/uv", "run", "--frozen"]
     assert captured["command"][captured["command"].index("--symbol") :] == [
         "--symbol",
@@ -69,6 +72,10 @@ def test_executor_uses_frozen_isolated_process_and_secret_allowlist(
         "100.10",
         "--client-order-id",
         "alta-" + "1" * 32,
+        "--quantity",
+        "12",
+        "--quote-known-at",
+        "2026-09-01T14:30:00+00:00",
         "--authorization-path",
         str(tmp_path / "paper-authorization.json"),
         "--authorization-generation",
@@ -156,6 +163,8 @@ def test_executor_uses_the_frozen_absolute_limit_instead_of_repricing(
         limit_offset_bps=Decimal("25"),
         absolute_limit_price=Decimal("100.07"),
         client_order_id="alta-" + "2" * 32,
+        quantity=Decimal("12"),
+        quote_known_at=datetime(2026, 9, 1, 14, 30, tzinfo=UTC),
     )
 
     limit_index = captured["command"].index("--limit-price")
@@ -172,7 +181,7 @@ def test_paper_snapshot_uses_the_isolated_read_only_command(
         result = {
             "paper": True,
             "accountBinding": True,
-            "mutationPolicy": "one_share_limit_day",
+            "mutationPolicy": "risk_budgeted_limit_day_v1",
             "positionCount": 0,
             "openOrderCount": 0,
             "positions": [],
@@ -202,7 +211,7 @@ def test_paper_restart_requires_exact_durable_broker_binding() -> None:
         DurablePaperPosition(
             position_id="position_restart",
             symbol="SPY",
-            quantity=Decimal(1),
+            quantity=Decimal(12),
             expression_kind="etf",
             paper_entry_proven=True,
         ),
@@ -210,16 +219,16 @@ def test_paper_restart_requires_exact_durable_broker_binding() -> None:
     snapshot = {
         "paper": True,
         "accountBinding": True,
-        "mutationPolicy": "one_share_limit_day",
+        "mutationPolicy": "risk_budgeted_limit_day_v1",
         "positionCount": 1,
         "openOrderCount": 0,
-        "positions": [{"symbol": "SPY", "securityType": "STK", "quantity": "1"}],
+        "positions": [{"symbol": "SPY", "securityType": "STK", "quantity": "12"}],
     }
 
     result = reconcile_paper_startup(snapshot, durable)
 
-    assert result.posture == "bound_position"
-    assert result.position_id == "position_restart"
+    assert result.posture == "bound_portfolio"
+    assert result.position_ids == ("position_restart",)
 
 
 @pytest.mark.parametrize(
@@ -229,7 +238,7 @@ def test_paper_restart_requires_exact_durable_broker_binding() -> None:
             {
                 "paper": True,
                 "accountBinding": True,
-                "mutationPolicy": "one_share_limit_day",
+                "mutationPolicy": "risk_budgeted_limit_day_v1",
                 "positionCount": 1,
                 "openOrderCount": 0,
                 "positions": [
@@ -242,7 +251,7 @@ def test_paper_restart_requires_exact_durable_broker_binding() -> None:
             {
                 "paper": True,
                 "accountBinding": True,
-                "mutationPolicy": "one_share_limit_day",
+                "mutationPolicy": "risk_budgeted_limit_day_v1",
                 "positionCount": 1,
                 "openOrderCount": 1,
                 "positions": [
@@ -263,7 +272,7 @@ def test_paper_restart_requires_exact_durable_broker_binding() -> None:
             {
                 "paper": True,
                 "accountBinding": True,
-                "mutationPolicy": "one_share_limit_day",
+                "mutationPolicy": "risk_budgeted_limit_day_v1",
                 "positionCount": 1,
                 "openOrderCount": 0,
                 "positions": [

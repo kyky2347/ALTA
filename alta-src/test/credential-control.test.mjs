@@ -143,8 +143,7 @@ test("credential command restores the old file when service reload fails", async
   let readinessCalls = 0;
   const service = {
     status: async () => ({ installed: true, platformActive: true }),
-    platform: { restart() {} },
-    waitForReadiness: async () => {
+    restart: async () => {
       readinessCalls += 1;
       if (readinessCalls === 1) throw new Error("fixture reload failure");
     },

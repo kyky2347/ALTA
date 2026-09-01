@@ -200,6 +200,10 @@ class LiveRuntime:
                 config_path=settings.tiger_config_path,
                 account_sha256=(settings.tiger_paper_account_sha256.get_secret_value()),
                 timeout_seconds=settings.tiger_order_timeout_seconds,
+                max_limit_notional=settings.tiger_paper_max_order_notional,
+                max_dispatch_quote_age_seconds=(
+                    settings.tiger_paper_max_dispatch_quote_age_seconds
+                ),
                 authorization_path=settings.tiger_paper_authorization_path,
                 authorization_generation=settings.tiger_paper_authorization_generation,
                 owner_lease_path=settings.tiger_paper_owner_lease_path,
@@ -212,7 +216,9 @@ class LiveRuntime:
             market_data,
             audit_runner=audit_runner,
             position_runner=position_runner,
-            max_open_positions=1 if paper_executor else 8,
+            max_open_positions=(
+                settings.tiger_paper_max_open_positions if paper_executor else 8
+            ),
             paper_executor=paper_executor,
             acceptance_hold_seconds=settings.acceptance_hold_seconds,
             portfolio_policy=portfolio_policy,
@@ -229,9 +235,11 @@ class LiveRuntime:
                           AND paper_event.payload->>'status' = 'filled'
                           AND paper_event.payload->>'action' = 'BUY'
                           AND paper_event.payload->>'symbol' = position.symbol
-                          AND paper_event.payload->>'quantity' = '1'
+                          AND (paper_event.payload->>'quantity')::numeric
+                              = position.quantity
                           AND paper_event.payload->>'position_before' = '0'
-                          AND paper_event.payload->>'position_after' = '1'
+                          AND (paper_event.payload->>'position_after')::numeric
+                              = position.quantity
                           AND paper_event.payload->>'broker_order_hash'
                               ~ '^[a-f0-9]{64}$'
                         FROM ops.event paper_event

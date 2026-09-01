@@ -65,7 +65,9 @@ const en = {
   accountBinding: "Account binding",
   configurationBinding: "Configuration binding",
   executionPolicy: "Execution policy",
-  oneShareLimitDay: "1-share limit · DAY",
+  riskSizedLimitDay:
+    "Agent-sized · DAY limit · up to {notional} · {positions} positions",
+  dispatchQuoteWindow: "Fresh quote required within {seconds}s",
   usStocksOnly: "US stocks only",
   regularHoursOnly: "Regular hours only",
   brokerSnapshot: "Broker snapshot",
@@ -101,7 +103,7 @@ const en = {
   result: "Result",
   confirmPaperAuthorization: "Authorize Tiger Paper execution?",
   confirmPaperAuthorizationDetail:
-    "ALTA will perform a fresh broker verification and authorize only an exact 17-digit Paper account with no positions or open orders. Autonomous execution remains bounded to one-share US-stock DAY limit orders during regular hours.",
+    "ALTA will perform a fresh broker verification and authorize only an exact 17-digit Paper account with no positions or open orders. Agents propose the opportunity and risk size; portfolio, liquidity, broker-capacity, preview, and notional gates retain final authority over whole-share DAY limit orders during regular hours.",
   confirmPaperPhrase: "Type TIGER PAPER to continue",
   confirmPaperPlaceholder: "TIGER PAPER",
   confirmEnable: "Verify and authorize",
@@ -671,7 +673,9 @@ const zhCN: Record<MessageKey, string> = {
   accountBinding: "账户绑定",
   configurationBinding: "配置绑定",
   executionPolicy: "执行策略",
-  oneShareLimitDay: "1 股限价单 · 当日有效",
+  riskSizedLimitDay:
+    "Agent 自主定仓 · 当日限价 · 单笔不超过 {notional} · 最多 {positions} 个持仓",
+  dispatchQuoteWindow: "提交报价必须在 {seconds} 秒内保持新鲜",
   usStocksOnly: "仅限美股",
   regularHoursOnly: "仅限正常交易时段",
   brokerSnapshot: "券商快照",
@@ -707,7 +711,7 @@ const zhCN: Record<MessageKey, string> = {
   result: "结果",
   confirmPaperAuthorization: "授权 Tiger 模拟盘执行？",
   confirmPaperAuthorizationDetail:
-    "ALTA 会重新验证券商，并且只会授权一个准确绑定的 17 位模拟盘空账户，且不得存在挂单。自主执行仍被限制为正常交易时段内、单股、1 股、DAY 限价单。",
+    "ALTA 会重新验证券商，并且只会授权一个准确绑定的 17 位模拟盘空账户，且不得存在挂单。Agent 提议机会与风险规模；组合、流动性、券商可交易数量、订单预览和名义金额边界对正常交易时段内的整股 DAY 限价单保留最终裁决权。",
   confirmPaperPhrase: "输入 TIGER PAPER 以继续",
   confirmPaperPlaceholder: "TIGER PAPER",
   confirmEnable: "验证并授权",

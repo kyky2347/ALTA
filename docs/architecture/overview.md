@@ -12,7 +12,7 @@ flowchart TB
   scheduler["[Code] Single-owner scheduler<br/>heartbeat · clean runtime rebuild"]
   sources["[Code] Finlight, Massive,<br/>and bounded public sources"]
   evidence["[Code] Append-only Raw + Evidence<br/>point-in-time frozen wake"]
-  marketfunnel["[Code] Completed-bar research funnel<br/>relative · volume · range · breadth"]
+  marketfunnel["[Code] Completed-bar research funnel<br/>robust surprise · persistent drift · gap split · breadth"]
   attention["[Code] Research Attention Portfolio<br/>one continuation · broader entity coverage"]
   mandate["[Code] Frozen portfolio research mandate<br/>stress · factor · Alpha-source · catalyst · underlying concentration"]
   scouts["[Agents] Four active Trader Minds<br/>Web · news · social · finance research"]
@@ -120,7 +120,7 @@ sequenceDiagram
   G->>G: Refresh selected quote, rerun construction/allocation, and freeze execution
   G-->>O: Durable Wait or Shadow-open event
   opt Explicit Tiger Paper acceptance
-    G->>C: One-share limit intent after every gate passes
+    G->>C: Risk-sized limit intent after every gate and fresh quote pass
     C-->>G: Paper fill and exact-position reconciliation
   end
   G->>P: Frozen selected pillars plus newer frozen Evidence
@@ -157,7 +157,7 @@ the outcome to a durable `Wait` or an idle cycle.
 | Execution    | Frozen arrival benchmark, absolute limit, shortfall budget, participation cap, timeout cancellation, one attempt, no automatic repricing, and append-only round-trip TCA                                                                                                                             |
 | Underwriting | Evidence-bound ex-ante estimates, disagreement reserve, and the entry-frozen cost-adjusted forecast stay distinct from realized Alpha; only 30+ comparable closes may create a downside-only forecast reserve                                                                                        |
 | Feedback     | Entry-frozen Mind/archetype/route/mode credit; strict PIT cutoff; 30-Mind/10-slice maturity; no auto-policy                                                                                                                                                                                          |
-| Capital      | Shadow by default; optional exact-account, one-share Paper acceptance; no live mode                                                                                                                                                                                                                  |
+| Capital      | Shadow by default; optional exact-account risk-sized Paper acceptance with fresh-quote, broker-capacity, preview, and durable-recovery gates; no live mode                                                                                                                                           |
 | Operations   | Boot-managed host, loopback API, one owner, split Scout/judgment deadlines, two watchdogs, capped backoff, clean stop                                                                                                                                                                                |
 | Evaluation   | Immutable configuration, Run attribution, cohort projection, latest-measurement deduplication, explicitly small-sample Alpha statistics, observed MFE/MAE/drawdown/exit capture, per-carrier execution-cost calibration, negative-evidence-only capital throttling, and visible calibration maturity |
 

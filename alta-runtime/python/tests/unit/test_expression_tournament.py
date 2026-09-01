@@ -21,6 +21,9 @@ def hypothesis(identifier: str, kind: str = "stock") -> ExpressionHypothesis:
         thesis_purity=0.8,
         timing_fit=0.7,
         primary_tradeoff="Direct exposure retains market beta.",
+        requested_position_nav_bps=(None if kind == "wait" else Decimal("150")),
+        requested_trade_loss_nav_bps=(None if kind == "wait" else Decimal("40")),
+        sizing_rationale="Risk size reflects the defined invalidation and liquidity.",
     )
 
 

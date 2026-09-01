@@ -11,7 +11,7 @@ opportunities under point-in-time evidence constraints.
 - replayable Shadow positions and cost-aware performance measurement;
 - bounded, read-only public information and market-data adapters;
 - a local authenticated observability and control dashboard;
-- an operator-authorized, one-share Tiger Paper engineering mirror with
+- an operator-authorized, risk-sized Tiger Paper engineering mirror with
   explicit account/configuration binding and fail-closed startup.
 
 ## Explicitly out of scope
@@ -26,8 +26,9 @@ The default capital mode is disabled. Tiger integration is limited to an
 isolated Paper-only executor reached only after local operator authorization.
 The stopped runtime must first prove the exact 17-digit Paper account, matching
 configuration, an empty position book, and zero open orders. Once authorized,
-the autonomous service can mirror only an already-audited stock expression
-through the one-share DAY-limit regular-hours boundary; Agents never receive a
+the autonomous service can mirror only already-audited stock expressions
+through the agent-requested, deterministically bounded whole-share DAY-limit
+regular-hours boundary; Agents never receive a
 broker tool or credential. The console exposes sanitized holdings and order
 state but no manual order entry. Do not connect live brokerage credentials or
 use ALTA as an OMS. A successful Paper entry/exit is engineering evidence, not

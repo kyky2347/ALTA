@@ -373,7 +373,12 @@ export function createOperatorConsole({
         posture: "not_configured",
         accountFingerprint: null,
         configurationFingerprint: null,
-        mutationPolicy: "one_share_limit_day",
+        mutationPolicy: "risk_budgeted_limit_day_v1",
+        riskPolicy: {
+          maxOrderNotional: "10000",
+          maxOpenPositions: "4",
+          maxDispatchQuoteAgeSeconds: "10",
+        },
         instrumentPolicy: "us_stock_only",
         outsideRegularHours: false,
         requiresStoppedRuntime: true,
@@ -448,9 +453,8 @@ export function createOperatorConsole({
           service.install({ start: false });
         }
         writeOperation({ ...operation, phase: "starting_service" });
-        service.platform.start();
         writeOperation({ ...operation, phase: "waiting_for_readiness" });
-        await service.waitForReadiness();
+        await service.start();
       } else if (action === "stop") {
         writeOperation({ ...operation, phase: "stopping_service" });
         await service.stop();
@@ -460,9 +464,8 @@ export function createOperatorConsole({
       } else if (action === "restart") {
         if (!service.installed())
           throw new Error("Install the ALTA service before restarting it");
-        service.platform.restart();
         writeOperation({ ...operation, phase: "waiting_for_readiness" });
-        await service.waitForReadiness();
+        await service.restart();
       } else {
         throw new Error(`Unknown runtime action ${action}`);
       }

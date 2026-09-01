@@ -159,7 +159,11 @@ def build_execution_plan(
         order_style="guarded_limit",
         time_in_force="DAY",
         research_quantity=target_quantity,
-        acceptance_quantity=Decimal(1) if paper_mirror else target_quantity,
+        # Paper mirrors now exercise the same audited portfolio size as the
+        # research ledger. The isolated broker boundary still has the final
+        # say: it admits whole shares only, enforces the per-order notional
+        # ceiling, asks Tiger for tradable quantity, and previews every order.
+        acceptance_quantity=target_quantity,
         entry_limit_offset_bps=entry_offset,
         exit_limit_offset_bps=Decimal(25),
         estimated_participation_bps=participation,

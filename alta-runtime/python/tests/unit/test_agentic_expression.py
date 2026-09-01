@@ -183,6 +183,9 @@ def test_expression_must_name_the_frozen_causal_pillar_it_monetizes() -> None:
                 thesis_purity=0.8,
                 timing_fit=0.8,
                 primary_tradeoff="Retains market beta.",
+                requested_position_nav_bps=Decimal("150"),
+                requested_trade_loss_nav_bps=Decimal("40"),
+                sizing_rationale="Size follows the causal evidence and invalidation.",
             ),
         ),
     )

@@ -34,7 +34,7 @@ def paper_database() -> str:
 
 @pytest.mark.parametrize(
     "operation,expected_before",
-    [("open", Decimal(0)), ("close", Decimal(1))],
+    [("open", Decimal(0)), ("close", Decimal(12))],
 )
 def test_prepared_intent_restart_is_abandoned_without_dispatch(
     paper_database: str, operation: str, expected_before: Decimal
@@ -48,6 +48,7 @@ def test_prepared_intent_restart_is_abandoned_without_dispatch(
         expression_id=f"expression_{operation}",
         operation=operation,
         symbol="SPY",
+        quantity=Decimal(12),
         limit_price=Decimal("500"),
         local_commit={"kill_point": "after_prepare"},
     )
@@ -63,8 +64,8 @@ def test_prepared_intent_restart_is_abandoned_without_dispatch(
 @pytest.mark.parametrize(
     "operation,status,action,position_before,position_after",
     [
-        ("open", "filled", "BUY", "0", "1"),
-        ("close", "already_flat", "SELL", "1", "0"),
+        ("open", "filled", "BUY", "0", "12"),
+        ("close", "already_flat", "SELL", "12", "0"),
     ],
 )
 def test_broker_first_restart_reaches_one_atomic_local_commit_state(
@@ -84,6 +85,7 @@ def test_broker_first_restart_reaches_one_atomic_local_commit_state(
         expression_id=f"expression_{operation}",
         operation=operation,
         symbol="SPY",
+        quantity=Decimal(12),
         limit_price=Decimal("500"),
         local_commit={"kill_point": "after_broker"},
     )
@@ -95,7 +97,7 @@ def test_broker_first_restart_reaches_one_atomic_local_commit_state(
         status=status,
         action=action,
         symbol="SPY",
-        quantity="1" if status == "filled" else "0",
+        quantity="12" if status == "filled" else "0",
         position_before=position_before,
         position_after=position_after,
         average_fill_price="500" if status == "filled" else None,

@@ -93,12 +93,10 @@ export async function opportunityServiceCommand(
   if (options.length)
     throw new Error(`service ${action} does not accept arguments`);
   if (action === "start") {
-    service.platform.start();
-    return printStatus(await service.waitForReadiness());
+    return printStatus(await service.start());
   } else if (action === "stop") await service.stop();
   else if (action === "restart") {
-    service.platform.restart();
-    return printStatus(await service.waitForReadiness());
+    return printStatus(await service.restart());
   } else if (action === "uninstall") {
     await service.stop();
     service.platform.uninstall();

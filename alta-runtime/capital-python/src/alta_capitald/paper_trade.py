@@ -19,6 +19,8 @@ PAPER_ACCOUNT_PATTERN = re.compile(r"^\d{17}$")
 SYMBOL_PATTERN = re.compile(r"^[A-Z][A-Z0-9.-]{0,14}$")
 CLIENT_ORDER_ID_PATTERN = re.compile(r"^alta-[a-f0-9]{32}$")
 TERMINAL_ORDER_STATES = {"CANCELLED", "EXPIRED", "FILLED", "REJECTED"}
+MUTATION_POLICY = "risk_budgeted_limit_day_v1"
+MAX_WHOLE_SHARES = Decimal("1000000")
 
 
 def _decimal(value: object) -> Decimal:
@@ -133,7 +135,8 @@ class PaperTradeConfig:
     owner_id: str
     owner_lease_path: Path
     timeout_seconds: int = 20
-    max_limit_notional: Decimal = Decimal("2000")
+    max_limit_notional: Decimal = Decimal("10000")
+    max_dispatch_quote_age_seconds: int = 10
     authorization_path: Path | None = None
     authorization_generation: int | None = None
 
@@ -156,8 +159,16 @@ class PaperTradeConfig:
             raise PaperBoundaryError("Paper owner lease path must be absolute")
         if not 5 <= self.timeout_seconds <= 60:
             raise PaperBoundaryError("Paper order timeout must be between 5 and 60")
-        if self.max_limit_notional <= 0 or self.max_limit_notional > 10_000:
+        if (
+            not self.max_limit_notional.is_finite()
+            or self.max_limit_notional <= 0
+            or self.max_limit_notional > 1_000_000
+        ):
             raise PaperBoundaryError("Paper order notional guard is invalid")
+        if not 1 <= self.max_dispatch_quote_age_seconds <= 30:
+            raise PaperBoundaryError(
+                "Paper dispatch quote age must be between 1 and 30 seconds"
+            )
         if (self.authorization_path is None) != (self.authorization_generation is None):
             raise PaperBoundaryError("Paper authorization binding is incomplete")
         if self.authorization_path is not None:
@@ -177,7 +188,8 @@ class PaperOrderRequest:
     limit_price: Decimal
     expected_position_before: Decimal
     client_order_id: str
-    quantity: Decimal = Decimal("1")
+    quantity: Decimal
+    quote_known_at: datetime | None = None
 
     def __post_init__(self) -> None:
         if self.action not in ("BUY", "SELL"):
@@ -186,15 +198,32 @@ class PaperOrderRequest:
             raise PaperBoundaryError("Paper client order identity is invalid")
         if SYMBOL_PATTERN.fullmatch(self.symbol) is None:
             raise PaperBoundaryError("Paper symbol is invalid")
-        if self.quantity != 1:
-            raise PaperBoundaryError("Paper acceptance orders are limited to one share")
+        if (
+            not self.quantity.is_finite()
+            or self.quantity <= 0
+            or self.quantity != self.quantity.to_integral_value()
+            or self.quantity > MAX_WHOLE_SHARES
+        ):
+            raise PaperBoundaryError(
+                "Paper orders require a bounded positive whole-share quantity"
+            )
         if not self.limit_price.is_finite() or self.limit_price <= 0:
             raise PaperBoundaryError("Paper limit price is invalid")
         if (
             self.expected_position_before < 0
             or not self.expected_position_before.is_finite()
+            or self.expected_position_before
+            != self.expected_position_before.to_integral_value()
         ):
             raise PaperBoundaryError("Paper expected position is invalid")
+        expected_before = Decimal(0) if self.action == "BUY" else self.quantity
+        if self.expected_position_before != expected_before:
+            raise PaperBoundaryError("Paper request is not directionally bound")
+        if self.quote_known_at is not None and (
+            self.quote_known_at.tzinfo is None
+            or self.quote_known_at.utcoffset() is None
+        ):
+            raise PaperBoundaryError("Paper quote timestamp must be timezone-aware")
 
 
 @dataclass(frozen=True)
@@ -210,7 +239,7 @@ class PaperOrderResult:
 
 
 class TigerPaperSession:
-    """Executes one-share, limit-only orders against one exact Paper account."""
+    """Executes risk-sized, limit-only orders against one exact Paper account."""
 
     def __init__(self, config: PaperTradeConfig) -> None:
         self.config = config
@@ -282,7 +311,8 @@ class TigerPaperSession:
             "accountBinding": True,
             "positionCount": len(positions),
             "openOrderCount": len(open_orders),
-            "mutationPolicy": "one_share_limit_day",
+            "mutationPolicy": MUTATION_POLICY,
+            "maxOrderNotional": format(self.config.max_limit_notional, "f"),
         }
 
     def snapshot(self) -> dict[str, object]:
@@ -336,7 +366,8 @@ class TigerPaperSession:
             "positionCount": len(positions),
             "openOrderCount": len(open_orders),
             "recentOrderCount": len(recent_orders),
-            "mutationPolicy": "one_share_limit_day",
+            "mutationPolicy": MUTATION_POLICY,
+            "maxOrderNotional": format(self.config.max_limit_notional, "f"),
             "assets": asset_summary,
             "positions": [_position_summary(item) for item in positions],
             "orders": [_order_summary(item) for item in recent_orders],
@@ -362,7 +393,12 @@ class TigerPaperSession:
         client, account = self._ready()
         self.lease.assert_owned()
         self._assert_mutation_authorized(request.action)
-        if request.limit_price * request.quantity > self.config.max_limit_notional:
+        if request.action == "BUY":
+            self._assert_fresh_open_quote(request)
+        if (
+            request.action == "BUY"
+            and request.limit_price * request.quantity > self.config.max_limit_notional
+        ):
             raise PaperBoundaryError("Paper order exceeds the notional guard")
         existing = self.reconcile(request)
         if existing is not None:
@@ -374,7 +410,9 @@ class TigerPaperSession:
         before = self.position(request.symbol)
         if before != request.expected_position_before:
             raise PaperBoundaryError("Paper position changed before order admission")
-        expected_after = before + (1 if request.action == "BUY" else -1)
+        expected_after = before + (
+            request.quantity if request.action == "BUY" else -request.quantity
+        )
         if expected_after < 0:
             raise PaperBoundaryError("Paper sell would create a short position")
         contract = stock_contract(symbol=request.symbol, currency="USD")
@@ -388,13 +426,29 @@ class TigerPaperSession:
         )
         order.outside_rth = False
         order.user_mark = request.client_order_id
+        capacity = client.get_estimate_tradable_quantity(order)
+        capacity_field = (
+            "tradable_quantity"
+            if request.action == "BUY"
+            else "tradable_position_quantity"
+        )
+        capacity_value = getattr(capacity, capacity_field, None)
+        if capacity_value is None:
+            raise PaperBoundaryError("Paper tradable quantity is unavailable")
+        if _decimal(capacity_value) < request.quantity:
+            raise PaperBoundaryError("Paper order exceeds broker tradable quantity")
         preview = client.preview_order(order)
+        preview_passed = (
+            preview.get("is_pass")
+            if isinstance(preview, dict)
+            else getattr(preview, "is_pass", None)
+        )
         warning = (
             preview.get("warning_text")
             if isinstance(preview, dict)
             else getattr(preview, "warning_text", None)
         )
-        if warning:
+        if preview_passed is not True or warning:
             raise PaperBoundaryError("Paper order preview rejected the request")
         order_id = client.place_order(order)
         if order_id is None:
@@ -486,6 +540,16 @@ class TigerPaperSession:
             broker_order_hash=broker_hash,
         )
 
+    def _assert_fresh_open_quote(self, request: PaperOrderRequest) -> None:
+        known_at = request.quote_known_at
+        if known_at is None:
+            raise PaperBoundaryError("Paper open requires a dispatch quote timestamp")
+        age_seconds = (datetime.now(tz=UTC) - known_at).total_seconds()
+        if age_seconds < -1:
+            raise PaperBoundaryError("Paper dispatch quote timestamp is in the future")
+        if age_seconds > self.config.max_dispatch_quote_age_seconds:
+            raise PaperBoundaryError("Paper dispatch quote expired before submission")
+
     def flatten(self, symbol: str, limit_price: Decimal) -> PaperOrderResult:
         raise PaperBoundaryError("flatten requires a stable client order identity")
 
@@ -504,10 +568,6 @@ class TigerPaperSession:
                 average_fill_price=None,
                 broker_order_hash=None,
             )
-        if before != 1:
-            raise PaperBoundaryError(
-                "automatic flatten refuses a non-acceptance position"
-            )
         return self.execute(
             PaperOrderRequest(
                 action="SELL",
@@ -515,6 +575,7 @@ class TigerPaperSession:
                 limit_price=limit_price,
                 expected_position_before=before,
                 client_order_id=client_order_id,
+                quantity=before,
             )
         )
 
@@ -564,7 +625,7 @@ class TigerPaperSession:
         ).hexdigest()
         position = self.position(request.symbol)
         expected_after = request.expected_position_before + (
-            1 if request.action == "BUY" else -1
+            request.quantity if request.action == "BUY" else -request.quantity
         )
         if filled == request.quantity and position == expected_after:
             return PaperOrderResult(

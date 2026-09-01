@@ -109,6 +109,9 @@ class PortfolioConstructor:
         forecast_calibration_governance: (ForecastCalibrationGovernance | None) = None,
         execution_cost_governance: ExecutionCostGovernance | None = None,
         catalyst_key: str | None = None,
+        requested_position_nav_bps: Decimal | None = None,
+        requested_trade_loss_nav_bps: Decimal | None = None,
+        sizing_rationale: str | None = None,
     ) -> TradeImplementationPlan:
         state = state or self.load_state()
         policy = self.policy
@@ -201,6 +204,9 @@ class PortfolioConstructor:
             "catalyst_notional_before": catalyst_before,
             "catalyst_notional_limit": catalyst_limit,
             "underlying_key": underlying_key,
+            "agent_requested_position_nav_bps": requested_position_nav_bps,
+            "agent_requested_trade_loss_nav_bps": requested_trade_loss_nav_bps,
+            "agent_sizing_rationale": sizing_rationale,
             "underlying_notional_before": underlying_before,
             "underlying_notional_limit": underlying_limit,
             "monitoring_triggers": monitoring_triggers,
@@ -277,6 +283,16 @@ class PortfolioConstructor:
             research_multiplier=research_multiplier,
             capital_multiplier=capital_governance.capital_multiplier,
             forecast_calibration_multiplier=(forecast_calibration.capital_multiplier),
+            requested_position_limit=(
+                policy.dollars(requested_position_nav_bps)
+                if requested_position_nav_bps is not None
+                else None
+            ),
+            requested_loss_budget=(
+                policy.dollars(requested_trade_loss_nav_bps)
+                if requested_trade_loss_nav_bps is not None
+                else None
+            ),
         )
         if liquidity_capacity is None:
             return self._wait(
@@ -428,6 +444,8 @@ class PortfolioConstructor:
         research_multiplier: Decimal,
         capital_multiplier: Decimal,
         forecast_calibration_multiplier: Decimal,
+        requested_position_limit: Decimal | None,
+        requested_loss_budget: Decimal | None,
     ) -> tuple[
         Decimal,
         Decimal | None,
@@ -484,6 +502,12 @@ class PortfolioConstructor:
             ),
             "liquidity_exit_capacity": liquidity_capacity,
         }
+        if requested_position_limit is not None:
+            constraints["agent_requested_position"] = requested_position_limit
+        if requested_loss_budget is not None:
+            constraints["agent_requested_trade_loss"] = (
+                requested_loss_budget / stress_fraction
+            )
         exposure_capacity, exposure_tag = self._exposure_capacity(state, isolation)
         if exposure_capacity is not None:
             constraints[f"systematic_exposure:{exposure_tag}"] = exposure_capacity

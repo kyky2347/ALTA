@@ -210,12 +210,20 @@ export class HostServicePlatform {
   }
 
   start() {
-    if (this.platform === "darwin")
+    if (this.platform === "darwin") {
+      const domain = `gui/${this.uid}`;
+      const service = `${domain}/${this.label}`;
+      const loaded = this.runner("launchctl", ["print", service], {
+        allowFailure: true,
+      });
+      if (loaded.code === 0)
+        return this.runner("launchctl", ["kickstart", "-k", service]);
       return this.runner("launchctl", [
-        "kickstart",
-        "-k",
-        `gui/${this.uid}/${this.label}`,
+        "bootstrap",
+        domain,
+        this.definitionPath(),
       ]);
+    }
     return this.runner("systemctl", ["--user", "start", this.systemdUnit]);
   }
 
@@ -223,7 +231,7 @@ export class HostServicePlatform {
     if (this.platform === "darwin")
       return this.runner(
         "launchctl",
-        ["kill", "SIGTERM", `gui/${this.uid}/${this.label}`],
+        ["bootout", `gui/${this.uid}`, this.definitionPath()],
         { allowFailure: true },
       );
     return this.runner("systemctl", ["--user", "stop", this.systemdUnit], {
@@ -232,7 +240,10 @@ export class HostServicePlatform {
   }
 
   restart() {
-    if (this.platform === "darwin") return this.start();
+    if (this.platform === "darwin") {
+      this.stop();
+      return this.start();
+    }
     return this.runner("systemctl", ["--user", "restart", this.systemdUnit]);
   }
 

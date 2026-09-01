@@ -19,6 +19,9 @@ const SHA256 = /^[a-f0-9]{64}$/;
 const MAX_PROCESS_OUTPUT = 256 * 1024;
 const CAPITAL_TIMEOUT_SECONDS = 20;
 const CAPITAL_PROCESS_TIMEOUT_MS = 55_000;
+const DEFAULT_MAX_ORDER_NOTIONAL = "10000";
+const DEFAULT_MAX_OPEN_POSITIONS = "4";
+const DEFAULT_MAX_DISPATCH_QUOTE_AGE_SECONDS = "10";
 const MAX_AUDIT_EVENTS = 100;
 export const PAPER_MUTATION_LEASE_PROTOCOL = "alta.paper-mutation-lease.v1";
 
@@ -314,6 +317,45 @@ export class PaperCapitalControl {
     return { ...value, generation, closeOnly: value.closeOnly === true };
   }
 
+  riskPolicy() {
+    const environment = this.environment();
+    const maxOrderNotional = String(
+      environment.ALTA_TIGER_PAPER_MAX_ORDER_NOTIONAL ??
+        DEFAULT_MAX_ORDER_NOTIONAL,
+    );
+    const maxOpenPositions = String(
+      environment.ALTA_TIGER_PAPER_MAX_OPEN_POSITIONS ??
+        DEFAULT_MAX_OPEN_POSITIONS,
+    );
+    const maxDispatchQuoteAgeSeconds = String(
+      environment.ALTA_TIGER_PAPER_MAX_DISPATCH_QUOTE_AGE_SECONDS ??
+        DEFAULT_MAX_DISPATCH_QUOTE_AGE_SECONDS,
+    );
+    if (
+      !/^\d+(?:\.\d+)?$/.test(maxOrderNotional) ||
+      Number(maxOrderNotional) <= 0 ||
+      Number(maxOrderNotional) > 1_000_000
+    )
+      throw new Error("Tiger Paper max order notional is invalid");
+    if (
+      !/^\d+$/.test(maxOpenPositions) ||
+      Number(maxOpenPositions) < 1 ||
+      Number(maxOpenPositions) > 8
+    )
+      throw new Error("Tiger Paper max open positions is invalid");
+    if (
+      !/^\d+$/.test(maxDispatchQuoteAgeSeconds) ||
+      Number(maxDispatchQuoteAgeSeconds) < 1 ||
+      Number(maxDispatchQuoteAgeSeconds) > 30
+    )
+      throw new Error("Tiger Paper dispatch quote age is invalid");
+    return {
+      maxOrderNotional,
+      maxOpenPositions,
+      maxDispatchQuoteAgeSeconds,
+    };
+  }
+
   status() {
     let configuration = null;
     let configurationError = null;
@@ -393,7 +435,8 @@ export class PaperCapitalControl {
       posture,
       accountFingerprint: configuration?.accountFingerprint ?? null,
       configurationFingerprint: configuration?.configurationFingerprint ?? null,
-      mutationPolicy: "one_share_limit_day",
+      mutationPolicy: "risk_budgeted_limit_day_v1",
+      riskPolicy: this.riskPolicy(),
       instrumentPolicy: "us_stock_only",
       outsideRegularHours: false,
       requiresStoppedRuntime: true,
@@ -419,6 +462,12 @@ export class PaperCapitalControl {
       ALTA_TIGER_CONFIG_PATH: configuration.file,
       ALTA_TIGER_PAPER_ACCOUNT_SHA256: configuration.accountSha256,
       ALTA_TIGER_ORDER_TIMEOUT_SECONDS: String(CAPITAL_TIMEOUT_SECONDS),
+      ALTA_TIGER_PAPER_MAX_ORDER_NOTIONAL:
+        this.riskPolicy().maxOrderNotional,
+      ALTA_TIGER_PAPER_MAX_OPEN_POSITIONS:
+        this.riskPolicy().maxOpenPositions,
+      ALTA_TIGER_PAPER_MAX_DISPATCH_QUOTE_AGE_SECONDS:
+        this.riskPolicy().maxDispatchQuoteAgeSeconds,
       ALTA_TIGER_PAPER_AUTHORIZATION_PATH: this.authorizationFile,
       ALTA_TIGER_PAPER_AUTHORIZATION_GENERATION: String(
         this.authorization().generation,
@@ -672,6 +721,8 @@ export class PaperCapitalControl {
       `operator-${action}`,
       "--timeout-seconds",
       String(CAPITAL_TIMEOUT_SECONDS),
+      "--max-limit-notional",
+      this.riskPolicy().maxOrderNotional,
     ];
     return new Promise((resolve, reject) => {
       const child = spawn(uv, args, {

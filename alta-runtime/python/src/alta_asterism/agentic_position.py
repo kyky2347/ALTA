@@ -16,7 +16,7 @@ from .capital_allocation import (
 )
 from .contracts import Environment
 from .database import Database
-from .expression import ExpressionProposal
+from .expression import ExpressionProposal, QuoteSnapshot
 from .foundry import OpportunityDraft
 from .implementation import TradeImplementationPlan
 from .investment_thesis import ThesisPillar
@@ -317,7 +317,7 @@ class AgenticPositionBook:
                     fill,
                     ledger,
                     thesis,
-                    quote.ask,
+                    quote,
                 )
             except PaperCapitalCircuitOpen:
                 raise
@@ -344,7 +344,7 @@ class AgenticPositionBook:
         fill: ShadowFill,
         ledger: LedgerTransaction,
         thesis: PositionThesis,
-        ask: Decimal,
+        quote: QuoteSnapshot,
     ) -> bool:
         if self.paper_executor is None or self.paper_intents is None:
             raise PaperExecutionError("Paper durable execution is unavailable")
@@ -358,7 +358,7 @@ class AgenticPositionBook:
         )
         absolute_limit = execution.entry_limit_price if execution is not None else None
         limit_price = self.paper_executor.open_limit_price(
-            ask,
+            quote.ask,
             limit_offset_bps=limit_offset,
             absolute_limit_price=absolute_limit,
         )
@@ -370,21 +370,25 @@ class AgenticPositionBook:
                 expression_id=proposal.expression_id,
                 operation="open",
                 symbol=intent.symbol,
+                quantity=execution.acceptance_quantity,
                 limit_price=limit_price,
                 local_commit={
                     "intent": intent.model_dump(mode="json"),
                     "fill": fill.model_dump(mode="json"),
                     "ledger": ledger.model_dump(mode="json"),
                     "thesis": thesis.model_dump(mode="json"),
+                    "dispatch_quote": quote.model_dump(mode="json"),
                 },
             )
             durable, result = self._dispatch_and_persist(
                 durable,
                 lambda: self.paper_executor.open(
                     intent.symbol,
-                    ask,
+                    quote.ask,
                     cycle_id,
                     client_order_id=durable.client_order_id,
+                    quantity=durable.quantity,
+                    quote_known_at=quote.known_at,
                     limit_offset_bps=limit_offset,
                     absolute_limit_price=absolute_limit,
                 ),
@@ -1183,6 +1187,7 @@ class AgenticPositionBook:
                 expression_id=thesis.expression_id,
                 operation="close",
                 symbol=symbol,
+                quantity=intent.quantity,
                 limit_price=limit_price,
                 local_commit={
                     "intent": intent.model_dump(mode="json"),
@@ -1198,6 +1203,7 @@ class AgenticPositionBook:
                     bid,
                     cycle_id,
                     client_order_id=durable.client_order_id,
+                    quantity=durable.quantity,
                     limit_offset_bps=limit_offset,
                 ),
             )

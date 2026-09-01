@@ -13,11 +13,16 @@ from .expression_base import FrozenContract
 _BPS = Decimal(10_000)
 _METRIC_QUANTUM = Decimal("0.01")
 _RATIO_QUANTUM = Decimal("0.001")
-_MAX_BARS_PER_SYMBOL = 8
+_SURPRISE_QUANTUM = Decimal("0.01")
+_MAX_BARS_PER_SYMBOL = 24
+_MINIMUM_ROBUST_RETURNS = 4
+_ROBUST_SIGMA_FLOOR_BPS = Decimal(35)
 
 MarketScreenType = Literal[
     "price_volume_dislocation",
     "relative_dislocation",
+    "volatility_adjusted_dislocation",
+    "persistent_expectation_drift",
     "range_expansion",
     "breadth_dispersion",
 ]
@@ -33,6 +38,11 @@ class MarketScreenObservation(FrozenContract):
     benchmark_relative_five_day_bps: Decimal | None = None
     volume_ratio: Decimal | None = Field(default=None, ge=0, le=100)
     range_ratio: Decimal | None = Field(default=None, ge=0, le=100)
+    overnight_gap_bps: Decimal | None = None
+    intraday_return_bps: Decimal | None = None
+    return_volatility_bps: Decimal | None = Field(default=None, ge=0)
+    one_day_surprise: Decimal | None = Field(default=None, ge=0, le=50)
+    relative_five_day_surprise: Decimal | None = Field(default=None, ge=0, le=50)
 
 
 class MarketResearchSeed(FrozenContract):
@@ -70,9 +80,9 @@ class MarketResearchSeed(FrozenContract):
 class MarketResearchAgenda(FrozenContract):
     """Frozen screen funnel that directs verification without creating a fact."""
 
-    version: Literal["alta-market-research-agenda-v1"] = (
-        "alta-market-research-agenda-v1"
-    )
+    version: Literal[
+        "alta-market-research-agenda-v1", "alta-market-research-agenda-v2"
+    ] = "alta-market-research-agenda-v2"
     known_at: datetime
     posture: Literal["unavailable", "thin_history", "screen_ready"]
     benchmark_symbol: str | None = Field(
@@ -131,6 +141,9 @@ class _ScreenMetrics:
     relative_strength: Decimal
     price_volume_strength: Decimal
     range_strength: Decimal
+    one_day_surprise_strength: Decimal
+    relative_surprise_strength: Decimal
+    persistent_drift_strength: Decimal
 
 
 def _decimal(value: Any) -> Decimal | None:
@@ -243,6 +256,51 @@ def _ratio(latest: Decimal, history: tuple[Decimal, ...]) -> Decimal | None:
     return (latest / baseline).quantize(_RATIO_QUANTUM, rounding=ROUND_HALF_EVEN)
 
 
+def _return_series(history: tuple[_CompletedBar, ...]) -> tuple[Decimal, ...]:
+    return tuple(
+        _bps(current.close, previous.close)
+        for previous, current in zip(history, history[1:], strict=False)
+        if previous.close > 0
+    )
+
+
+def _robust_surprise(
+    value: Decimal, history: tuple[Decimal, ...]
+) -> tuple[Decimal | None, Decimal | None]:
+    """Return a robust z-like surprise and its historical sigma in bps."""
+
+    if len(history) < _MINIMUM_ROBUST_RETURNS:
+        return None, None
+    center = Decimal(str(median(history)))
+    deviations = tuple(abs(item - center) for item in history)
+    median_absolute_deviation = Decimal(str(median(deviations)))
+    robust_sigma = max(
+        _ROBUST_SIGMA_FLOOR_BPS,
+        median_absolute_deviation * Decimal("1.4826"),
+    )
+    surprise = min(Decimal(50), abs(value - center) / robust_sigma).quantize(
+        _SURPRISE_QUANTUM, rounding=ROUND_HALF_EVEN
+    )
+    return surprise, robust_sigma.quantize(_METRIC_QUANTUM, rounding=ROUND_HALF_EVEN)
+
+
+def _relative_return_history(
+    history: tuple[_CompletedBar, ...], benchmark: tuple[_CompletedBar, ...]
+) -> tuple[Decimal, ...]:
+    benchmark_by_date = {item.session: item for item in benchmark}
+    relative: list[Decimal] = []
+    for previous, current in zip(history, history[1:], strict=False):
+        benchmark_previous = benchmark_by_date.get(previous.session)
+        benchmark_current = benchmark_by_date.get(current.session)
+        if benchmark_previous is None or benchmark_current is None:
+            continue
+        relative.append(
+            _bps(current.close, previous.close)
+            - _bps(benchmark_current.close, benchmark_previous.close)
+        )
+    return tuple(relative)
+
+
 def _metrics(
     history: tuple[_CompletedBar, ...], benchmark: tuple[_CompletedBar, ...] | None
 ) -> _ScreenMetrics | None:
@@ -252,6 +310,8 @@ def _metrics(
     previous = history[-2]
     one_day = _bps(recent.close, previous.close)
     five_day = _bps(recent.close, history[-6].close)
+    overnight_gap = _bps(recent.open, previous.close)
+    intraday_return = _bps(recent.close, recent.open)
     benchmark_relative = None
     if benchmark is not None and len(benchmark) >= 6:
         benchmark_by_date = {item.session: item for item in benchmark}
@@ -259,6 +319,22 @@ def _metrics(
         end = benchmark_by_date.get(recent.session)
         if start is not None and end is not None:
             benchmark_relative = five_day - _bps(end.close, start.close)
+    prior_returns = _return_series(history[:-1])[-15:]
+    one_day_surprise, return_volatility = _robust_surprise(one_day, prior_returns)
+    relative_five_day_surprise = None
+    if benchmark is not None and benchmark_relative is not None:
+        relative_returns = _relative_return_history(history[:-1], benchmark)[-15:]
+        if len(relative_returns) >= _MINIMUM_ROBUST_RETURNS:
+            relative_center = Decimal(str(median(relative_returns))) * Decimal(5)
+            _, daily_sigma = _robust_surprise(
+                benchmark_relative / Decimal(5), relative_returns
+            )
+            if daily_sigma is not None:
+                five_day_sigma = daily_sigma * Decimal(5).sqrt()
+                relative_five_day_surprise = min(
+                    Decimal(50),
+                    abs(benchmark_relative - relative_center) / five_day_sigma,
+                ).quantize(_SURPRISE_QUANTUM, rounding=ROUND_HALF_EVEN)
     prior = history[-6:-1]
     volume_ratio = _ratio(recent.volume, tuple(item.volume for item in prior))
     recent_range = (recent.high - recent.low) / previous.close
@@ -274,6 +350,11 @@ def _metrics(
         benchmark_relative_five_day_bps=benchmark_relative,
         volume_ratio=volume_ratio,
         range_ratio=range_ratio,
+        overnight_gap_bps=overnight_gap,
+        intraday_return_bps=intraday_return,
+        return_volatility_bps=return_volatility,
+        one_day_surprise=one_day_surprise,
+        relative_five_day_surprise=relative_five_day_surprise,
     )
     relative_basis = abs(
         benchmark_relative if benchmark_relative is not None else five_day
@@ -288,6 +369,28 @@ def _metrics(
         Decimal(1),
         max(Decimal(0), (range_ratio or Decimal(1)) - Decimal(1)) / Decimal(2),
     )
+    one_day_surprise_strength = min(
+        Decimal(1), (one_day_surprise or Decimal(0)) / Decimal(4)
+    )
+    relative_surprise_strength = min(
+        Decimal(1), (relative_five_day_surprise or Decimal(0)) / Decimal(4)
+    )
+    drift_share = (
+        max(
+            Decimal(0),
+            min(
+                Decimal(1),
+                (abs(benchmark_relative) - abs(one_day)) / abs(benchmark_relative),
+            ),
+        )
+        if benchmark_relative not in (None, Decimal(0))
+        else Decimal(0)
+    )
+    persistent_drift_strength = (
+        relative_surprise_strength * Decimal("0.70") + drift_share * Decimal("0.30")
+        if drift_share >= Decimal("0.55")
+        else Decimal(0)
+    )
     return _ScreenMetrics(
         observation=observation,
         relative_strength=relative_strength,
@@ -297,6 +400,9 @@ def _metrics(
         range_strength=(
             price_move_strength * Decimal("0.55") + range_strength * Decimal("0.45")
         ),
+        one_day_surprise_strength=one_day_surprise_strength,
+        relative_surprise_strength=relative_surprise_strength,
+        persistent_drift_strength=persistent_drift_strength,
     )
 
 
@@ -341,6 +447,12 @@ def _single_symbol_seed(
     elif screen_type == "relative_dislocation":
         question = f"What explains {item.symbol}'s five-session gap versus {comparison}, what is already priced in, and is there a falsifiable fundamental or forced-flow wedge?"
         rejection = "Reject first if the gap is explained by factor exposure, benchmark composition, illiquidity, or a denominator/expectation reset that the screen does not observe."
+    elif screen_type == "volatility_adjusted_dislocation":
+        question = f"Why is {item.symbol}'s completed-session move unusual relative to its own prior volatility, how much occurred overnight versus intraday, and is there a new causal fact rather than a volatility-regime change?"
+        rejection = "Reject first if the normalized surprise comes from a split, bad bar, volatility-regime break, illiquidity, broad factor shock, or an already-absorbed disclosure."
+    elif screen_type == "persistent_expectation_drift":
+        question = f"What accumulating evidence explains {item.symbol}'s persistent five-session gap versus {comparison}, and is a quiet estimate, operating, positioning, or forced-flow change still under-reflected?"
+        rejection = "Reject first if the drift is ordinary factor exposure, sector momentum, stale pricing, repeated public information, or lacks a measurable estimate or cash-flow resolution path."
     else:
         question = f"What caused {item.symbol}'s completed-session range expansion, and does primary evidence support a time-bounded information transition rather than noise?"
         rejection = "Reject first if the range comes from an incomplete bar, ordinary market volatility, a mechanical adjustment, or no identifiable causal path."
@@ -357,7 +469,7 @@ def _single_symbol_seed(
         required_tests=(
             "Re-fetch current market data and verify the completed-bar anomaly and liquidity.",
             "Find a primary or independently cross-checked causal source; the screen itself is not Evidence.",
-            "Test the strongest factor, flow, and consensus-correct rival explanation.",
+            "Test the strongest factor, flow, and consensus-correct rival; compare the move with frozen volatility history and decompose overnight from intraday price discovery because the normalized score is only a locator.",
         ),
     )
 
@@ -464,7 +576,11 @@ def build_market_research_agenda(
     strongest_market = max(
         metrics,
         key=lambda item: (
-            item.relative_strength + item.price_volume_strength + item.range_strength,
+            item.relative_strength
+            + item.price_volume_strength
+            + item.range_strength
+            + item.one_day_surprise_strength
+            + item.relative_surprise_strength,
             item.observation.symbol,
         ),
     )
@@ -472,10 +588,17 @@ def build_market_research_agenda(
         strongest_market.relative_strength,
         strongest_market.price_volume_strength,
         strongest_market.range_strength,
+        strongest_market.one_day_surprise_strength,
+        strongest_market.relative_surprise_strength,
     )
     if market_score >= Decimal("0.40"):
-        if strongest_market.relative_strength == market_score:
-            market_type: MarketScreenType = "relative_dislocation"
+        market_type: MarketScreenType
+        if strongest_market.relative_surprise_strength == market_score:
+            market_type = "volatility_adjusted_dislocation"
+        elif strongest_market.one_day_surprise_strength == market_score:
+            market_type = "volatility_adjusted_dislocation"
+        elif strongest_market.relative_strength == market_score:
+            market_type = "relative_dislocation"
         elif strongest_market.price_volume_strength == market_score:
             market_type = "price_volume_dislocation"
         else:
@@ -512,19 +635,47 @@ def build_market_research_agenda(
         )
 
     expectation_candidates = tuple(
-        item for item in metrics if item.relative_strength >= Decimal("0.50")
+        item
+        for item in metrics
+        if max(
+            item.relative_strength,
+            item.relative_surprise_strength,
+            item.persistent_drift_strength,
+        )
+        >= Decimal("0.50")
     )
     if expectation_candidates:
         strongest_expectation = max(
             expectation_candidates,
-            key=lambda item: (item.relative_strength, item.observation.symbol),
+            key=lambda item: (
+                max(
+                    item.persistent_drift_strength,
+                    item.relative_surprise_strength,
+                    item.relative_strength,
+                ),
+                item.observation.symbol,
+            ),
+        )
+        expectation_score = max(
+            strongest_expectation.persistent_drift_strength,
+            strongest_expectation.relative_surprise_strength,
+            strongest_expectation.relative_strength,
+        )
+        expectation_type: MarketScreenType = (
+            "persistent_expectation_drift"
+            if strongest_expectation.persistent_drift_strength >= Decimal("0.75")
+            else (
+                "volatility_adjusted_dislocation"
+                if strongest_expectation.relative_surprise_strength == expectation_score
+                else "relative_dislocation"
+            )
         )
         seeds.append(
             _single_symbol_seed(
-                screen_type="relative_dislocation",
+                screen_type=expectation_type,
                 scout_id="expectation_gap_scout",
                 metrics=strongest_expectation,
-                score=strongest_expectation.relative_strength,
+                score=expectation_score,
                 benchmark_symbol=benchmark_symbol,
             )
         )

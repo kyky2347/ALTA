@@ -1,5 +1,6 @@
 import hashlib
 import json
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
@@ -75,19 +76,23 @@ def test_paper_trade_config_requires_exact_private_binding(tmp_path: Path) -> No
 @pytest.mark.parametrize(
     "update",
     [
-        {"quantity": Decimal("2")},
+        {"quantity": Decimal("0")},
+        {"quantity": Decimal("1.5")},
         {"symbol": "*"},
         {"limit_price": Decimal("NaN")},
         {"expected_position_before": Decimal("-1")},
     ],
 )
-def test_paper_order_is_one_share_limit_only(update: dict) -> None:
+def test_paper_order_requires_bounded_whole_share_directional_request(
+    update: dict,
+) -> None:
     values = {
         "action": "BUY",
         "symbol": "SPY",
         "limit_price": Decimal("500"),
         "expected_position_before": Decimal(0),
         "client_order_id": "alta-" + "1" * 32,
+        "quantity": Decimal("12"),
     }
     with pytest.raises(PaperBoundaryError):
         PaperOrderRequest(**(values | update))
@@ -132,7 +137,13 @@ class _FakeClient:
         return []
 
     def preview_order(self, _order):
-        return {}
+        return {"is_pass": True}
+
+    def get_estimate_tradable_quantity(self, _order):
+        return SimpleNamespace(
+            tradable_quantity=1000,
+            tradable_position_quantity=max(self.quantity, Decimal(0)),
+        )
 
     def place_order(self, order):
         self.pending = order
@@ -140,11 +151,12 @@ class _FakeClient:
 
     def get_order(self, *, account, id):
         assert (account, id) == (self.account, 42)
-        self.quantity += 1 if self.pending.action == "BUY" else -1
+        filled = Decimal(self.pending.quantity)
+        self.quantity += filled if self.pending.action == "BUY" else -filled
         return SimpleNamespace(
             account=account,
             status="FILLED",
-            filled=1,
+            filled=filled,
             avg_fill_price=self.pending.limit_price,
         )
 
@@ -174,7 +186,7 @@ def patch_sdk(monkeypatch: pytest.MonkeyPatch, client_type=_FakeClient) -> None:
     monkeypatch.setattr(paper_trade, "limit_order", _order)
 
 
-def test_session_reconciles_one_share_open_and_close(
+def test_session_reconciles_risk_sized_open_and_close(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     patch_sdk(monkeypatch)
@@ -185,7 +197,8 @@ def test_session_reconciles_one_share_open_and_close(
             "accountBinding": True,
             "positionCount": 0,
             "openOrderCount": 0,
-            "mutationPolicy": "one_share_limit_day",
+            "mutationPolicy": "risk_budgeted_limit_day_v1",
+            "maxOrderNotional": "10000",
         }
         opened = session.execute(
             PaperOrderRequest(
@@ -194,15 +207,81 @@ def test_session_reconciles_one_share_open_and_close(
                 limit_price=Decimal("500"),
                 expected_position_before=Decimal(0),
                 client_order_id="alta-" + "2" * 32,
+                quantity=Decimal("12"),
+                quote_known_at=datetime.now(UTC),
             )
         )
         closed = session.flatten_with_identity(
             "SPY", Decimal("495"), "alta-" + "4" * 32
         )
 
-    assert (opened.status, opened.position_after) == ("filled", "1")
+    assert (opened.status, opened.position_after) == ("filled", "12")
     assert (closed.status, closed.position_after) == ("filled", "0")
     assert not (tmp_path / "capital.owner").exists()
+
+
+@pytest.mark.parametrize(
+    ("quote_known_at", "message"),
+    [
+        (None, "requires a dispatch quote"),
+        (datetime.now(UTC) - timedelta(seconds=11), "expired before submission"),
+    ],
+)
+def test_open_rejects_missing_or_expired_dispatch_quote(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    quote_known_at: datetime | None,
+    message: str,
+) -> None:
+    patch_sdk(monkeypatch)
+
+    with TigerPaperSession(config(tmp_path)) as session:
+        with pytest.raises(PaperBoundaryError, match=message):
+            session.execute(
+                PaperOrderRequest(
+                    action="BUY",
+                    symbol="SPY",
+                    limit_price=Decimal("500"),
+                    expected_position_before=Decimal(0),
+                    client_order_id="alta-" + "9" * 32,
+                    quantity=Decimal("12"),
+                    quote_known_at=quote_known_at,
+                )
+            )
+
+
+def test_broker_capacity_and_preview_retain_final_order_authority(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class CapacityClient(_FakeClient):
+        def get_estimate_tradable_quantity(self, _order):
+            return SimpleNamespace(
+                tradable_quantity=Decimal("11"),
+                tradable_position_quantity=Decimal(0),
+            )
+
+    patch_sdk(monkeypatch, CapacityClient)
+    request = PaperOrderRequest(
+        action="BUY",
+        symbol="SPY",
+        limit_price=Decimal("500"),
+        expected_position_before=Decimal(0),
+        client_order_id="alta-" + "a" * 32,
+        quantity=Decimal("12"),
+        quote_known_at=datetime.now(UTC),
+    )
+    with TigerPaperSession(config(tmp_path)) as session:
+        with pytest.raises(PaperBoundaryError, match="tradable quantity"):
+            session.execute(request)
+
+    class PreviewClient(_FakeClient):
+        def preview_order(self, _order):
+            return {"is_pass": False, "warning_text": "synthetic rejection"}
+
+    patch_sdk(monkeypatch, PreviewClient)
+    with TigerPaperSession(config(tmp_path)) as session:
+        with pytest.raises(PaperBoundaryError, match="preview rejected"):
+            session.execute(request)
 
 
 def test_preflight_reports_open_orders(
@@ -335,6 +414,8 @@ def test_unconfirmed_cancel_fails_closed(
                     limit_price=Decimal("500"),
                     expected_position_before=Decimal(0),
                     client_order_id="alta-" + "3" * 32,
+                    quantity=Decimal("12"),
+                    quote_known_at=datetime.now(UTC),
                 )
             )
 
@@ -369,8 +450,8 @@ def test_stable_client_identity_reconciles_without_a_second_order(
                         action=self.pending.action,
                         order_type="LMT",
                         status="FILLED",
-                        quantity=1,
-                        filled=1,
+                        quantity=self.pending.quantity,
+                        filled=self.pending.quantity,
                         limit_price=self.pending.limit_price,
                         avg_fill_price=self.pending.limit_price,
                         time_in_force="DAY",
@@ -387,6 +468,8 @@ def test_stable_client_identity_reconciles_without_a_second_order(
         limit_price=Decimal("500"),
         expected_position_before=Decimal(0),
         client_order_id="alta-" + "5" * 32,
+        quantity=Decimal("12"),
+        quote_known_at=datetime.now(UTC),
     )
     with TigerPaperSession(config(tmp_path)) as session:
         first = session.execute(request)
@@ -415,11 +498,13 @@ def test_revoked_authorization_is_rechecked_before_each_mutation(
                     limit_price=Decimal("500"),
                     expected_position_before=Decimal(0),
                     client_order_id="alta-" + "6" * 32,
+                    quantity=Decimal("12"),
+                    quote_known_at=datetime.now(UTC),
                 )
             )
 
 
-def test_drain_authorization_blocks_open_but_permits_one_share_close(
+def test_drain_authorization_blocks_open_but_permits_full_position_close(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     patch_sdk(monkeypatch)
@@ -437,19 +522,22 @@ def test_drain_authorization_blocks_open_but_permits_one_share_close(
                     limit_price=Decimal("500"),
                     expected_position_before=Decimal(0),
                     client_order_id="alta-" + "7" * 32,
+                    quantity=Decimal("12"),
+                    quote_known_at=datetime.now(UTC),
                 )
             )
         authorization["generation"] = 2
         settings.authorization_path.write_text(json.dumps(authorization))
         settings.authorization_path.chmod(0o600)
-        session.client.quantity = Decimal(1)
+        session.client.quantity = Decimal(12)
         result = session.execute(
             PaperOrderRequest(
                 action="SELL",
                 symbol="SPY",
                 limit_price=Decimal("495"),
-                expected_position_before=Decimal(1),
+                expected_position_before=Decimal(12),
                 client_order_id="alta-" + "8" * 32,
+                quantity=Decimal(12),
             )
         )
     assert result.position_after == "0"

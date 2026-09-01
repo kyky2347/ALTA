@@ -195,10 +195,19 @@ def test_shadow_fill_does_not_chase_beyond_the_frozen_absolute_limit() -> None:
         limit_price=quotes()["entry"].ask,
     )
 
-    result = evaluate_shadow_fill(intent, quotes()["entry"], policy)
+    marketable = evaluate_shadow_fill(intent, quotes()["entry"], policy)
+    moved_away = quotes()["entry"].model_copy(
+        update={
+            "bid": quotes()["entry"].bid + Decimal("0.10"),
+            "ask": quotes()["entry"].ask + Decimal("0.10"),
+        }
+    )
+    rejected = evaluate_shadow_fill(intent, moved_away, policy)
 
-    assert result.status == "no_fill"
-    assert result.reason_code == "guarded_limit_not_market"
+    assert marketable.status == "filled"
+    assert marketable.fill_price == intent.limit_price
+    assert rejected.status == "no_fill"
+    assert rejected.reason_code == "guarded_limit_not_market"
 
 
 def test_position_thesis_monitor_exit_priority_and_close_ledger() -> None:

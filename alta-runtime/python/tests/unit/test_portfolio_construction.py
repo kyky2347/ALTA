@@ -115,6 +115,8 @@ def plan(
     forecast_calibration_governance: ForecastCalibrationGovernance | None = None,
     execution_cost_governance: ExecutionCostGovernance | None = None,
     catalyst_key: str | None = None,
+    requested_position_nav_bps: Decimal | None = None,
+    requested_trade_loss_nav_bps: Decimal | None = None,
 ):
     constructor = PortfolioConstructor(None, PortfolioRiskPolicy())  # type: ignore[arg-type]
     return constructor.plan(
@@ -131,6 +133,13 @@ def plan(
         forecast_calibration_governance=forecast_calibration_governance,
         execution_cost_governance=execution_cost_governance,
         catalyst_key=catalyst_key,
+        requested_position_nav_bps=requested_position_nav_bps,
+        requested_trade_loss_nav_bps=requested_trade_loss_nav_bps,
+        sizing_rationale=(
+            "Agent requested size from evidence strength and invalidation distance."
+            if requested_position_nav_bps is not None
+            else None
+        ),
     )
 
 
@@ -167,6 +176,40 @@ def test_equity_plan_sizes_to_the_tightest_portfolio_constraint() -> None:
     assert result.binding_constraint == "gross_nav_remaining"
     assert result.estimated_stress_loss == Decimal("1250")
     assert result.expected_net_alpha_bps > Decimal("50")
+
+
+def test_agent_requested_position_and_loss_budget_bind_the_audited_size() -> None:
+    position_bound = plan(
+        instrument(),
+        requested_position_nav_bps=Decimal("40"),
+        requested_trade_loss_nav_bps=Decimal("25"),
+    )
+    loss_bound = plan(
+        instrument(),
+        requested_position_nav_bps=Decimal("100"),
+        requested_trade_loss_nav_bps=Decimal("5"),
+    )
+
+    assert position_bound.status == "ready"
+    assert position_bound.binding_constraint == "agent_requested_position"
+    assert position_bound.target_notional == Decimal("4000")
+    assert position_bound.target_quantity == Decimal("40")
+    assert loss_bound.status == "ready"
+    assert loss_bound.binding_constraint == "agent_requested_trade_loss"
+    assert loss_bound.target_notional == Decimal("2000")
+    assert loss_bound.target_quantity == Decimal("20")
+
+
+def test_agent_size_cannot_override_the_deterministic_hard_cap() -> None:
+    result = plan(
+        instrument(),
+        requested_position_nav_bps=Decimal("1000"),
+        requested_trade_loss_nav_bps=Decimal("250"),
+    )
+
+    assert result.status == "ready"
+    assert result.target_notional == Decimal("10000")
+    assert result.binding_constraint != "agent_requested_position"
 
 
 def test_option_plan_treats_premium_as_maximum_loss_budget() -> None:

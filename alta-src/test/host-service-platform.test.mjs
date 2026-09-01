@@ -155,3 +155,76 @@ test("macOS install can remain unloaded until the next login", (t) => {
     true,
   );
 });
+
+test("macOS stop unloads the service so KeepAlive cannot relaunch it", (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "alta-stop-unit-"));
+  const calls = [];
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const adapter = new HostServicePlatform({
+    platform: "darwin",
+    home,
+    uid: 501,
+    runner: (command, args, options) => {
+      calls.push({ command, args, options });
+      return { code: 0, stdout: "", stderr: "" };
+    },
+  });
+
+  adapter.stop();
+
+  assert.deepEqual(calls[0].args, [
+    "bootout",
+    "gui/501",
+    path.join(
+      home,
+      "Library",
+      "LaunchAgents",
+      `${OPPORTUNITY_SERVICE_LABEL}.plist`,
+    ),
+  ]);
+  assert.equal(calls[0].options.allowFailure, true);
+  assert.equal(
+    calls.some((call) => call.args.includes("kill")),
+    false,
+  );
+});
+
+test("macOS start bootstraps an unloaded service and kickstarts a loaded one", (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "alta-start-unit-"));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const calls = [];
+  let loaded = false;
+  const adapter = new HostServicePlatform({
+    platform: "darwin",
+    home,
+    uid: 501,
+    runner: (command, args, options) => {
+      calls.push({ command, args, options });
+      if (args[0] === "print")
+        return { code: loaded ? 0 : 113, stdout: "", stderr: "" };
+      return { code: 0, stdout: "", stderr: "" };
+    },
+  });
+
+  adapter.start();
+  assert.equal(
+    calls.some((call) => call.args[0] === "bootstrap"),
+    true,
+  );
+  assert.equal(
+    calls.some((call) => call.args[0] === "kickstart"),
+    false,
+  );
+
+  calls.length = 0;
+  loaded = true;
+  adapter.start();
+  assert.equal(
+    calls.some((call) => call.args[0] === "bootstrap"),
+    false,
+  );
+  assert.equal(
+    calls.some((call) => call.args[0] === "kickstart"),
+    true,
+  );
+});

@@ -95,7 +95,7 @@ SCOUTS = (
     ),
     ScoutConfig(
         scout_id="market_dislocation_scout",
-        version="alpha-v6",
+        version="alpha-v7",
         mission=(
             "Identify price, volume, volatility, breadth, or cross-asset "
             "dislocations with a testable non-technical catalyst or mechanism."
@@ -108,7 +108,7 @@ SCOUTS = (
             "forced-flow or volatility-surface dislocation",
         ),
         research_sequence=(
-            "Scan price, volume, volatility, options surface, breadth, ETF/peer-relative behavior, and cross-asset data for an anomaly or forced flow.",
+            "Scan price, volume, volatility-normalized surprise, persistent drift, overnight-versus-intraday discovery, options surface, breadth, ETF/peer-relative behavior, and cross-asset data for an anomaly or forced flow.",
             "Search news and the open web for a non-technical mechanism that can explain or contradict it, including index/ETF methodology, corporate actions, lockups, financing, borrow, and scheduled rebalances when publicly auditable.",
             "Batch-fetch the strongest independent mechanism and counterevidence sources before deciding the move is idiosyncratic.",
             "Search public social sources for positioning or narrative evidence and verify any claim elsewhere.",

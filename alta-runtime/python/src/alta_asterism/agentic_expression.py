@@ -385,6 +385,7 @@ class AgenticExpressionFlow:
                     "For every non-wait hypothesis, copy one or more exact thesis_pillar_ids from the Opportunity that its payoff actually monetizes. Do not claim a causal pillar merely because the same ticker appears. If no listed one-leg payoff cleanly maps to a supplied pillar, choose wait.",
                     "For every hypothesis classify alpha_source as idiosyncratic, earnings_revision, event, relative_value, market_structure, systematic_factor, or legacy_unclassified; legacy_unclassified is admissible only for wait.",
                     "For every hypothesis return the complete systematic_exposures set using only market_beta, sector, growth_duration, value, momentum, quality, size, volatility, rates, fx, commodity, liquidity, crowding, event_gap, none, or unknown. Use none only by itself and unknown only when choosing wait.",
+                    "For every non-wait hypothesis choose requested_position_nav_bps and requested_trade_loss_nav_bps, plus a concrete sizing_rationale tied to evidence strength, payoff asymmetry, invalidation distance, liquidity, correlation, and the Alpha clock. These are your requested targets, not guarantees: deterministic portfolio and broker limits retain final authority. Do not default mechanically to one share.",
                     "State hedge_posture as unhedged_intentional, size_down, contained_by_option, requires_multi_leg, or not_applicable, and state concrete basis_risk. Do not call broad beta or factor exposure Alpha.",
                     "Compare thesis purity, catalyst timing, convexity, premium at risk, factor contamination, path dependence, liquidity, and exit feasibility; best expression is not automatically the issuer's common stock.",
                     "The current Shadow boundary supports one bounded long leg. If the thesis truly requires a short, pair, spread, basket, dynamic hedge, or uncovered option, choose wait instead of approximating it with a different bet.",
@@ -554,6 +555,11 @@ class AgenticExpressionFlow:
             )["research_quality"],
             alpha_capital_governance=alpha_capital_governance,
             catalyst_key=opportunity.catalyst_key,
+            requested_position_nav_bps=selected.hypothesis.requested_position_nav_bps,
+            requested_trade_loss_nav_bps=(
+                selected.hypothesis.requested_trade_loss_nav_bps
+            ),
+            sizing_rationale=selected.hypothesis.sizing_rationale,
         )
         if implementation.status == "wait":
             return self._persist_wait(
@@ -711,6 +717,9 @@ class AgenticExpressionFlow:
                 research_quality_score=research_quality,
                 alpha_capital_governance=alpha_capital_governance,
                 catalyst_key=opportunity.catalyst_key,
+                requested_position_nav_bps=hypothesis.requested_position_nav_bps,
+                requested_trade_loss_nav_bps=(hypothesis.requested_trade_loss_nav_bps),
+                sizing_rationale=hypothesis.sizing_rationale,
             )
             allocation = self.positions.assess_capital(plan, datetime.now(UTC))
             instrument = (
@@ -936,7 +945,7 @@ class AgenticExpressionFlow:
                     "target_notional": incumbent_plan.get("target_notional"),
                 }
             )
-        slate_values = [item.prompt_value() for item in expression_slate]
+        slate_values = [item.audit_value() for item in expression_slate]
         selected_instrument = None
         if instrument is not None:
             selected_instrument = {
@@ -974,31 +983,34 @@ class AgenticExpressionFlow:
             "prediction",
         ):
             audit_opportunity.pop(field, None)
+        audit_recommendation = {
+            "intended_alpha": bounded_text(recommendation.intended_alpha, 180),
+            "unwanted_exposures": tuple(
+                bounded_text(item, 120) for item in recommendation.unwanted_exposures
+            ),
+            "retained_exposure": bounded_text(recommendation.retained_exposure, 180),
+        }
+        if not expression_slate:
+            audit_recommendation.update(
+                {
+                    "preferred_kind": recommendation.preferred_kind,
+                    "symbol": recommendation.symbol,
+                    "rationale": bounded_text(recommendation.rationale, 240),
+                    "payoff_thesis": bounded_text(recommendation.payoff_thesis, 240),
+                    "invalidation": bounded_text(recommendation.invalidation, 200),
+                    "alternatives_considered": tuple(
+                        bounded_text(item, 160)
+                        for item in recommendation.alternatives_considered
+                    ),
+                }
+            )
         frozen_input = {
             "opportunity": audit_opportunity,
             "locked_underwriting": self._locked_underwriting(
                 opportunity.opportunity_id, compact=True
             ),
             "proposed_expression": {
-                "recommendation": {
-                    "preferred_kind": recommendation.preferred_kind,
-                    "symbol": recommendation.symbol,
-                    "rationale": bounded_text(recommendation.rationale, 240),
-                    "payoff_thesis": bounded_text(recommendation.payoff_thesis, 240),
-                    "invalidation": bounded_text(recommendation.invalidation, 200),
-                    "intended_alpha": bounded_text(recommendation.intended_alpha, 180),
-                    "unwanted_exposures": tuple(
-                        bounded_text(item, 120)
-                        for item in recommendation.unwanted_exposures
-                    ),
-                    "retained_exposure": bounded_text(
-                        recommendation.retained_exposure, 180
-                    ),
-                    "alternatives_considered": tuple(
-                        bounded_text(item, 160)
-                        for item in recommendation.alternatives_considered
-                    ),
-                },
+                "recommendation": audit_recommendation,
                 "selected_instrument": (
                     None if expression_slate else selected_instrument
                 ),
@@ -1065,6 +1077,7 @@ class AgenticExpressionFlow:
                     "Compare the selected exposure tags with every open position's stored systematic_exposures and intended_alpha; different tickers do not imply diversified risk.",
                     "On approve, selected_hypothesis_id must exactly match one admissible slate entry. On wait, selected_hypothesis_id must be null.",
                     "Challenge risk budget, net edge, binding constraint, unwanted exposure, and exit capacity.",
+                    "Audit the selected agent-requested position NAV bps, trade-loss NAV bps, and sizing rationale against evidence quality, invalidation distance, payoff asymmetry, portfolio overlap, liquidity and tail stress. Approve only the deterministic risk-sized result; never replace it with a one-share token order.",
                     "Require positive time-adjusted edge after costs; the Alpha clock is underwriting, not performance.",
                     "Require a non-chasing fixed limit, no automatic repricing, and bounded liquidity participation.",
                     "For a slate, approve only an entry whose own implementation status is ready and capital allocation is not wait. Without a slate, absent or waiting top-level implementation must produce wait.",

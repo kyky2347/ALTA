@@ -3,7 +3,7 @@
 > **Release:** `0.26.0` — `FORWARD_EVIDENCE_VERIFIED`
 >
 > **Capital boundary:** internal Shadow by default. Only the explicit
-> `acceptance` command can call an isolated one-share Tiger Paper mirror. Live
+> `acceptance` command can call an isolated risk-sized Tiger Paper mirror. Live
 > accounts and real capital are unsupported and rejected.
 >
 > **Alpha status:** unproven. ALTA records cost-adjusted forward Shadow outcomes
@@ -179,8 +179,12 @@ is stopped, the next service start may inject the same isolated executor into
 the autonomous path. The separate acceptance command remains available for a
 bounded lifecycle test. Both paths require an exact 17-digit Paper
 account SHA-256 binding, an owner-only non-symlink configuration file, zero
-positions, zero open orders, and a single-owner lease. It permits only one-share
-stock/ETF DAY limit orders. Each mutation first persists a Paper intent and
+positions, zero open orders, and a single-owner lease before initial
+authorization. It permits only audited, bounded whole-share stock/ETF DAY limit
+orders. The Agent requests position NAV and loss budgets; portfolio constraints,
+the per-order notional ceiling, Tiger tradable quantity, order preview, and a
+ten-second dispatch-quote deadline retain final authority. Each mutation first
+persists a Paper intent and
 revalidates the current authorization generation inside the account-global
 lease. Broker results, Paper events, and Shadow state close in one local
 transaction. Restart reconciliation uses a stable ALTA `user_mark` in recent
@@ -309,8 +313,11 @@ from the external `resources/` credential directory on every start.
 
 Massive-compatible proxies require an explicit credential-free base URL. Use
 `ALTA_MASSIVE_AUTH_MODE=x_api_key` or `x_proxy_key` only when the approved proxy
-requires the corresponding header. Insecure HTTP is disabled and should not be
-enabled outside a separately reviewed loopback proxy.
+requires the corresponding header. Insecure HTTP is disabled by default and is
+accepted only with `ALTA_MASSIVE_ALLOW_INSECURE_HTTP=1`. That opt-in sends the
+credential and market-data requests without transport encryption, so use it
+only for a separately reviewed endpoint on a trusted network and prefer HTTPS
+whenever the provider offers it.
 
 ## Run one controlled cycle
 
@@ -359,7 +366,7 @@ account has zero positions and zero open orders. A successful lifecycle reports
 `paperFillCount=2`, `positionStatus=closed`, `paperFlatSafety=true`, and
 `lifecycleComplete=true`. A `Wait` or no-op is a safe research result but does
 not satisfy the Paper lifecycle acceptance. The `finally` path attempts to
-flatten any one-share position created by that cycle and then runs another
+flatten any risk-sized position created by that cycle and then runs another
 zero-position/zero-open-order preflight.
 
 ## Install the unattended 24×7 service
@@ -714,7 +721,7 @@ The verified release has demonstrated:
   Opportunity;
 - two private assessments, bounded discussion, deterministic 1–90 day ranking,
   stock expression, independent audit, and post-audit exact quote refresh;
-- a one-share Tiger Paper `BUY` followed by one-share `SELL`, exact-position
+- a Tiger Paper `BUY` followed by `SELL` for the same audited quantity, exact-position
   reconciliation, two durable Paper-fill events, and a final
   zero-position/zero-open-order preflight;
 - exactly 8 of 8 allowed Massive requests, with broad discovery disabled;
