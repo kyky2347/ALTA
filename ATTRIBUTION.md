@@ -115,7 +115,7 @@ weights, proprietary datasets, credentials, or account content.
 | Massive and Finlight           | Bounded market-data and news adapters          | No copied data product; responses remain local |
 | Brave, Jina, SearXNG           | Optional search or reader adapters             | No embedded index or server implementation     |
 | SEC, OpenAlex, Crossref, arXiv | Bounded public-source adapters                 | No bulk dataset redistribution                 |
-| Tiger / `tigeropen`            | Exact-account, one-share Paper acceptance      | No SDK source copied; no live-account support  |
+| Tiger / `tigeropen`            | Exact-account, risk-bounded Paper acceptance   | No SDK source copied; no live-account support  |
 
 ALTA calls `tigeropen` through its public package API and does not copy or modify
 Tiger SDK source. Operators are responsible for brokerage agreements, Paper

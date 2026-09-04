@@ -80,6 +80,7 @@ def test_forward_cohort_exposes_drift_coverage_and_cycle_attribution(
     known_at = datetime(2026, 8, 25, 13, 30, tzinfo=UTC)
     first_cycle = "live-20260825-133000-000001"
     second_cycle = "live-20260825-140000-000002"
+    retrying_cycle = "live-20260825-143000-000003"
     first = ForwardEvaluationLedger(database, _settings(evaluation_database))
 
     first_hash = first.bind_cycle(first_cycle, known_at)
@@ -92,6 +93,7 @@ def test_forward_cohort_exposes_drift_coverage_and_cycle_attribution(
     assert (
         changed.bind_cycle(second_cycle, known_at + timedelta(minutes=30)) != first_hash
     )
+    first.bind_cycle(retrying_cycle, known_at + timedelta(minutes=60))
 
     snapshot = {
         "status": "MVP_IDLE",
@@ -117,6 +119,17 @@ def test_forward_cohort_exposes_drift_coverage_and_cycle_attribution(
         known_at + timedelta(minutes=31),
         "mvp.pipeline.failed",
         {"cycle_id": second_cycle, "error_type": "FixtureFailure"},
+    )
+    _append_terminal(
+        database,
+        retrying_cycle,
+        known_at + timedelta(minutes=61),
+        "mvp.pipeline.failed",
+        {
+            "cycle_id": retrying_cycle,
+            "error_type": "FixtureTransientFailure",
+            "retry_scheduled": True,
+        },
     )
     with database.connect() as connection:
         _append_event(
@@ -151,9 +164,10 @@ def test_forward_cohort_exposes_drift_coverage_and_cycle_attribution(
     summary = ForwardEvaluationReader(database).summary("shadow", "forward-fixture", 10)
     assert summary["configurationStable"] is False
     assert summary["configurationVariantCount"] == 2
-    assert summary["boundCycles"] == 2
+    assert summary["boundCycles"] == 3
     assert summary["completedCycles"] == 1
     assert summary["failedCycles"] == 1
+    assert summary["incompleteCycles"] == 1
     assert summary["idleCycles"] == 1
     assert summary["candidateCycles"] == 1
     assert summary["sources"] == {

@@ -39,6 +39,37 @@ ENTRY_LIMIT_OFFSET_BPS = Decimal("25")
 EXIT_LIMIT_OFFSET_BPS = Decimal("25")
 
 
+def _capital_process_launcher(repo_root: Path) -> tuple[str, ...]:
+    """Prefer the provisioned Capital interpreter over a shell PATH lookup."""
+
+    executable = "python.exe" if os.name == "nt" else "python"
+    managed_python = (
+        repo_root
+        / ".alta"
+        / "capital"
+        / "venv"
+        / ("Scripts" if os.name == "nt" else "bin")
+        / executable
+    )
+    if managed_python.is_file() and os.access(managed_python, os.X_OK):
+        return (str(managed_python), "-m", "alta_capitald")
+    uv = shutil.which("uv")
+    if uv is not None:
+        return (
+            uv,
+            "run",
+            "--frozen",
+            "--project",
+            str(repo_root / "alta-runtime" / "capital-python"),
+            "python",
+            "-m",
+            "alta_capitald",
+        )
+    raise PaperExecutionError(
+        "managed Capital Python is unavailable and uv is not on PATH"
+    )
+
+
 def _paper_lease_home() -> Path:
     home = Path.home()
     if hasattr(os, "getuid"):
@@ -406,11 +437,9 @@ class TigerPaperExecutor:
         owner_lease_path: Path | None = None,
         mutation_lease_path: Path | None = None,
     ) -> None:
-        uv = shutil.which("uv")
-        if uv is None:
-            raise PaperExecutionError("uv is required for the isolated Paper process")
         self.repo_root = repo_root
         self.project = repo_root / "alta-runtime" / "capital-python"
+        self.process_launcher = _capital_process_launcher(repo_root)
         self.config_path = config_path
         self.account_sha256 = account_sha256
         self.timeout_seconds = timeout_seconds
@@ -426,7 +455,6 @@ class TigerPaperExecutor:
                 "Paper dispatch quote age must be between 1 and 30 seconds"
             )
         self.max_dispatch_quote_age_seconds = max_dispatch_quote_age_seconds
-        self.uv = uv
         expected_owner = _global_paper_lease_path(account_sha256)
         self.lease_path = owner_lease_path or expected_owner
         if self.lease_path != expected_owner:
@@ -677,14 +705,7 @@ class TigerPaperExecutor:
         quote_known_at: datetime | None,
     ) -> list[str]:
         command = [
-            self.uv,
-            "run",
-            "--frozen",
-            "--project",
-            str(self.project),
-            "python",
-            "-m",
-            "alta_capitald",
+            *self.process_launcher,
             action,
             "--config-path",
             str(self.config_path),

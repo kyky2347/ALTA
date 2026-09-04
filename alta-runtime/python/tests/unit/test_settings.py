@@ -2,7 +2,7 @@ import pytest
 from pydantic import ValidationError
 
 from alta_asterism.contracts import Environment, Settings
-from alta_asterism.service import _write_json_response, _write_sse, serve
+from alta_asterism.service import _capital_mode, _write_json_response, _write_sse, serve
 
 
 class _DisconnectedStream:
@@ -128,6 +128,17 @@ def test_settings_redact_runtime_urls_and_default_to_replay() -> None:
     }
     assert "database-secret" not in repr(settings)
     assert "redis-secret" not in repr(settings)
+
+
+def test_runtime_capital_mode_reflects_the_effective_paper_setting() -> None:
+    settings = Settings(
+        DATABASE_URL="postgresql://fixture.invalid/alta",
+        REDIS_URL="redis://fixture.invalid/0",
+    )
+
+    assert _capital_mode(settings) == "disabled"
+    paper_settings = settings.model_copy(update={"tiger_paper_enabled": True})
+    assert _capital_mode(paper_settings) == "tiger_paper_mirror"
 
 
 def test_settings_accept_the_complete_gateway_credential_inventory() -> None:

@@ -25,6 +25,44 @@ const DEFAULT_MAX_DISPATCH_QUOTE_AGE_SECONDS = "10";
 const MAX_AUDIT_EVENTS = 100;
 export const PAPER_MUTATION_LEASE_PROTOCOL = "alta.paper-mutation-lease.v1";
 
+export function capitalRuntimeCommand(
+  rootDir,
+  action,
+  findExecutable = executableInPath,
+) {
+  const managedPython = path.join(
+    rootDir,
+    ".alta",
+    "capital",
+    "venv",
+    process.platform === "win32" ? "Scripts" : "bin",
+    process.platform === "win32" ? "python.exe" : "python",
+  );
+  try {
+    const metadata = fs.statSync(managedPython);
+    if (metadata.isFile())
+      return [managedPython, "-m", "alta_capitald", action];
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  const uv = findExecutable("uv");
+  if (!uv)
+    throw new Error(
+      "Managed Capital Python is unavailable and uv is not on PATH",
+    );
+  return [
+    uv,
+    "run",
+    "--frozen",
+    "--project",
+    path.join(rootDir, "alta-runtime", "capital-python"),
+    "python",
+    "-m",
+    "alta_capitald",
+    action,
+  ];
+}
+
 function hash(value) {
   return createHash("sha256").update(value).digest("hex");
 }
@@ -699,18 +737,12 @@ export class PaperCapitalControl {
   }
 
   invoke(action, configuration) {
-    const uv = executableInPath("uv");
-    if (!uv) throw new Error("uv is required for the isolated Paper process");
-    const project = path.join(this.rootDir, "alta-runtime", "capital-python");
-    const args = [
-      "run",
-      "--frozen",
-      "--project",
-      project,
-      "python",
-      "-m",
-      "alta_capitald",
+    const [executable, ...launcherArgs] = capitalRuntimeCommand(
+      this.rootDir,
       action,
+    );
+    const args = [
+      ...launcherArgs,
       "--config-path",
       configuration.file,
       "--account-sha256",
@@ -725,7 +757,7 @@ export class PaperCapitalControl {
       this.riskPolicy().maxOrderNotional,
     ];
     return new Promise((resolve, reject) => {
-      const child = spawn(uv, args, {
+      const child = spawn(executable, args, {
         cwd: this.rootDir,
         env: isolatedEnvironment(this.rootDir),
         stdio: ["ignore", "pipe", "pipe"],

@@ -1,6 +1,8 @@
 # ALTA publication security audit
 
-Audit date: 2026-08-31
+Baseline audit date: 2026-08-31
+
+Latest delta revalidation: 2026-09-04
 
 Target: the exact source tree and new Git history prepared for
 `https://github.com/kyky2347/ALTA`
@@ -21,7 +23,35 @@ unknown secret format or software defect is impossible. Any later credential
 finding requires immediate publication stop, provider-side rotation, history
 remediation, and a complete rescan.
 
-## Publication checks
+## Publication delta — 2026-09-04
+
+The current staged publication set was revalidated after the cycle-recovery,
+Capital-launcher, console-session, auxiliary-polling, current-cycle UI, and
+README changes in the unreleased section.
+
+| Check                                                         |                               Result |
+| ------------------------------------------------------------- | -----------------------------------: |
+| Gitleaks 8.30.0 over exact staged export                      |                           0 findings |
+| detect-secrets 1.5.0 over exact staged export                 |                           0 findings |
+| Gitleaks 8.30.0 over all 18 commits                           |                           0 findings |
+| Exact staged export: locked Node and Python installs          |                                 PASS |
+| Node gateway / harness tests                                  |                           190 passed |
+| Opportunity OS tests                                          |                           373 passed |
+| Isolated capital-package tests                                |                            38 passed |
+| Dashboard tests                                               |                             9 passed |
+| Ruff, Prettier, Markdown, dashboard lint and production build |                                 PASS |
+| pnpm production dependency audit                              |             no known vulnerabilities |
+| pip-audit over both installed Python runtimes                 |             no known vulnerabilities |
+| cargo-audit 0.22.2 over pinned Codex `Cargo.lock`             | 0 vulnerabilities; 0 policy warnings |
+
+The exact staged export was produced from Git's index, not copied from the
+development directory. Its frozen pnpm and uv installs and first-party Node and
+dashboard suites passed without a local credential store. The capital process
+was not invoked against Tiger; no broker order was submitted. The complete
+18-commit history was rescanned after the publication commit and returned zero
+findings before push.
+
+## Baseline publication checks — 2026-08-31
 
 | Check                                                 |                                                 Result |
 | ----------------------------------------------------- | -----------------------------------------------------: |

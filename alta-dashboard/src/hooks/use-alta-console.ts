@@ -31,6 +31,8 @@ type Bootstrap = ControlState & { csrfToken: string };
 const LIVE_POLL_MS = 2_500;
 const OPERATION_POLL_MS = 1_000;
 const BACKGROUND_POLL_MS = 15_000;
+const AUXILIARY_POLL_MS = 30_000;
+const AUXILIARY_TIMEOUT_MS = 5_000;
 const MAX_RETRY_MS = 30_000;
 const CONSOLE_PROTOCOL_VERSION = 4;
 
@@ -140,8 +142,8 @@ export function useAltaConsole() {
   const lastStatusCursor = useRef(preview ? previewStatus.eventCursor : -1);
   const mounted = useRef(true);
   const hasSnapshot = useRef(preview);
-  const credentialsLoaded = useRef(preview);
-  const capitalLoaded = useRef(preview);
+  const credentialsNextPollAt = useRef(preview ? Number.POSITIVE_INFINITY : 0);
+  const capitalNextPollAt = useRef(preview ? Number.POSITIVE_INFINITY : 0);
 
   const markConnected = useCallback(
     (message: string | null, stale: boolean) => {
@@ -221,31 +223,38 @@ export function useAltaConsole() {
           : nextControl.operation?.status === "running"
             ? OPERATION_POLL_MS
             : LIVE_POLL_MS;
-      if (!credentialsLoaded.current) {
+      const auxiliaryNow = Date.now();
+      if (auxiliaryNow >= credentialsNextPollAt.current) {
+        credentialsNextPollAt.current = auxiliaryNow + AUXILIARY_POLL_MS;
         try {
           const nextCredentials = await getJson<CredentialInventory>(
             "/control/credentials",
-            { signal: controller.signal },
+            {
+              signal: controller.signal,
+              timeoutMs: AUXILIARY_TIMEOUT_MS,
+            },
           );
           if (!mounted.current) return;
           setCredentials(nextCredentials);
           setCredentialsError(null);
-          credentialsLoaded.current = true;
         } catch (error) {
           if (!mounted.current) return;
           setCredentialsError(messageFor(error));
         }
       }
-      if (!capitalLoaded.current) {
+      if (auxiliaryNow >= capitalNextPollAt.current) {
+        capitalNextPollAt.current = auxiliaryNow + AUXILIARY_POLL_MS;
         try {
           const nextCapital = await getJson<PaperCapitalStatus>(
             "/control/capital",
-            { signal: controller.signal },
+            {
+              signal: controller.signal,
+              timeoutMs: AUXILIARY_TIMEOUT_MS,
+            },
           );
           if (!mounted.current) return;
           setCapital(nextCapital);
           setCapitalError(null);
-          capitalLoaded.current = true;
         } catch (error) {
           if (!mounted.current) return;
           setCapitalError(messageFor(error));
@@ -482,7 +491,7 @@ export function useAltaConsole() {
     const next = await getJson<CredentialInventory>("/control/credentials");
     setCredentials(next);
     setCredentialsError(null);
-    credentialsLoaded.current = true;
+    credentialsNextPollAt.current = Date.now() + AUXILIARY_POLL_MS;
   }, [preview]);
 
   const verifyCredentials = useCallback(
@@ -497,7 +506,7 @@ export function useAltaConsole() {
         const next = await verifyCredentialHealth(csrfToken.current, force);
         setCredentials(next);
         setCredentialsError(null);
-        credentialsLoaded.current = true;
+        credentialsNextPollAt.current = Date.now() + AUXILIARY_POLL_MS;
       } catch (error) {
         if (!(error instanceof ApiError) || error.code !== "mutation_forbidden")
           throw error;
@@ -510,7 +519,7 @@ export function useAltaConsole() {
         const next = await verifyCredentialHealth(csrfToken.current, force);
         setCredentials(next);
         setCredentialsError(null);
-        credentialsLoaded.current = true;
+        credentialsNextPollAt.current = Date.now() + AUXILIARY_POLL_MS;
       }
     },
     [preview],
@@ -521,7 +530,7 @@ export function useAltaConsole() {
     const next = await getJson<PaperCapitalStatus>("/control/capital");
     setCapital(next);
     setCapitalError(null);
-    capitalLoaded.current = true;
+    capitalNextPollAt.current = Date.now() + AUXILIARY_POLL_MS;
   }, [preview]);
 
   const refreshCapital = useCallback(async () => {
@@ -533,7 +542,7 @@ export function useAltaConsole() {
       const next = await refreshPaperCapital(csrfToken.current);
       setCapital(next);
       setCapitalError(null);
-      capitalLoaded.current = true;
+      capitalNextPollAt.current = Date.now() + AUXILIARY_POLL_MS;
     } catch (error) {
       if (!(error instanceof ApiError) || error.code !== "mutation_forbidden")
         throw error;
@@ -546,7 +555,7 @@ export function useAltaConsole() {
       const next = await refreshPaperCapital(csrfToken.current);
       setCapital(next);
       setCapitalError(null);
-      capitalLoaded.current = true;
+      capitalNextPollAt.current = Date.now() + AUXILIARY_POLL_MS;
     }
   }, [preview]);
 
@@ -563,7 +572,7 @@ export function useAltaConsole() {
         );
         setCapital(next);
         setCapitalError(null);
-        capitalLoaded.current = true;
+        capitalNextPollAt.current = Date.now() + AUXILIARY_POLL_MS;
       } catch (error) {
         if (!(error instanceof ApiError) || error.code !== "mutation_forbidden")
           throw error;
@@ -579,7 +588,7 @@ export function useAltaConsole() {
         );
         setCapital(next);
         setCapitalError(null);
-        capitalLoaded.current = true;
+        capitalNextPollAt.current = Date.now() + AUXILIARY_POLL_MS;
       }
       queueRefresh();
     },
@@ -598,7 +607,7 @@ export function useAltaConsole() {
         const next = await replaceCredential(slot, secret, csrfToken.current);
         setCredentials(next);
         setCredentialsError(null);
-        credentialsLoaded.current = true;
+        credentialsNextPollAt.current = Date.now() + AUXILIARY_POLL_MS;
       } catch (error) {
         if (!(error instanceof ApiError) || error.code !== "mutation_forbidden")
           throw error;
@@ -611,7 +620,7 @@ export function useAltaConsole() {
         const next = await replaceCredential(slot, secret, csrfToken.current);
         setCredentials(next);
         setCredentialsError(null);
-        credentialsLoaded.current = true;
+        credentialsNextPollAt.current = Date.now() + AUXILIARY_POLL_MS;
       }
     },
     [preview],

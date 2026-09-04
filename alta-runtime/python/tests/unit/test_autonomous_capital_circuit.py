@@ -23,7 +23,10 @@ def test_capital_circuit_terminates_runner_without_retry(monkeypatch) -> None:
     runner.settings = SimpleNamespace(environment=Environment.SHADOW)
     runner.runtime_factory = lambda *_args: runtime
     runner.state_callback = lambda state, detail: notifications.append((state, detail))
-    runner.evaluation = SimpleNamespace(bind_cycle=lambda *_args: None)
+    runner.evaluation = SimpleNamespace(
+        bind_cycle=lambda *_args: None,
+        incomplete_cycles=lambda: (),
+    )
     runner._record_failure = lambda *_args, **kwargs: recorded.append(
         kwargs["retry_scheduled"]
     )

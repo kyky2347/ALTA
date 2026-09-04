@@ -14,9 +14,10 @@ from .autonomous_owner import (
     release_autonomous_owner,
 )
 from .contracts import Environment, Settings
-from .cycle_recovery import FrozenCycleSnapshotError
+from .cycle_recovery import FrozenCycleSnapshotError, recover_frozen_wake
 from .database import AutonomousFenceLost, Database
-from .forward_evaluation import ForwardEvaluationLedger
+from .expression import contract_hash
+from .forward_evaluation import ForwardEvaluationLedger, evaluation_configuration
 from .live_runtime import LiveRuntime
 from .paper_execution import PaperCapitalCircuitOpen
 from .scout_repository import ScoutRepository
@@ -27,6 +28,18 @@ __all__ = [
     "acquire_autonomous_owner",
     "release_autonomous_owner",
 ]
+
+
+class IncompleteCycleWithoutSnapshot(RuntimeError):
+    """A bound cycle stopped before it established immutable research input."""
+
+
+class IncompleteCycleConfigurationChanged(RuntimeError):
+    """An unfinished cycle cannot run under a different evaluation contract."""
+
+
+class IncompleteCycleSuperseded(RuntimeError):
+    """A duplicate unfinished cycle was isolated in favor of the oldest wake."""
 
 
 class AutonomousRunner:
@@ -57,6 +70,7 @@ class AutonomousRunner:
         wake_at: datetime | None = None
         try:
             ScoutRepository(self.database).reconcile_expired_activity(datetime.now(UTC))
+            cycle_id, wake_at, failures = self._reconcile_incomplete_cycles()
             while not stop.is_set():
                 self.database.assert_autonomous_fence()
                 if cycle_id is None or wake_at is None:
@@ -260,6 +274,67 @@ class AutonomousRunner:
             release_autonomous_owner(owner)
             if not runtime_closed:
                 raise RuntimeError("autonomous runtime did not close cleanly")
+
+    def _reconcile_incomplete_cycles(
+        self,
+    ) -> tuple[str | None, datetime | None, int]:
+        """Resume exactly one durable cycle and fail closed on unsafe duplicates."""
+
+        pending = self.evaluation.incomplete_cycles()
+        if not pending:
+            return None, None, 0
+
+        current_hash = contract_hash(evaluation_configuration(self.settings))
+        selected = None
+        repository = ScoutRepository(self.database)
+        for cycle in pending:
+            error: Exception | None = None
+            if cycle.configuration_hash != current_hash:
+                error = IncompleteCycleConfigurationChanged()
+            else:
+                try:
+                    frozen = recover_frozen_wake(self.database, cycle.cycle_id)
+                except FrozenCycleSnapshotError as snapshot_error:
+                    error = snapshot_error
+                else:
+                    if frozen is None:
+                        error = IncompleteCycleWithoutSnapshot()
+                    elif selected is None:
+                        selected = cycle
+                        continue
+                    else:
+                        error = IncompleteCycleSuperseded()
+
+            repository.terminalize_snapshot_cycle(
+                cycle.cycle_id,
+                error_code=self._recovery_error_code(error),
+            )
+            self._record_failure(
+                cycle.cycle_id,
+                cycle.known_at,
+                error,
+                cycle.retry_failures + 1,
+                retry_scheduled=False,
+            )
+
+        if selected is None:
+            return None, None, 0
+        return (
+            selected.cycle_id,
+            selected.known_at,
+            selected.retry_failures,
+        )
+
+    @staticmethod
+    def _recovery_error_code(error: Exception) -> str:
+        if isinstance(error, FrozenCycleSnapshotError):
+            return "frozen_snapshot_inconsistent"
+        names = {
+            "IncompleteCycleWithoutSnapshot": "incomplete_without_snapshot",
+            "IncompleteCycleConfigurationChanged": "configuration_changed",
+            "IncompleteCycleSuperseded": "superseded_incomplete_cycle",
+        }
+        return names.get(type(error).__name__, "startup_recovery_failed")
 
     def _next_cycle_interval(self) -> tuple[int, str]:
         """Choose bounded cadence from durable work, never from model conviction."""

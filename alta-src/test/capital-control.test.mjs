@@ -5,10 +5,33 @@ import path from "node:path";
 import test from "node:test";
 import {
   acquirePaperMutationLease,
+  capitalRuntimeCommand,
   PaperCapitalControl,
 } from "../capital-control.mjs";
 
 const PAPER_ACCOUNT = "00000000000000000";
+
+test("Capital control uses the managed interpreter without a shell PATH", (context) => {
+  const rootDir = fs.mkdtempSync(
+    path.join(os.tmpdir(), "alta-capital-python-"),
+  );
+  context.after(() => fs.rmSync(rootDir, { recursive: true, force: true }));
+  const executable = path.join(
+    rootDir,
+    ".alta",
+    "capital",
+    "venv",
+    process.platform === "win32" ? "Scripts" : "bin",
+    process.platform === "win32" ? "python.exe" : "python",
+  );
+  fs.mkdirSync(path.dirname(executable), { recursive: true });
+  fs.writeFileSync(executable, "fixture", { mode: 0o700 });
+
+  assert.deepEqual(
+    capitalRuntimeCommand(rootDir, "snapshot", () => null),
+    [executable, "-m", "alta_capitald", "snapshot"],
+  );
+});
 
 test("Paper mutation lease fences PID reuse and token replacement", (context) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "alta-mutation-lease-"));

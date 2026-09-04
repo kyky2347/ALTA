@@ -75,8 +75,9 @@ Broker credentials are not accepted by this surface.
   managed position remains enters close-only recovery: new buys are blocked,
   while only the durable exit may drain before final disablement.
 - The acceptance executor requires an owner-only non-symlink config, exact
-  17-digit Paper account SHA-256 binding, empty starting account, one-share DAY
-  limit orders, fill reconciliation, confirmed cancellation, and final
+  17-digit Paper account SHA-256 binding, empty starting account, bounded
+  whole-share DAY limit orders, notional and broker-capacity admission, fresh
+  dispatch quotes, fill reconciliation, confirmed cancellation, and final
   zero-position/zero-open-order verification.
 - Research Agents receive neither Tiger credentials nor the executor tool.
 - Market-data access uses bounded concurrency, explicit timeouts, and

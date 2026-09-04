@@ -16,8 +16,10 @@ from alta_asterism.mind_worker import (
     budget_charge_tool_calls,
     budget_charge_tokens,
 )
+from alta_asterism.opportunity_continuity import build_opportunity_continuity
 from alta_asterism.scouts import (
     CORE_ACTIVE_RESEARCH_TOOLS,
+    SCOUT_RETRY_PROMPT_RESERVE_BYTES,
     SCOUTS,
     EvidenceSnapshot,
     FrozenScoutInput,
@@ -557,6 +559,49 @@ def test_complete_scout_snapshot_is_fitted_before_database_persistence() -> None
 
     assert len(build_prompt(spec).encode()) <= 12_000
     assert persisted_scout_snapshot_bytes(SCOUTS[0], prompt_fitted) <= 7_000
+
+
+@pytest.mark.parametrize("scout", SCOUTS[2:], ids=lambda item: item.scout_id)
+def test_exploration_snapshot_sheds_redundant_global_continuity(
+    scout, monkeypatch
+) -> None:
+    base = frozen_input().model_copy(update={"evidence": ()})
+    budget = RunBudget(
+        max_tool_calls=5,
+        max_total_tokens=88_000,
+        max_output_bytes=8_000,
+        require_active_research=True,
+    )
+    role_baseline = base.for_scout(scout.scout_id, scout.primary_sources)
+    baseline_spec = make_run_spec(
+        run_id="run_continuity_baseline",
+        trace_id="trace_continuity_baseline",
+        scout=scout,
+        frozen_input=role_baseline,
+        budget=budget,
+        deadline_at=base.known_at + timedelta(minutes=5),
+        model_provider="fixture",
+        model_id="fixture-model",
+    )
+    baseline_bytes = len(build_prompt(baseline_spec).encode())
+    monkeypatch.setattr(
+        "alta_asterism.scouts.MAX_SCOUT_PROMPT_BYTES",
+        baseline_bytes + SCOUT_RETRY_PROMPT_RESERVE_BYTES,
+    )
+    continuity = build_opportunity_continuity(
+        wake_at=base.known_at,
+        opportunities=(),
+    ).portfolio
+
+    fitted = fit_frozen_input_for_scout(
+        base.model_copy(update={"opportunity_continuity": continuity}),
+        scout,
+        budget,
+    )
+
+    assert fitted.opportunity_continuity is None
+    assert fitted.opportunity_drive == role_baseline.opportunity_drive
+    assert persisted_scout_snapshot_bytes(scout, fitted) <= 7_000
 
 
 @pytest.mark.parametrize("scout", SCOUTS, ids=lambda item: item.scout_id)

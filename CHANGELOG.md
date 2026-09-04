@@ -96,6 +96,24 @@ semantic versioning while the project remains experimental.
 
 ### Fixed
 
+- Autonomous startup now reconciles unfinished evaluation bindings before it
+  can create a new cycle. The oldest compatible frozen wake resumes; bindings
+  without an immutable snapshot, with a changed evaluation contract, or later
+  duplicate bindings fail closed with explicit terminal records.
+- Retry-scheduled pipeline failures are no longer projected as terminal cycle
+  outcomes, preventing a recoverable attempt from appearing as a completed
+  failure in the forward-evaluation ledger and operator console.
+- Oversized Scout inputs may now shed the redundant global continuity
+  projection only after preserving the role-specific drive and exact follow-up,
+  so an exploratory seat cannot fail before its Run is persisted.
+- Both research and control-plane Paper commands prefer the provisioned,
+  isolated Capital interpreter and fall back to locked `uv run` only when the
+  managed environment is absent.
+- The operator console now refreshes credential health and Paper-capital state
+  on a bounded auxiliary cadence, renews active HttpOnly sessions, and uses the
+  scheduler's durable current cycle in the header, opportunity field, and
+  decision-ledger filter. Optional-panel failure no longer creates a request
+  storm or leaves a once-loaded status stale indefinitely.
 - Exact follow-up assignments can no longer disappear when a Scout prompt is
   reduced to its durable byte budget. Follow-up prompts use a compact,
   mode-specific contract that preserves the parent Opportunity, question,

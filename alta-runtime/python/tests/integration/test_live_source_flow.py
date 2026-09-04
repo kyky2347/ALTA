@@ -1040,6 +1040,21 @@ class StoppingAutonomousRuntime:
         self.closed = True
 
 
+class CapturingAutonomousRuntime:
+    def __init__(self, stop: threading.Event, cycle_ids: list[str]) -> None:
+        self.stop = stop
+        self.cycle_ids = cycle_ids
+        self.orchestrator = self
+
+    def run(self, cycle_id: str, _wake_at: datetime) -> SimpleNamespace:
+        self.cycle_ids.append(cycle_id)
+        self.stop.set()
+        return SimpleNamespace(status="MVP_IDLE")
+
+    def close(self) -> None:
+        return None
+
+
 def test_autonomous_runner_treats_planned_interrupt_as_cancellation(
     live_database: str,
 ) -> None:
@@ -1071,6 +1086,112 @@ def test_autonomous_runner_treats_planned_interrupt_as_cancellation(
             WHERE event_type = 'mvp.pipeline.failed'"""
         ).fetchone()[0]
     assert failures == 0
+
+
+def test_autonomous_runner_resumes_the_durable_incomplete_cycle_after_restart(
+    live_database: str,
+) -> None:
+    database = Database(live_database)
+    database.upgrade()
+    settings = Settings(
+        DATABASE_URL=live_database,
+        REDIS_URL="redis://127.0.0.1:1/0",
+        ALTA_ENVIRONMENT="shadow",
+    )
+    wake_at = datetime(2026, 8, 27, 15, tzinfo=UTC)
+    cycle_id = "live-20260827-150000-000000"
+    AutonomousRunner(database, settings).evaluation.bind_cycle(cycle_id, wake_at)
+    DatabaseSourceFlow(database, ("SPY",)).schedule_and_wake(cycle_id, wake_at, {})
+    stop = threading.Event()
+    cycle_ids: list[str] = []
+    runtime = CapturingAutonomousRuntime(stop, cycle_ids)
+
+    result = AutonomousRunner(
+        database,
+        settings,
+        runtime_factory=lambda _database, _settings: runtime,
+    ).run(stop)
+
+    assert result == 0
+    assert cycle_ids == [cycle_id]
+
+
+def test_autonomous_runner_quarantines_duplicate_incomplete_cycle_on_restart(
+    live_database: str,
+) -> None:
+    database = Database(live_database)
+    database.upgrade()
+    settings = Settings(
+        DATABASE_URL=live_database,
+        REDIS_URL="redis://127.0.0.1:1/0",
+        ALTA_ENVIRONMENT="shadow",
+    )
+    old_wake = datetime(2026, 8, 27, 15, tzinfo=UTC)
+    new_wake = old_wake + timedelta(minutes=2)
+    old_cycle = "live-20260827-150000-000000"
+    duplicate_cycle = "live-20260827-150200-000000"
+    ledger = AutonomousRunner(database, settings).evaluation
+    for cycle_id, wake_at in ((old_cycle, old_wake), (duplicate_cycle, new_wake)):
+        ledger.bind_cycle(cycle_id, wake_at)
+        DatabaseSourceFlow(database, ("SPY",)).schedule_and_wake(cycle_id, wake_at, {})
+    stop = threading.Event()
+    cycle_ids: list[str] = []
+
+    result = AutonomousRunner(
+        database,
+        settings,
+        runtime_factory=lambda _database, _settings: CapturingAutonomousRuntime(
+            stop, cycle_ids
+        ),
+    ).run(stop)
+
+    assert result == 0
+    assert cycle_ids == [old_cycle]
+    with database.connect() as connection:
+        failure = connection.execute(
+            """SELECT payload FROM ops.event
+            WHERE aggregate_id = %s AND event_type = 'mvp.pipeline.failed'""",
+            (duplicate_cycle,),
+        ).fetchone()[0]
+    assert failure["error_type"] == "IncompleteCycleSuperseded"
+    assert failure["retry_scheduled"] is False
+
+
+def test_autonomous_runner_fails_closed_on_incomplete_cycle_without_snapshot(
+    live_database: str,
+) -> None:
+    database = Database(live_database)
+    database.upgrade()
+    settings = Settings(
+        DATABASE_URL=live_database,
+        REDIS_URL="redis://127.0.0.1:1/0",
+        ALTA_ENVIRONMENT="shadow",
+    )
+    wake_at = datetime(2026, 8, 27, 15, tzinfo=UTC)
+    abandoned_cycle = "live-20260827-150000-000000"
+    AutonomousRunner(database, settings).evaluation.bind_cycle(abandoned_cycle, wake_at)
+    stop = threading.Event()
+    cycle_ids: list[str] = []
+
+    result = AutonomousRunner(
+        database,
+        settings,
+        runtime_factory=lambda _database, _settings: CapturingAutonomousRuntime(
+            stop, cycle_ids
+        ),
+    ).run(stop)
+
+    assert result == 0
+    assert len(cycle_ids) == 1
+    assert cycle_ids[0] != abandoned_cycle
+    with database.connect() as connection:
+        failure = connection.execute(
+            """SELECT payload FROM ops.event
+            WHERE aggregate_id = %s AND event_type = 'mvp.pipeline.failed'""",
+            (abandoned_cycle,),
+        ).fetchone()[0]
+    assert failure["error_type"] == "IncompleteCycleWithoutSnapshot"
+    assert failure["retry_scheduled"] is False
 
 
 def test_autonomous_runner_is_single_owner_and_records_redacted_failure(

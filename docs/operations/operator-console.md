@@ -169,6 +169,12 @@ controls until the control channel is trustworthy again. A browser reload after
 PostgreSQL has been stopped has no cached database snapshot and therefore shows
 the stopped state.
 
+Provider-health and Paper-capital summaries use a separate 30-second refresh
+cadence with a five-second deadline. A failed auxiliary read advances its next
+eligible poll before returning, so an unavailable optional panel cannot create
+a request storm or delay the main runtime/event recovery loop. Successful reads
+continue to refresh instead of leaving a once-loaded status stale indefinitely.
+
 Lifecycle operations are serialized by an owner-only host lease and saved by
 atomic replace, file synchronization, and directory synchronization with their
 phase and outcome. Repeated Start and Stop requests are idempotent against the
@@ -177,8 +183,11 @@ reconciles the saved operation with the actual runtime instead of presenting an
 endless spinner. An owner-only session secret survives a console-process
 restart, while CSRF material and the console instance ID rotate. An open browser
 detects that instance change, obtains fresh CSRF material, and continues without
-exposing the session secret. Dependency status probes are coalesced and briefly
-cached so several browser refreshes cannot create a Docker command storm.
+exposing the session secret. The HttpOnly browser session uses a 30-day sliding
+window renewed by the normal control-state poll, so an actively used 24x7 console
+does not expire after a fixed half-day while an abandoned browser still ages out.
+Dependency status probes are coalesced and briefly cached so several browser
+refreshes cannot create a Docker command storm.
 
 The Python read service keeps upstream HTTP/1.1 connections reusable and uses a
 bounded PostgreSQL connection pool. Current-status projections are cached with
@@ -292,7 +301,12 @@ supervisor owns `opportunityd`; PostgreSQL owns durable research records in a
 named volume; and Redis uses append-only persistence for disposable coordination
 state. Host and Python supervisors restart with bounded backoff, an autonomous
 database advisory lock prevents duplicate schedulers, and incomplete research
-cycles resume from frozen Scout inputs and append-only records.
+cycles resume from frozen Scout inputs and append-only records. On process
+startup the scheduler reconciles durable cycle bindings before it may mint a
+new cycle ID: it resumes the oldest valid frozen wake, fail-closes a binding
+that never reached an immutable snapshot or whose evaluation contract changed,
+and isolates any later duplicate. This prevents a watchdog restart from
+silently running two interpretations of the same interrupted research window.
 
 After a machine restart, both managed user services recover after login. The
 dashboard can start even while the research service or container engine is

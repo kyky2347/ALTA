@@ -89,6 +89,52 @@ def test_executor_uses_frozen_isolated_process_and_secret_allowlist(
     assert captured["env"]["UV_PROJECT_ENVIRONMENT"].endswith("/.alta/capital/venv")
 
 
+def test_executor_uses_managed_capital_python_without_shell_path(
+    tmp_path: Path, monkeypatch
+) -> None:
+    managed_python = tmp_path / ".alta" / "capital" / "venv" / "bin" / "python"
+    managed_python.parent.mkdir(parents=True)
+    managed_python.write_text("fixture")
+    managed_python.chmod(0o700)
+    captured = {}
+
+    def run(command, **_kwargs):
+        captured["command"] = command
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(
+                {
+                    "ok": True,
+                    "result": {
+                        "paper": True,
+                        "accountBinding": True,
+                        "mutationPolicy": "risk_budgeted_limit_day_v1",
+                        "positionCount": 0,
+                        "openOrderCount": 0,
+                        "positions": [],
+                    },
+                }
+            ),
+        )
+
+    monkeypatch.setattr("alta_asterism.paper_execution.shutil.which", lambda _: None)
+    monkeypatch.setattr("alta_asterism.paper_execution.subprocess.run", run)
+    executor = TigerPaperExecutor(
+        repo_root=tmp_path,
+        config_path=tmp_path / "paper.properties",
+        account_sha256="a" * 64,
+        timeout_seconds=20,
+    )
+
+    assert executor.snapshot()["positionCount"] == 0
+    assert captured["command"][:4] == [
+        str(managed_python),
+        "-m",
+        "alta_capitald",
+        "snapshot",
+    ]
+
+
 def test_acceptance_always_runs_final_preflight_when_flatten_fails() -> None:
     class Executor:
         def __init__(self) -> None:

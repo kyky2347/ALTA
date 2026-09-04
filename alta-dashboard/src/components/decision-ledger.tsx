@@ -71,6 +71,7 @@ function entityFor(
 export function DecisionLedger({
   events,
   status,
+  currentCycleId,
   selected,
   onSelect,
   onLoadOlder,
@@ -79,6 +80,7 @@ export function DecisionLedger({
 }: {
   events: AltaEvent[];
   status: MvpStatus;
+  currentCycleId?: string | null;
   selected: SelectedEntity | null;
   onSelect: (entity: SelectedEntity) => void;
   onLoadOlder: () => Promise<void>;
@@ -99,8 +101,8 @@ export function DecisionLedger({
       const inScope =
         scope === "all" ||
         (scope === "cycle" &&
-          Boolean(status.currentPipelineId) &&
-          haystack.includes(String(status.currentPipelineId).toLowerCase())) ||
+          Boolean(currentCycleId) &&
+          haystack.includes(String(currentCycleId).toLowerCase())) ||
         (scope === "opportunity" &&
           Boolean(currentOpportunity) &&
           haystack.includes(String(currentOpportunity).toLowerCase()));
@@ -110,14 +112,7 @@ export function DecisionLedger({
         inScope
       );
     });
-  }, [
-    currentOpportunity,
-    events,
-    family,
-    query,
-    scope,
-    status.currentPipelineId,
-  ]);
+  }, [currentOpportunity, events, family, query, scope, currentCycleId]);
   const families = useMemo(
     () =>
       [
@@ -160,9 +155,7 @@ export function DecisionLedger({
           aria-label={t("filterDecisionScope")}
         >
           <option value="all">{t("allLoadedScopes")}</option>
-          {status.currentPipelineId && (
-            <option value="cycle">{t("currentCycle")}</option>
-          )}
+          {currentCycleId && <option value="cycle">{t("currentCycle")}</option>}
           {currentOpportunity && (
             <option value="opportunity">{t("leadingOpportunity")}</option>
           )}

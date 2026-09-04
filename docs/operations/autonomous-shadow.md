@@ -45,7 +45,7 @@ flowchart TB
   exit["Deterministic hold or exit"]
   alpha["Cost-adjusted return<br/>SPY-relative measurement"]
   governance["Rolling Alpha survival governance<br/>drawdown · confidence bound · capital posture"]
-  paper["Explicit acceptance only<br/>Tiger Paper BUY 1 · SELL 1 · flat"]
+  paper["Explicit acceptance only<br/>risk-sized Tiger Paper · reconcile · flat"]
 
   source --> evidence --> scouts --> thesis --> diligence --> foundry --> registry --> challenge --> odds --> decision --> rank
   registry -. prior production Candidates .-> attention

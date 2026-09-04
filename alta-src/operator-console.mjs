@@ -8,6 +8,7 @@ import { atomicWrite, atomicWriteJson } from "./durable-file.mjs";
 
 const JSON_TYPE = "application/json; charset=utf-8";
 const SESSION_COOKIE = "alta_console_session";
+const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
 const ENVIRONMENT_CACHE_MS = 7_500;
 const RUNTIME_CACHE_MS = 1_000;
 const UPSTREAM_TIMEOUT_MS = 15_000;
@@ -50,14 +51,19 @@ function cookies(request) {
   );
 }
 
-function json(response, status, value) {
+function json(response, status, value, headers = {}) {
   const body = Buffer.from(JSON.stringify(value));
   response.writeHead(status, {
     "Content-Type": JSON_TYPE,
     "Content-Length": body.length,
     "Cache-Control": "no-store",
+    ...headers,
   });
   response.end(body);
+}
+
+function sessionCookie(token) {
+  return `${SESSION_COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_MAX_AGE_SECONDS}`;
 }
 
 function safeError(error) {
@@ -638,7 +644,7 @@ export function createOperatorConsole({
         bootstrapUsed = true;
         response.writeHead(303, {
           "Location": "/",
-          "Set-Cookie": `${SESSION_COOKIE}=${sessionToken}; HttpOnly; SameSite=Strict; Path=/; Max-Age=43200`,
+          "Set-Cookie": sessionCookie(sessionToken),
           "Cache-Control": "no-store",
         });
         response.end();
@@ -659,11 +665,21 @@ export function createOperatorConsole({
         }
       }
       if (request.method === "GET" && url.pathname === "/control/bootstrap") {
-        json(response, 200, { data: { csrfToken, ...(await state()) } });
+        json(
+          response,
+          200,
+          { data: { csrfToken, ...(await state()) } },
+          { "Set-Cookie": sessionCookie(sessionToken) },
+        );
         return;
       }
       if (request.method === "GET" && url.pathname === "/control/state") {
-        json(response, 200, { data: await state() });
+        json(
+          response,
+          200,
+          { data: await state() },
+          { "Set-Cookie": sessionCookie(sessionToken) },
+        );
         return;
       }
       if (request.method === "GET" && url.pathname === "/control/credentials") {

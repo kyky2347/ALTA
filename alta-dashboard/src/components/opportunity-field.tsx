@@ -81,6 +81,9 @@ export function OpportunityField({
   const activeAgent =
     agents.find((agent) => agent.status === "running") ?? agents[0];
   const activeRuntime = runtime?.config.autonomousStatus === "running";
+  const currentCycleId = activeRuntime
+    ? (runtime.config.currentCycleId ?? status.currentPipelineId)
+    : status.currentPipelineId;
   const activeActionAgent = agents.find(
     (agent) =>
       agent.status === "running" && /(expression|audit)/i.test(agent.id),
@@ -96,7 +99,7 @@ export function OpportunityField({
             status={runtime?.config.autonomousStatus ?? status.status}
             live
           />
-          <span>{status.currentPipelineId ?? t("noActiveCycle")}</span>
+          <span>{currentCycleId ?? t("noActiveCycle")}</span>
         </div>
       </div>
 

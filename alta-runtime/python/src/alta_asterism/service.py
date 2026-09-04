@@ -72,6 +72,10 @@ def _write_sse(stream, events: list[dict]) -> None:
         return
 
 
+def _capital_mode(settings: Settings) -> str:
+    return "tiger_paper_mirror" if settings.tiger_paper_enabled else "disabled"
+
+
 def _handler(
     database: Database,
     settings: Settings,
@@ -350,7 +354,7 @@ def _handler(
                                     "navSource": "synthetic_shadow_reference",
                                 },
                                 "universe": settings.universe,
-                                "capitalMode": "disabled",
+                                "capitalMode": _capital_mode(settings),
                                 **state,
                             },
                         },

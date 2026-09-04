@@ -1,5 +1,6 @@
 from collections import Counter
 from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
@@ -45,6 +46,16 @@ class _EvaluationRows:
     snapshots: tuple[dict[str, Any], ...]
     position_ids: tuple[str, ...]
     truncated: bool
+
+
+@dataclass(frozen=True)
+class IncompleteEvaluationCycle:
+    """One durable cycle binding without a final pipeline outcome."""
+
+    cycle_id: str
+    known_at: datetime
+    configuration_hash: str | None
+    retry_failures: int
 
 
 def _ratio(numerator: int, denominator: int) -> str | None:
@@ -190,6 +201,57 @@ class ForwardEvaluationLedger:
             )
         return configuration_hash
 
+    def incomplete_cycles(self) -> tuple[IncompleteEvaluationCycle, ...]:
+        """Return unfinished cycles in creation order for startup reconciliation.
+
+        A failure with ``retry_scheduled=true`` is an attempt failure, not a
+        final cycle outcome.  Completed cycles and fail-closed failures are
+        excluded so a restarted autonomous process cannot accidentally create
+        a second cycle while durable work is still resumable.
+        """
+
+        with self.database.connect() as connection:
+            rows = connection.execute(
+                """SELECT bound.aggregate_id, bound.known_at,
+                bound.payload->>'configuration_hash',
+                count(retry.sequence)::integer
+                FROM ops.event bound
+                LEFT JOIN ops.event retry
+                  ON retry.environment = bound.environment
+                 AND retry.aggregate_id = bound.aggregate_id
+                 AND retry.event_type = 'mvp.pipeline.failed'
+                 AND retry.payload->>'retry_scheduled' = 'true'
+                WHERE bound.environment = %s
+                  AND bound.event_type = 'evaluation.cycle.bound'
+                  AND NOT EXISTS (
+                    SELECT 1 FROM ops.event terminal
+                    WHERE terminal.environment = bound.environment
+                      AND terminal.aggregate_id = bound.aggregate_id
+                      AND (
+                        terminal.event_type = 'mvp.pipeline.completed'
+                        OR (
+                          terminal.event_type = 'mvp.pipeline.failed'
+                          AND COALESCE(
+                            terminal.payload->>'retry_scheduled', 'false'
+                          ) <> 'true'
+                        )
+                      )
+                  )
+                GROUP BY bound.sequence, bound.aggregate_id, bound.known_at,
+                         bound.payload->>'configuration_hash'
+                ORDER BY bound.sequence""",
+                (self.settings.environment.value,),
+            ).fetchall()
+        return tuple(
+            IncompleteEvaluationCycle(
+                cycle_id=row[0],
+                known_at=row[1],
+                configuration_hash=row[2],
+                retry_failures=row[3],
+            )
+            for row in rows
+        )
+
 
 class ForwardEvaluationReader:
     """Projects bounded cohort health without changing research or capital policy."""
@@ -259,7 +321,13 @@ class ForwardEvaluationReader:
             connection.execute(
                 """SELECT DISTINCT ON (aggregate_id) aggregate_id, event_type, payload
                 FROM ops.event WHERE environment = %s AND aggregate_id = ANY(%s)
-                AND event_type IN ('mvp.pipeline.completed','mvp.pipeline.failed')
+                AND (
+                  event_type = 'mvp.pipeline.completed'
+                  OR (
+                    event_type = 'mvp.pipeline.failed'
+                    AND COALESCE(payload->>'retry_scheduled', 'false') <> 'true'
+                  )
+                )
                 ORDER BY aggregate_id, sequence DESC""",
                 (environment, cycle_ids),
             ).fetchall()

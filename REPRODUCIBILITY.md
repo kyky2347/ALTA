@@ -107,9 +107,10 @@ When external providers are enabled, the durable record must include:
   and final zero-position/zero-open-order verification.
 
 The acceptance result may be `Wait` or `MVP_IDLE`. Those are valid research
-outcomes, not test failures. The optional Tiger path may submit only one-share
-Paper orders under the documented acceptance boundary. Live orders and real
-capital are never permitted.
+outcomes, not test failures. The optional Tiger path may submit only audited,
+risk-sized whole-share Paper orders under the documented quantity, notional,
+liquidity, freshness, account-binding, and authorization boundaries. Live
+orders and real capital are never permitted.
 
 ## Release gate
 

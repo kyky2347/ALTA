@@ -623,6 +623,15 @@ def fit_frozen_input_for_scout(
         if (priority_ids or prompt_too_large) and fitted.research_incentives:
             fitted = fitted.model_copy(update={"research_incentives": ()})
             continue
+        # The global continuity portfolio allocates research capacity before each
+        # role is frozen.  At this point the role-specific OpportunityDrive and
+        # prioritized parent already contain the exact work the Scout must keep.
+        # Retaining the global projection is therefore redundant process context,
+        # and can otherwise make unassigned exploration Scouts fail before a run
+        # is persisted.  Never shed the exact drive or its assigned follow-up.
+        if fitted.opportunity_continuity is not None:
+            fitted = fitted.model_copy(update={"opportunity_continuity": None})
+            continue
         if fitted.portfolio_research_mandate is not None:
             fitted = fitted.model_copy(update={"portfolio_research_mandate": None})
             continue

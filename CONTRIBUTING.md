@@ -2,7 +2,7 @@
 
 ALTA welcomes focused research-engineering contributions. The project is
 experimental and research-only: changes must not introduce live brokerage
-control, broaden the explicit one-share Paper acceptance without a separate
+control, weaken the explicit risk-bounded Paper acceptance without a separate
 design review, or claim proven Alpha.
 
 ## Before making a change

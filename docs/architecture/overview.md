@@ -40,7 +40,7 @@ flowchart TB
   feedback["[Code] PIT Alpha feedback<br/>Mind · archetype · route · research mode · maturity gates"]
   governance["[Code] Rolling Alpha capital governance<br/>drawdown · uncertainty · survival posture"]
   calibration["[Code] Mature forecast calibration<br/>overforecast reserve · directional caution"]
-  paper["[Code] Optional isolated Tiger Paper mirror<br/>BUY 1 · SELL 1 · verify flat"]
+  paper["[Code] Optional isolated Tiger Paper mirror<br/>risk-sized DAY limits · reconcile · verify flat"]
 
   host --> supervisor --> scheduler --> sources
   sources --> evidence --> marketfunnel

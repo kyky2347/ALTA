@@ -240,6 +240,10 @@ export default function App() {
     : inspectorSelected;
   const visibleOperation = recentOperation(control?.operation);
   const runtimeReady = preview || Boolean(control?.runtime.ready);
+  const currentCycleId =
+    runtime?.config.autonomousStatus === "running"
+      ? (runtime.config.currentCycleId ?? status?.currentPipelineId)
+      : status?.currentPipelineId;
 
   async function handleAction(action: "start" | "stop" | "restart") {
     setActionError(null);
@@ -438,7 +442,7 @@ export default function App() {
                 : domain(status?.environment ?? "shadow")}
             </span>
             <Separator orientation="vertical" />
-            <span>{status?.currentPipelineId ?? t("noActiveCycle")}</span>
+            <span>{currentCycleId ?? t("noActiveCycle")}</span>
             <Separator orientation="vertical" />
             <span>
               {!runtimeReady && status
@@ -504,6 +508,7 @@ export default function App() {
                 <DecisionLedger
                   events={events}
                   status={status}
+                  currentCycleId={currentCycleId}
                   selected={inspectorSelected}
                   onSelect={handleSelect}
                   onLoadOlder={loadOlderEvents}

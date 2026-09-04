@@ -66,10 +66,12 @@ test("operator console keeps the API token server-side and protects mutations", 
   assert.equal(unauthorized.status, 401);
 
   const open = await fetch(location.openUrl, { redirect: "manual" });
-  const cookie = open.headers.get("set-cookie").split(";", 1)[0];
+  const issuedCookie = open.headers.get("set-cookie");
+  const cookie = issuedCookie.split(";", 1)[0];
   assert.equal(open.status, 303);
   assert.equal(open.headers.get("location"), "/");
   assert(!cookie.includes("super-secret-token"));
+  assert.match(issuedCookie, /Max-Age=2592000/);
   const reused = await fetch(location.openUrl, { redirect: "manual" });
   assert.equal(reused.headers.get("set-cookie"), null);
   assert.equal(bootstrapUses, 1);
@@ -78,6 +80,7 @@ test("operator console keeps the API token server-side and protects mutations", 
     headers: { Cookie: cookie },
   });
   const bootstrapPayload = await bootstrap.json();
+  assert.match(bootstrap.headers.get("set-cookie"), /Max-Age=2592000/);
   assert.equal(bootstrapPayload.data.safety.capitalMode, "disabled");
   assert(bootstrapPayload.data.csrfToken);
   assert.equal(bootstrapPayload.data.console.protocolVersion, 4);
@@ -691,6 +694,10 @@ test("operator console preserves the browser session and rotates CSRF after proc
   const secondBootstrap = await secondBootstrapResponse.json();
 
   assert.equal(secondBootstrapResponse.status, 200);
+  assert.match(
+    secondBootstrapResponse.headers.get("set-cookie"),
+    /Max-Age=2592000/,
+  );
   assert.notEqual(
     secondBootstrap.data.console.instanceId,
     firstBootstrap.data.console.instanceId,
