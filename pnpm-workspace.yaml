@@ -11,7 +11,13 @@ nodeLinker: isolated
 shamefullyHoist: false
 
 minimumReleaseAge: 10080
-minimumReleaseAgeExclude: []
+minimumReleaseAgeExclude:
+  - fast-uri@3.1.6
+  - qs@6.16.0
+
+overrides:
+  fast-uri: 3.1.6
+  qs: 6.16.0
 
 blockExoticSubdeps: true
 strictDepBuilds: true

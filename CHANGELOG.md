@@ -96,6 +96,9 @@ semantic versioning while the project remains experimental.
 
 ### Fixed
 
+- Patched the `fast-uri` and `qs` transitive dependencies used by the local
+  shadcn/MCP development toolchain, without taking unrelated major-version
+  updates from automated dependency branches.
 - Autonomous startup now reconciles unfinished evaluation bindings before it
   can create a new cycle. The oldest compatible frozen wake resumes; bindings
   without an immutable snapshot, with a changed evaluation contract, or later

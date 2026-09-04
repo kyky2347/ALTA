@@ -51,6 +51,14 @@ was not invoked against Tiger; no broker order was submitted. The complete
 18-commit history was rescanned after the publication commit and returned zero
 findings before push.
 
+GitHub's post-push advisory intake then identified four `fast-uri` advisories
+and one `qs` advisory in the transitive shadcn/MCP development-tool chain. The
+workspace now pins the first patched versions (`fast-uri 3.1.6` and `qs 6.16.0`)
+through exact pnpm overrides and narrowly exempts only those versions from the
+seven-day release-age hold. `pnpm why` confirms one patched version of each;
+the Node suite, dashboard suite, lint, production build, frozen install, and
+publication secret scans were repeated before the corrective push.
+
 ## Baseline publication checks — 2026-08-31
 
 | Check                                                 |                                                 Result |
