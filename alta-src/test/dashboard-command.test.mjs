@@ -73,3 +73,83 @@ test("default port collision falls back to an ephemeral loopback port", async ()
   );
   assert.deepEqual(ports, [8877, 0]);
 });
+
+test("default launch reuses a ready managed dashboard instead of changing ports", async () => {
+  const opened = [];
+  let foregroundCreated = false;
+  const managed = {
+    installed: () => true,
+    status: async () => ({
+      ready: true,
+      endpoint: "http://127.0.0.1:8877",
+      host: { processAlive: true },
+    }),
+    openUrl: () => "http://127.0.0.1:8877/open/managed-fixture",
+    platform: { restart: () => assert.fail("must not restart") },
+  };
+  const deps = dependencies(
+    () => {
+      foregroundCreated = true;
+      return fakeConsole();
+    },
+    async (url) => opened.push(url),
+  );
+  deps.dashboardService = managed;
+
+  await dashboardCommand([], deps);
+
+  assert.equal(foregroundCreated, false);
+  assert.deepEqual(opened, ["http://127.0.0.1:8877/open/managed-fixture"]);
+});
+
+test("default launch opens the stable endpoint after bootstrap was claimed", async () => {
+  const opened = [];
+  const deps = dependencies(
+    () => assert.fail("must not create a second dashboard"),
+    async (url) => opened.push(url),
+  );
+  deps.dashboardService = {
+    installed: () => true,
+    status: async () => ({
+      ready: true,
+      endpoint: "http://127.0.0.1:8877",
+      host: { processAlive: true },
+    }),
+    openUrl: () => {
+      throw new Error("one-time link already used");
+    },
+    platform: { restart: () => assert.fail("must not restart") },
+  };
+
+  await dashboardCommand([], deps);
+
+  assert.deepEqual(opened, ["http://127.0.0.1:8877"]);
+});
+
+test("rebuilt assets restart an installed dashboard before reuse", async () => {
+  let restarted = 0;
+  const deps = dependencies(
+    () => assert.fail("must not create a foreground dashboard"),
+    async () => {},
+  );
+  deps.prepareDashboard = async () => ({ built: true });
+  deps.dashboardService = {
+    installed: () => true,
+    status: async () => ({
+      ready: true,
+      endpoint: "http://127.0.0.1:8877",
+      host: { processAlive: true },
+    }),
+    waitForReadiness: async () => ({
+      ready: true,
+      endpoint: "http://127.0.0.1:8877",
+      host: { processAlive: true },
+    }),
+    openUrl: () => "http://127.0.0.1:8877/open/rebuilt-fixture",
+    platform: { restart: () => (restarted += 1) },
+  };
+
+  await dashboardCommand([], deps);
+
+  assert.equal(restarted, 1);
+});

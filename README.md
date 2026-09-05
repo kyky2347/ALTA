@@ -118,12 +118,16 @@ Desktop or Docker Engine, and about 20 GB of free disk space.
 git clone https://github.com/kyky2347/ALTA.git
 cd ALTA
 corepack pnpm install --frozen-lockfile
-./alta console
+./alta dashboard
 ```
 
-`./alta console` bootstraps locked Python environments, starts loopback-only
-PostgreSQL and Redis, runs the local gateway and dashboard, then opens the
-browser. The console can start or stop the research backend after setup.
+`./alta dashboard` builds the web console when needed and opens it on a stable
+loopback endpoint. Re-running the command reuses an installed console instead
+of creating a confusing second port. From the console, **Start** prepares the
+locked Python environment, wakes an installed OrbStack or Docker Desktop on
+macOS when necessary, starts PostgreSQL and Redis, and brings up the research
+backend. ALTA never installs a container engine or gains broker authority on
+its own.
 
 For a deterministic first run with no paid providers:
 

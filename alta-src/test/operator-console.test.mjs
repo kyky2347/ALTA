@@ -99,6 +99,18 @@ test("operator console keeps the API token server-side and protects mutations", 
   });
   assert.equal(unchangedAsset.status, 304);
 
+  const initialIndex = await fetch(location.origin);
+  assert.equal(await initialIndex.text(), "<h1>ALTA</h1>");
+  assert.equal(initialIndex.headers.get("cache-control"), "no-store");
+  fs.writeFileSync(path.join(staticDir, "index.html"), "<h1>ALTA 2</h1>");
+  const rebuiltIndex = await fetch(location.origin);
+  assert.equal(await rebuiltIndex.text(), "<h1>ALTA 2</h1>");
+  const retiredAsset = await fetch(`${location.origin}/assets/retired.js`);
+  assert.equal(retiredAsset.status, 404);
+  assert.deepEqual(await retiredAsset.json(), {
+    error: { code: "asset_not_found" },
+  });
+
   const proxy = await fetch(`${location.origin}/proxy/api/v1/mvp/status`, {
     headers: { Cookie: cookie },
   });

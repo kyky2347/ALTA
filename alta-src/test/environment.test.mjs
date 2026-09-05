@@ -282,3 +282,67 @@ test("environment status is fast and non-fatal when no container engine is insta
     services: { configured: false },
   });
 });
+
+test("macOS runtime wakes an installed OrbStack daemon and waits for readiness", async (t) => {
+  const { root, state } = temporaryRuntime(t);
+  const application = path.join(root, "OrbStack.app");
+  fs.mkdirSync(application);
+  const calls = [];
+  let versionAttempts = 0;
+  const manager = new RuntimeEnvironment({
+    rootDir: root,
+    stateDir: state,
+    platform: "darwin",
+    sleep: async () => {},
+    containerApplications: [
+      { id: "orbstack", name: "OrbStack", path: application },
+    ],
+    runner: async (command, args) => {
+      calls.push({ command, args: [...args] });
+      if (args[0] === "context")
+        return { code: 0, stdout: "orbstack\n", stderr: "" };
+      if (args[0] === "version") {
+        versionAttempts += 1;
+        if (versionAttempts < 3)
+          return { code: 1, stdout: "", stderr: "daemon unavailable" };
+        return { code: 0, stdout: "28.0.0\n", stderr: "" };
+      }
+      return { code: 0, stdout: "", stderr: "" };
+    },
+    binaries: { uv: "uv", docker: "docker" },
+  });
+
+  const result = await manager.ensureContainerEngine(1_000);
+
+  assert.equal(result.stdout.trim(), "28.0.0");
+  assert.equal(
+    calls.some(
+      ({ command, args }) =>
+        command === "/usr/bin/open" && args.join(" ") === "-gj -a OrbStack",
+    ),
+    true,
+  );
+  assert.equal(versionAttempts, 3);
+});
+
+test("runtime never tries to install or launch a missing container engine", async (t) => {
+  const { root, state } = temporaryRuntime(t);
+  const calls = [];
+  const manager = new RuntimeEnvironment({
+    rootDir: root,
+    stateDir: state,
+    platform: "darwin",
+    containerApplications: [],
+    runner: async (command, args) => {
+      calls.push({ command, args: [...args] });
+      return { code: 1, stdout: "", stderr: "daemon unavailable" };
+    },
+    binaries: { uv: "uv", docker: "docker" },
+  });
+
+  await assert.rejects(manager.ensureContainerEngine(10), /daemon unavailable/);
+  assert.equal(
+    calls.some(({ command }) => command === "/usr/bin/open"),
+    false,
+  );
+});

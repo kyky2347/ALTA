@@ -96,6 +96,23 @@ function defaultPassthroughRunner(command, args, options = {}) {
   });
 }
 
+function defaultSleep(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+const MACOS_CONTAINER_APPLICATIONS = Object.freeze([
+  {
+    id: "orbstack",
+    name: "OrbStack",
+    path: "/Applications/OrbStack.app",
+  },
+  {
+    id: "docker",
+    name: "Docker",
+    path: "/Applications/Docker.app",
+  },
+]);
+
 function parseComposeRows(text) {
   const value = text.trim();
   if (!value) return [];
@@ -115,12 +132,18 @@ export class RuntimeEnvironment {
     runner = defaultRunner,
     passthroughRunner = defaultPassthroughRunner,
     binaries = {},
+    platform = process.platform,
+    sleep = defaultSleep,
+    containerApplications = MACOS_CONTAINER_APPLICATIONS,
   }) {
     this.rootDir = rootDir;
     this.stateDir = stateDir;
     this.env = env;
     this.runner = runner;
     this.passthroughRunner = passthroughRunner;
+    this.platform = platform;
+    this.sleep = sleep;
+    this.containerApplications = containerApplications;
     this.files = runtimePaths(rootDir, stateDir);
     this.uv =
       "uv" in binaries
@@ -211,11 +234,67 @@ export class RuntimeEnvironment {
         env: this.env,
         timeoutMs,
         missing:
-          process.platform === "darwin"
+          this.platform === "darwin"
             ? "Docker is missing; install and start OrbStack (recommended) or Docker Desktop"
             : "Docker Engine with Compose is required",
       },
     );
+  }
+
+  async containerContext() {
+    if (!this.docker) return "";
+    try {
+      const result = await this.execute(this.docker, ["context", "show"], {
+        env: this.env,
+        timeoutMs: 2_000,
+      });
+      return result.stdout.trim().toLowerCase();
+    } catch {
+      return "";
+    }
+  }
+
+  async ensureContainerEngine(timeoutMs = 120_000) {
+    try {
+      return await this.verifyDocker(5_000);
+    } catch (initialError) {
+      if (this.platform !== "darwin" || !this.docker) throw initialError;
+
+      const context = await this.containerContext();
+      const executablePath = String(this.docker).toLowerCase();
+      const preferredId =
+        context.includes("orbstack") || executablePath.includes("orbstack")
+          ? "orbstack"
+          : context.includes("desktop") || executablePath.includes("docker.app")
+            ? "docker"
+            : null;
+      const applications = [
+        ...this.containerApplications.filter(({ id }) => id === preferredId),
+        ...this.containerApplications.filter(({ id }) => id !== preferredId),
+      ];
+      const application = applications.find(({ path: appPath }) =>
+        fs.existsSync(appPath),
+      );
+      if (!application) throw initialError;
+
+      await this.execute("/usr/bin/open", ["-gj", "-a", application.name], {
+        env: this.env,
+        timeoutMs: 15_000,
+      });
+      const deadline = Date.now() + timeoutMs;
+      let lastError = initialError;
+      while (Date.now() < deadline) {
+        await this.sleep(Math.min(1_000, Math.max(1, deadline - Date.now())));
+        try {
+          return await this.verifyDocker(5_000);
+        } catch (error) {
+          lastError = error;
+        }
+      }
+      throw new Error(
+        `${application.name} was opened but its container engine did not become ready within ${Math.ceil(timeoutMs / 1_000)} seconds (${lastError.message.split("\n")[0]})`,
+      );
+    }
   }
 
   async verifyServices() {
@@ -259,7 +338,7 @@ export class RuntimeEnvironment {
     return this.#withLease(async () => {
       ensureRuntimeConfiguration(this.rootDir, this.stateDir, this.env);
       await this.setupPython({ dev });
-      await this.verifyDocker();
+      await this.ensureContainerEngine();
       await this.execute(this.docker, this.composeArguments("pull"), {
         env: this.env,
         capture: false,
@@ -273,7 +352,7 @@ export class RuntimeEnvironment {
   async up() {
     return this.#withLease(async () => {
       ensureRuntimeConfiguration(this.rootDir, this.stateDir, this.env);
-      await this.verifyDocker();
+      await this.ensureContainerEngine();
       await this.#composeUp();
     });
   }
@@ -296,7 +375,7 @@ export class RuntimeEnvironment {
   async down() {
     if (!fs.existsSync(this.files.settingsFile)) return;
     return this.#withLease(async () => {
-      await this.verifyDocker();
+      await this.ensureContainerEngine();
       await this.execute(
         this.docker,
         this.composeArguments("down", "--remove-orphans"),
@@ -308,7 +387,7 @@ export class RuntimeEnvironment {
   async restart() {
     return this.#withLease(async () => {
       ensureRuntimeConfiguration(this.rootDir, this.stateDir, this.env);
-      await this.verifyDocker();
+      await this.ensureContainerEngine();
       await this.#composeUp();
       await this.verifyServices();
     });
@@ -331,7 +410,7 @@ export class RuntimeEnvironment {
     for (const service of services)
       if (!new Set(["postgres", "redis"]).has(service))
         throw new Error(`Unknown ALTA service ${service}`);
-    await this.verifyDocker();
+    await this.ensureContainerEngine();
     await this.execute(
       this.docker,
       this.composeArguments("logs", "--tail", "200", ...services),

@@ -582,23 +582,27 @@ export function createOperatorConsole({
     const requested = pathname === "/" ? "/index.html" : pathname;
     const resolved = path.resolve(staticDir, `.${requested}`);
     const root = `${path.resolve(staticDir)}${path.sep}`;
-    const candidate =
-      resolved.startsWith(root) && fs.existsSync(resolved) ? resolved : null;
-    const file =
-      candidate && fs.statSync(candidate).isFile()
-        ? candidate
-        : path.join(staticDir, "index.html");
-    if (!file.startsWith(root) && file !== path.join(staticDir, "index.html")) {
+    if (!resolved.startsWith(root)) {
       json(response, 404, { error: { code: "not_found" } });
       return;
     }
-    let asset = staticAssets.get(file);
+    const candidate =
+      fs.existsSync(resolved) && fs.statSync(resolved).isFile()
+        ? resolved
+        : null;
+    if (!candidate && path.extname(pathname)) {
+      json(response, 404, { error: { code: "asset_not_found" } });
+      return;
+    }
+    const indexFile = path.join(staticDir, "index.html");
+    const file = candidate ?? indexFile;
+    const immutable = file !== indexFile;
+    let asset = immutable ? staticAssets.get(file) : null;
     if (!asset) {
       const body = fs.readFileSync(file);
       asset = { body, etag: `W/\"${body.length.toString(16)}\"` };
-      staticAssets.set(file, asset);
+      if (immutable) staticAssets.set(file, asset);
     }
-    const immutable = !file.endsWith("index.html");
     if (immutable && request.headers["if-none-match"] === asset.etag) {
       response.writeHead(304, {
         "Cache-Control": "public, max-age=31536000, immutable",

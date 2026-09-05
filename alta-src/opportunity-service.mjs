@@ -444,7 +444,7 @@ export class OpportunityService {
     }
   }
 
-  async waitForReadiness(timeoutMilliseconds = 180_000) {
+  async waitForReadiness(timeoutMilliseconds = 360_000) {
     const deadline = Date.now() + timeoutMilliseconds;
     while (Date.now() < deadline) {
       const status = await this.status();

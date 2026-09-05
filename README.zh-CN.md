@@ -110,12 +110,14 @@ Docker Desktop 或 Docker Engine，以及约 20 GB 可用磁盘空间。
 git clone https://github.com/kyky2347/ALTA.git
 cd ALTA
 corepack pnpm install --frozen-lockfile
-./alta console
+./alta dashboard
 ```
 
-`./alta console` 会准备锁定的 Python 环境，启动仅绑定本机回环地址的 PostgreSQL、
-Redis、Gateway 和 Dashboard，然后打开浏览器。完成初始化后，可以直接从前端启停
-研究后端。
+`./alta dashboard` 会在需要时构建 Web 操作台，并通过固定的本机回环地址打开。
+重复执行时会复用已经安装的操作台，不再产生令人困惑的第二个随机端口。随后可在
+前端点击 **启动**：系统会准备锁定的 Python 环境；在 macOS 上按需唤醒已经安装的
+OrbStack 或 Docker Desktop；再启动 PostgreSQL、Redis 和研究后端。ALTA 不会自行
+安装容器引擎，也不会自行获得券商交易权限。
 
 第一次体验可使用无需付费供应商的确定性 Fixture：
 

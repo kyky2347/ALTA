@@ -476,13 +476,10 @@ function StageArrow({
     <div
       className={cn("stage-arrow", active && "is-active")}
       aria-label={t("handoffLabel", { source, target, time })}
+      title={`${source} → ${target}${time}`}
     >
       <span />
-      <em title={`${source} → ${target}`}>
-        <strong>{source}</strong>
-        <small>→ {target}</small>
-      </em>
-      <ArrowRight />
+      <ArrowRight aria-hidden="true" />
     </div>
   );
 }

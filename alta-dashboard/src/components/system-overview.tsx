@@ -53,42 +53,44 @@ export function SystemOverview({
   };
   return (
     <section className="overview-grid">
-      <OverviewBlock
-        icon={FileSearch2}
-        label={t("candidates")}
-        value={status.candidates.length}
-        detail={t("recentFoundryInputs")}
-      />
-      <OverviewBlock
-        icon={Radar}
-        label={t("opportunities")}
-        value={status.opportunities.length}
-        detail={t("deduplicatedTheses")}
-      />
-      <OverviewBlock
-        icon={Bot}
-        label={t("agentRoles")}
-        value={status.agents.length}
-        detail={t("persistentMinds", { count: runtime?.minds.length ?? 0 })}
-      />
-      <OverviewBlock
-        icon={Waypoints}
-        label={t("expressions")}
-        value={status.expressions.length}
-        detail={t("auditedCarriers")}
-      />
-      <OverviewBlock
-        icon={ShieldCheck}
-        label={t("shadowPositions")}
-        value={status.shadowPositions.length}
-        detail={t("capitalDisabled")}
-      />
-      <OverviewBlock
-        icon={Database}
-        label={t("eventCursor")}
-        value={status.eventCursor}
-        detail={t("appendOnlyLedger")}
-      />
+      <div className="overview-pulse" role="list">
+        <OverviewMetric
+          icon={FileSearch2}
+          label={t("candidates")}
+          value={status.candidates.length}
+          detail={t("recentFoundryInputs")}
+        />
+        <OverviewMetric
+          icon={Radar}
+          label={t("opportunities")}
+          value={status.opportunities.length}
+          detail={t("deduplicatedTheses")}
+        />
+        <OverviewMetric
+          icon={Bot}
+          label={t("agentRoles")}
+          value={status.agents.length}
+          detail={t("persistentMinds", { count: runtime?.minds.length ?? 0 })}
+        />
+        <OverviewMetric
+          icon={Waypoints}
+          label={t("expressions")}
+          value={status.expressions.length}
+          detail={t("auditedCarriers")}
+        />
+        <OverviewMetric
+          icon={ShieldCheck}
+          label={t("shadowPositions")}
+          value={status.shadowPositions.length}
+          detail={t("capitalDisabled")}
+        />
+        <OverviewMetric
+          icon={Database}
+          label={t("eventCursor")}
+          value={status.eventCursor}
+          detail={t("appendOnlyLedger")}
+        />
+      </div>
       <RuntimeRecovery runtime={runtime} fallbackStatus={status.status} />
       <div className="overview-wide">
         <div className="overview-wide-head">
@@ -599,7 +601,7 @@ function localizeSourceIssue(
   return localized && localized !== issue ? localized : domain(issue);
 }
 
-function OverviewBlock({
+function OverviewMetric({
   icon: Icon,
   label,
   value,
@@ -612,7 +614,7 @@ function OverviewBlock({
 }) {
   const { number } = useI18n();
   return (
-    <article className="overview-block">
+    <article className="overview-metric" role="listitem">
       <span>
         <Icon />
       </span>

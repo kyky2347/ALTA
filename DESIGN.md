@@ -186,6 +186,8 @@ Desktop uses a three-plane shell: a 174px navigation rail, a flexible central wo
 
 The live field is a directed four-stage topology—Discovery, Foundry, Committee, and Expression & Audit—with narrow connector columns between stages. Cards stack vertically inside stages and maintain clear handoff order. The replay ribbon sits below the current field, reinforcing that live state and durable history are two views of the same event ledger.
 
+The system overview opens with a single segmented operating pulse rather than a grid of unrelated KPI cards. Its six cells share one surface and one reading order, then recompose from six to three, two, and one column as space narrows. This keeps the console summary compact while making it feel like one instrument.
+
 At 1350px the rail collapses and the inspector narrows. At 1050px the evidence inspector moves below the workspace and the field becomes a two-column matrix. At 760px the shell becomes a continuous vertical page: the top bar fixes at 62px, navigation becomes a horizontally scrollable strip, and a four-option stage selector shows one lifecycle stage at a time. This is a structural re-composition, not a scaled-down desktop canvas.
 
 **The Lifecycle Order Rule.** Responsive layouts may change the number of visible stages, but the discover → foundry → committee → audit sequence stays explicit and navigable.

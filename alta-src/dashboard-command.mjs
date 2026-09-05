@@ -81,6 +81,43 @@ async function openOrExplain(url, opener = openDefaultBrowser) {
   }
 }
 
+async function reuseManagedDashboard(options, dependencies, { rebuilt }) {
+  const dashboard = dependencies.dashboardService;
+  if (!dashboard || options.portExplicit || options.host !== "127.0.0.1")
+    return false;
+  if (!dashboard.installed()) return false;
+
+  let status = await dashboard.status();
+  if (rebuilt && status.ready) {
+    dashboard.platform.restart();
+    status = await dashboard.waitForReadiness();
+  } else if (!status.ready) {
+    if (status.host?.processAlive) status = await dashboard.waitForReadiness();
+    else {
+      await dashboard.assertEndpointAvailable();
+      dashboard.platform.start();
+      status = await dashboard.waitForReadiness();
+    }
+  }
+
+  console.log("ALTA operator dashboard");
+  console.log(`  endpoint: ${status.endpoint}`);
+  console.log("  mode: reused managed loopback service");
+  if (!options.openBrowser) {
+    console.log(`  open manually: ${status.endpoint}`);
+    return true;
+  }
+  let url = status.endpoint;
+  try {
+    url = dashboard.openUrl();
+  } catch {
+    // The bootstrap URL is intentionally single-use. The default browser can
+    // reuse its owner-only session cookie at the stable dashboard endpoint.
+  }
+  await openOrExplain(url, dependencies.openBrowser ?? openDefaultBrowser);
+  return true;
+}
+
 function printStatus(status) {
   const host = status.host
     ? status.host.state === "stopped" || status.host.processAlive
@@ -155,9 +192,17 @@ export async function dashboardCommand(args, dependencies) {
     );
 
   const options = parseDashboardOptions(args);
-  await (dependencies.prepareDashboard ?? prepareDashboard)({
-    rootDir: dependencies.rootDir,
-  });
+  const preparation = await (dependencies.prepareDashboard ?? prepareDashboard)(
+    {
+      rootDir: dependencies.rootDir,
+    },
+  );
+  if (
+    await reuseManagedDashboard(options, dependencies, {
+      rebuilt: preparation.built,
+    })
+  )
+    return;
   const { consoleServer, location } = await listenConsole(
     options,
     dependencies,
