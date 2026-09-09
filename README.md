@@ -108,34 +108,24 @@ what each Agent is doing, which tools it used, what changed, why a decision was
 made, and which authority boundary is active. Secrets are write-only: the UI
 can report configured/healthy/expired, never reveal a stored value.
 
-![ALTA operator console in English](docs/assets/alta-operator-console-en.png)
+Select any screenshot to open the full-size image.
 
-<details>
-<summary>Explore system health and Agent handoffs</summary>
+[![ALTA operator console in English](docs/assets/alta-operator-console-en.png)](docs/assets/alta-operator-console-en.png)
 
-![ALTA system overview in English](docs/assets/alta-system-overview-en.png)
+| System health                                                                                                          | Agent activity                                                                                          |
+| ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| [![ALTA system overview in English](docs/assets/alta-system-overview-en.png)](docs/assets/alta-system-overview-en.png) | [![ALTA Agent desk in English](docs/assets/alta-agent-desk-en.png)](docs/assets/alta-agent-desk-en.png) |
+| Health and research progress.                                                                                          | Roles, tool calls and handoffs.                                                                         |
 
-![ALTA Agent desk in English](docs/assets/alta-agent-desk-en.png)
-
-</details>
-
-<details>
-<summary>Follow the decision history and inspect an opportunity</summary>
-
-Search the durable event ledger and move through its replay timeline.
-
-![ALTA decision history in English](docs/assets/alta-decision-history-en.png)
-
-Open an opportunity alongside the workspace to inspect its saved research
-record. Agent-authored artifacts retain their original language.
-
-![ALTA opportunity detail in English](docs/assets/alta-opportunity-detail-en.png)
-
-</details>
+| Decision history                                                                                                          | Opportunity detail                                                                                                              |
+| ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| [![ALTA decision history in English](docs/assets/alta-decision-history-en.png)](docs/assets/alta-decision-history-en.png) | [![ALTA opportunity detail in English](docs/assets/alta-opportunity-detail-en.png)](docs/assets/alta-opportunity-detail-en.png) |
+| Replay the decision trail.                                                                                                | Review the thesis and evidence.                                                                                                 |
 
 Captured from the current production build on September 9, 2026, with the
 English interface and explicitly labeled, read-only **synthetic preview** data.
 No real credentials, account details or market-provider payloads are shown.
+Agent-authored artifacts retain their original language.
 After starting the console, append `?preview=1` to its URL to explore this view
 without starting research or placing orders.
 

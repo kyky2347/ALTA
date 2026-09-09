@@ -98,33 +98,24 @@ LLM 负责开放式研究、反事实思考和判断；确定性代码负责不�
 传递了什么信息、哪个判断发生变化、当前权限边界是什么，都可以追踪。密钥是只写的：
 前端只显示“已配置 / 健康 / 过期”，永远不会回显已保存值。
 
-![ALTA 中文操作台](docs/assets/alta-operator-console-zh.png)
+点击任意截图，即可查看原尺寸大图。
 
-<details>
-<summary>展开查看系统状态与 Agent 交接</summary>
+[![ALTA 中文操作台](docs/assets/alta-operator-console-zh.png)](docs/assets/alta-operator-console-zh.png)
 
-![ALTA 中文系统概览](docs/assets/alta-system-overview-zh.png)
+| 系统状态                                                                                                 | Agent 协作                                                                                          |
+| -------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| [![ALTA 中文系统概览](docs/assets/alta-system-overview-zh.png)](docs/assets/alta-system-overview-zh.png) | [![ALTA 中文 Agent 工作台](docs/assets/alta-agent-desk-zh.png)](docs/assets/alta-agent-desk-zh.png) |
+| 查看服务健康与研究进度。                                                                                 | 追踪分工、调用与任务交接。                                                                          |
 
-![ALTA 中文 Agent 工作台](docs/assets/alta-agent-desk-zh.png)
-
-</details>
-
-<details>
-<summary>展开查看决策历史与机会详情</summary>
-
-检索持久化事件账本，通过回放时间轴追踪系统的决策过程。
-
-![ALTA 中文决策历史](docs/assets/alta-decision-history-zh.png)
-
-在工作台旁打开机会详情，查看已保存的研究记录。Agent 撰写的原始内容保留原语言。
-
-![ALTA 中文机会详情](docs/assets/alta-opportunity-detail-zh.png)
-
-</details>
+| 决策历史                                                                                                   | 机会详情                                                                                                       |
+| ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| [![ALTA 中文决策历史](docs/assets/alta-decision-history-zh.png)](docs/assets/alta-decision-history-zh.png) | [![ALTA 中文机会详情](docs/assets/alta-opportunity-detail-zh.png)](docs/assets/alta-opportunity-detail-zh.png) |
+| 回放事件与决策过程。                                                                                       | 查看论点、证据与评审。                                                                                         |
 
 截图于 2026 年 9 月 9 日从当前生产构建拍摄，使用中文界面与明确标注的、只读的
-**合成演示数据**，不含真实密钥、账户信息或行情供应商数据。启动控制台后，在地址
-末尾添加 `?preview=1` 即可浏览该模式，无需启动研究，也不会下单。
+**合成演示数据**，不含真实密钥、账户信息或行情供应商数据。Agent 撰写的原始内容
+保留原语言。启动控制台后，在地址末尾添加 `?preview=1` 即可浏览该模式，无需启动研究，
+也不会下单。
 
 操作台是运维与研究观察窗口，不是收益宣传页。Shadow 收益、置信区间和模型观点都会
 按照其真实证据等级标注。
