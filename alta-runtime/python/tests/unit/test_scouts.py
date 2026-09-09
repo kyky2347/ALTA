@@ -766,6 +766,22 @@ def test_expectation_scout_requires_new_market_context_when_posture_is_unavailab
     assert parsed.tool_evidence_refs[0].evidence_role == "market_context"
 
 
+def test_active_candidate_rejects_an_expired_signal_even_if_retrieved_now() -> None:
+    base = spec_for()
+    active = base.model_copy(
+        update={
+            "budget": base.budget.model_copy(update={"require_active_research": True})
+        }
+    )
+    output = decision_complete_candidate()
+    output["freshness_at"] = (
+        active.frozen_input.known_at - timedelta(days=5)
+    ).isoformat()
+
+    with pytest.raises(ValueError, match="freshness_at is expired"):
+        parse_output(json.dumps(output), active)
+
+
 def test_prompt_freezes_contract_budget_and_marks_evidence_untrusted() -> None:
     base = spec_for()
     prior = PriorOpportunitySnapshot(

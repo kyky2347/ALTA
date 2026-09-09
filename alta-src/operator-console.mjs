@@ -5,14 +5,13 @@ import process from "node:process";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { acquireLease } from "./storage.mjs";
 import { atomicWrite, atomicWriteJson } from "./durable-file.mjs";
+import { readConsoleUpstream } from "./console-upstream.mjs";
 
 const JSON_TYPE = "application/json; charset=utf-8";
 const SESSION_COOKIE = "alta_console_session";
 const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
 const ENVIRONMENT_CACHE_MS = 7_500;
 const RUNTIME_CACHE_MS = 1_000;
-const UPSTREAM_TIMEOUT_MS = 15_000;
-const MAX_UPSTREAM_BODY_BYTES = 16 * 1024 * 1024;
 const MAX_CREDENTIAL_BODY_BYTES = 8 * 1024;
 export const OPERATOR_PROTOCOL_VERSION = 4;
 
@@ -167,25 +166,6 @@ function persistentSessionToken(file) {
   } finally {
     lease.release();
   }
-}
-
-async function boundedBody(response) {
-  const declared = Number(response.headers.get("content-length"));
-  if (Number.isFinite(declared) && declared > MAX_UPSTREAM_BODY_BYTES)
-    throw new Error("Upstream response exceeded the console safety limit");
-  if (!response.body) return Buffer.alloc(0);
-  const chunks = [];
-  let length = 0;
-  for await (const chunk of response.body) {
-    const buffer = Buffer.from(chunk);
-    length += buffer.length;
-    if (length > MAX_UPSTREAM_BODY_BYTES) {
-      await response.body.cancel?.().catch(() => {});
-      throw new Error("Upstream response exceeded the console safety limit");
-    }
-    chunks.push(buffer);
-  }
-  return Buffer.concat(chunks, length);
 }
 
 export function createOperatorConsole({
@@ -547,15 +527,16 @@ export function createOperatorConsole({
     const target = new URL(`${targetPath}${url.search}`, status.endpoint);
     const token = fs.readFileSync(service.tokenFile, "utf8").trim();
     const controller = new AbortController();
-    const timeout = setTimeout(
-      () => controller.abort(new Error("Upstream request timed out")),
-      UPSTREAM_TIMEOUT_MS,
-    );
-    timeout.unref?.();
     const abort = () => controller.abort(new Error("Browser disconnected"));
+    const close = () => {
+      if (!response.writableEnded) abort();
+    };
     request.once("aborted", abort);
+    response.once("close", close);
+    if (response.destroyed) abort();
     try {
-      const upstream = await fetchImpl(target, {
+      const upstream = await readConsoleUpstream(target, {
+        fetchImpl,
         headers: {
           Accept: request.headers.accept ?? "application/json",
           Authorization: `Bearer ${token}`,
@@ -565,7 +546,7 @@ export function createOperatorConsole({
         },
         signal: controller.signal,
       });
-      const body = await boundedBody(upstream);
+      const body = upstream.body;
       response.writeHead(upstream.status, {
         "Content-Type": upstream.headers.get("content-type") ?? JSON_TYPE,
         "Cache-Control": "no-store",
@@ -573,8 +554,8 @@ export function createOperatorConsole({
       });
       response.end(body);
     } finally {
-      clearTimeout(timeout);
       request.removeListener("aborted", abort);
+      response.removeListener("close", close);
     }
   }
 

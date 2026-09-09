@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  focusedOpportunity,
   latestRankBookMap,
   latestRankLeader,
   opportunityIdForEntity,
@@ -104,6 +105,25 @@ test("an incomplete newest ranking run cannot replace a complete book", () => {
   assert.equal(latestRankLeader(snapshot)?.id, "opp-old");
 });
 
+test("a missing selected opportunity falls back to the ranked leader", () => {
+  const snapshot = status({
+    ranks: [
+      {
+        id: "rank-current",
+        opportunityId: "opp-new",
+        book: "opportunity_1_90d",
+        rankingRunId: "run-current",
+        rankingRunItemCount: 1,
+        rankingRunComplete: true,
+        position: 1,
+        score: "0.7",
+        knownAt: "2026-01-01T11:00:00Z",
+      },
+    ],
+  });
+  assert.equal(focusedOpportunity(snapshot, "not-in-snapshot")?.id, "opp-new");
+});
+
 test("a bounded-out tail cannot make a ranking run look complete", () => {
   const snapshot = status({
     opportunities: [
@@ -142,6 +162,55 @@ test("a bounded-out tail cannot make a ranking run look complete", () => {
 
   assert.equal(latestRankLeader(snapshot), null);
   assert.equal(latestRankBookMap(snapshot).size, 0);
+});
+
+test("an expired opportunity cannot remain the current rank leader", () => {
+  const snapshot = status({
+    opportunities: [
+      {
+        id: "opp-old",
+        title: "Expired",
+        status: "ranked",
+        knownAt: "2026-01-01T10:00:00Z",
+        actionableNow: false,
+      },
+      {
+        id: "opp-new",
+        title: "Current",
+        status: "ranked",
+        knownAt: "2026-01-01T11:00:00Z",
+        actionableNow: true,
+      },
+    ],
+    ranks: [
+      {
+        id: "rank-current-1",
+        opportunityId: "opp-old",
+        book: "opportunity_1_90d",
+        rankingRunId: "run-current",
+        rankingRunItemCount: 2,
+        rankingRunComplete: true,
+        position: 1,
+        score: "0.99",
+        knownAt: "2026-01-01T11:00:00Z",
+      },
+      {
+        id: "rank-current-2",
+        opportunityId: "opp-new",
+        book: "opportunity_1_90d",
+        rankingRunId: "run-current",
+        rankingRunItemCount: 2,
+        rankingRunComplete: true,
+        position: 2,
+        score: "0.75",
+        knownAt: "2026-01-01T11:00:00Z",
+      },
+    ],
+  });
+
+  assert.equal(latestRankLeader(snapshot)?.id, "opp-new");
+  assert.deepEqual([...latestRankBookMap(snapshot).keys()], ["opp-new"]);
+  assert.equal(focusedOpportunity(snapshot, "opp-old")?.id, "opp-new");
 });
 
 test("mutable position selections are refreshed from current status", () => {

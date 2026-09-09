@@ -9,6 +9,8 @@ from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 
+import psycopg
+
 from .alpha_feedback import (
     ALPHA_FEEDBACK_MODE,
     ALPHA_LOWER_BOUND_Z,
@@ -20,6 +22,7 @@ from .autonomous import AutonomousRunner
 from .contracts import Environment, Settings
 from .database import Database, event_json
 from .forward_evaluation import ForwardEvaluationReader
+from .freshness import refresh_status_freshness
 from .implementation import PortfolioRiskPolicy
 from .projection_cache import ProjectionCache
 from .paper_intent import PaperIntentStore
@@ -125,6 +128,22 @@ def _handler(
             _write_json_response(self, status, value)
 
         def do_GET(self) -> None:  # noqa: N802
+            try:
+                self.read_request()
+            except (psycopg.OperationalError, psycopg.InterfaceError):
+                # Dependency outages are retryable; never serialize driver
+                # messages, which can contain connection strings or SQL data.
+                self.json_response(
+                    503,
+                    {
+                        "error": {
+                            "code": "database_unavailable",
+                            "message": "Research storage is temporarily unavailable.",
+                        }
+                    },
+                )
+
+        def read_request(self) -> None:
             request = urlsplit(self.path)
             if request.path == "/health/live":
                 return self.json_response(
@@ -150,8 +169,8 @@ def _handler(
                             if state.get("autonomousStatus") == "running"
                             else max(settings.autonomous_heartbeat_seconds * 3, 60)
                         )
-                        heartbeat_fresh = age <= heartbeat_limit
-                    except ValueError:
+                        heartbeat_fresh = -5 <= age <= heartbeat_limit
+                    except (ValueError, TypeError, OverflowError):
                         heartbeat_fresh = False
                 autonomous_ready = not settings.autonomous_enabled or (
                     state.get("autonomousStatus") in ("running", "waiting", "degraded")
@@ -209,7 +228,7 @@ def _handler(
                     (limit, event_cursor),
                     lambda: database.mvp_status(settings.environment.value, limit),
                 )
-                status = cached.value
+                status = refresh_status_freshness(cached.value, datetime.now(UTC))
                 return self.json_response(
                     200,
                     {

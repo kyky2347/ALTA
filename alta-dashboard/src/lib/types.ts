@@ -255,6 +255,10 @@ export type Opportunity = {
   status: string;
   knownAt: string;
   foundryState?: string;
+  freshnessAt?: string | null;
+  freshnessState?: "live" | "current" | "expired" | "unknown" | "invalid";
+  freshnessAgeSeconds?: number | null;
+  actionableNow?: boolean;
 };
 
 export type Assessment = {
@@ -299,6 +303,9 @@ export type MvpStatus = {
     title: string;
     knownAt: string;
     alphaArchetype?: string;
+    freshnessAt?: string | null;
+    freshnessState?: "live" | "current" | "expired" | "unknown" | "invalid";
+    freshnessAgeSeconds?: number | null;
   }>;
   opportunities: Opportunity[];
   ranks: Array<{

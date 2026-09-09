@@ -3,7 +3,66 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import http from "node:http";
 import { createOperatorConsole } from "../operator-console.mjs";
+
+test("closing a completed GET request cancels its pending upstream read", async (context) => {
+  const temporary = fs.mkdtempSync(
+    path.join(os.tmpdir(), "alta-console-abort-"),
+  );
+  context.after(() => fs.rmSync(temporary, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(temporary, "index.html"), "<h1>Fixture</h1>");
+  const tokenFile = path.join(temporary, "token");
+  fs.writeFileSync(tokenFile, "synthetic-loopback-token", { mode: 0o600 });
+  const started = Promise.withResolvers();
+  const cancelled = Promise.withResolvers();
+  const operator = createOperatorConsole({
+    port: 0,
+    staticDir: temporary,
+    service: {
+      tokenFile,
+      status: async () => ({ ready: true, endpoint: "http://127.0.0.1:1" }),
+    },
+    fetchImpl: async (_target, { signal }) => {
+      started.resolve();
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener(
+          "abort",
+          () => {
+            cancelled.resolve();
+            reject(signal.reason);
+          },
+          { once: true },
+        );
+      });
+    },
+  });
+  const location = await operator.listen();
+  context.after(() => operator.close());
+  const open = await fetch(location.openUrl, { redirect: "manual" });
+  const cookie = open.headers.get("set-cookie").split(";", 1)[0];
+  const request = http.get(`${location.origin}/proxy/api/v1/system/summary`, {
+    headers: { Cookie: cookie },
+  });
+  request.on("error", () => {});
+  context.after(() => request.destroy());
+  await started.promise;
+  request.destroy();
+  let timeout;
+  try {
+    await Promise.race([
+      cancelled.promise,
+      new Promise((_resolve, reject) => {
+        timeout = setTimeout(
+          () => reject(new Error("upstream did not cancel")),
+          1000,
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(timeout);
+  }
+});
 
 test("operator console keeps the API token server-side and protects mutations", async (context) => {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "alta-console-"));

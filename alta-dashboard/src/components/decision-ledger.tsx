@@ -8,12 +8,13 @@ import {
   Sparkles,
   Waypoints,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useDeferredValue, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { StatusPill } from "@/components/status-pill";
 import { useI18n } from "@/lib/i18n";
+import { latestRankLeader } from "@/lib/opportunity-selection";
 import type { AltaEvent, MvpStatus, SelectedEntity } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -91,28 +92,45 @@ export function DecisionLedger({
   const [query, setQuery] = useState("");
   const [family, setFamily] = useState("all");
   const [scope, setScope] = useState("all");
-  const currentOpportunity = status.opportunities[0]?.id;
+  const currentOpportunity = latestRankLeader(status)?.id;
+  const deferredQuery = useDeferredValue(query);
+  const searchIndex = useMemo(
+    () =>
+      events.map((event) => ({
+        event,
+        haystack:
+          `${domain(event.eventType)} ${event.eventType} ${event.aggregateType} ${event.aggregateId} ${JSON.stringify(event.payload)}`.toLowerCase(),
+        family: event.eventType.split(/[._]/)[0],
+      })),
+    [events, domain],
+  );
   const filtered = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    return events.filter((event) => {
-      const haystack =
-        `${event.eventType} ${event.aggregateType} ${event.aggregateId} ${JSON.stringify(event.payload)}`.toLowerCase();
-      const eventFamily = event.eventType.split(/[._]/)[0];
-      const inScope =
-        scope === "all" ||
-        (scope === "cycle" &&
-          Boolean(currentCycleId) &&
-          haystack.includes(String(currentCycleId).toLowerCase())) ||
-        (scope === "opportunity" &&
-          Boolean(currentOpportunity) &&
-          haystack.includes(String(currentOpportunity).toLowerCase()));
-      return (
-        (!needle || haystack.includes(needle)) &&
-        (family === "all" || eventFamily === family) &&
-        inScope
-      );
-    });
-  }, [currentOpportunity, events, family, query, scope, currentCycleId]);
+    const needle = deferredQuery.trim().toLowerCase();
+    return searchIndex
+      .filter(({ haystack, family: eventFamily }) => {
+        const inScope =
+          scope === "all" ||
+          (scope === "cycle" &&
+            Boolean(currentCycleId) &&
+            haystack.includes(String(currentCycleId).toLowerCase())) ||
+          (scope === "opportunity" &&
+            Boolean(currentOpportunity) &&
+            haystack.includes(String(currentOpportunity).toLowerCase()));
+        return (
+          (!needle || haystack.includes(needle)) &&
+          (family === "all" || eventFamily === family) &&
+          inScope
+        );
+      })
+      .map(({ event }) => event);
+  }, [
+    currentOpportunity,
+    searchIndex,
+    family,
+    deferredQuery,
+    scope,
+    currentCycleId,
+  ]);
   const families = useMemo(
     () =>
       [
@@ -172,7 +190,23 @@ export function DecisionLedger({
               : t("historyStartReached")}
         </Button>
       </div>
-      <ScrollArea className="ledger-scroll">
+      <div className="ledger-results" role="status" aria-live="polite">
+        <span>{t("matchingEvents", { count: filtered.length })}</span>
+        {(query || family !== "all" || scope !== "all") && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setQuery("");
+              setFamily("all");
+              setScope("all");
+            }}
+          >
+            {t("clearFilters")}
+          </Button>
+        )}
+      </div>
+      <ScrollArea className="ledger-scroll" aria-busy={query !== deferredQuery}>
         <div className="ledger-list">
           {filtered.map((event) => {
             const Icon = iconFor(event);

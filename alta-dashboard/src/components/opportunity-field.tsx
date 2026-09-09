@@ -11,6 +11,7 @@ import {
 import { useState } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { StatusPill } from "@/components/status-pill";
+import { AgentMark } from "@/components/agent-mark";
 import { useI18n } from "@/lib/i18n";
 import {
   focusedOpportunity,
@@ -36,6 +37,15 @@ export function OpportunityField({
   const [mobileStage, setMobileStage] = useState<
     "discovery" | "foundry" | "committee" | "action"
   >("foundry");
+  const currentCandidates = status.candidates.filter(
+    (candidate) =>
+      candidate.freshnessState === undefined ||
+      candidate.freshnessState === "live" ||
+      candidate.freshnessState === "current",
+  );
+  const currentOpportunities = status.opportunities.filter(
+    (opportunity) => opportunity.actionableNow !== false,
+  );
   const leading = focusedOpportunity(status, selectedOpportunityId);
   const assessments = leading
     ? status.assessments.filter((item) => item.opportunityId === leading.id)
@@ -73,17 +83,14 @@ export function OpportunityField({
   const visibleOpportunities = leading
     ? [
         leading,
-        ...status.opportunities.filter((item) => item.id !== leading.id),
+        ...currentOpportunities.filter((item) => item.id !== leading.id),
       ].slice(0, 3)
-    : status.opportunities.slice(0, 3);
+    : currentOpportunities.slice(0, 3);
   const agents = status.agents.slice(0, 6);
-  const sourceCandidate = status.candidates[0];
+  const sourceCandidate = currentCandidates[0];
   const activeAgent =
     agents.find((agent) => agent.status === "running") ?? agents[0];
   const activeRuntime = runtime?.config.autonomousStatus === "running";
-  const currentCycleId = activeRuntime
-    ? (runtime.config.currentCycleId ?? status.currentPipelineId)
-    : status.currentPipelineId;
   const activeActionAgent = agents.find(
     (agent) =>
       agent.status === "running" && /(expression|audit)/i.test(agent.id),
@@ -99,7 +106,7 @@ export function OpportunityField({
             status={runtime?.config.autonomousStatus ?? status.status}
             live
           />
-          <span>{currentCycleId ?? t("noActiveCycle")}</span>
+          <span>{t("openRecordHint")}</span>
         </div>
       </div>
 
@@ -138,25 +145,30 @@ export function OpportunityField({
           <StageLabel
             icon={FileSearch2}
             label={t("discovery")}
-            count={status.candidates.length}
+            description={t("discoveryDescription")}
+            count={currentCandidates.length}
           />
           <ScrollArea className="stage-scroll">
             <div className="stage-stack">
-              {status.candidates.slice(0, 5).map((candidate) => (
-                <article className="mini-card" key={candidate.id}>
-                  <span className="mini-index">{candidate.id}</span>
+              {currentCandidates.slice(0, 5).map((candidate) => (
+                <article
+                  className="mini-card"
+                  key={candidate.id}
+                  title={candidate.id}
+                >
                   <div>
                     <strong>{candidate.title}</strong>
                     <p>
                       {candidate.alphaArchetype
                         ? domain(candidate.alphaArchetype)
                         : t("unclassified")}{" "}
-                      · {relative(candidate.knownAt)}
+                      · {domain(candidate.freshnessState ?? "unknown")} ·{" "}
+                      {relative(candidate.freshnessAt ?? candidate.knownAt)}
                     </p>
                   </div>
                 </article>
               ))}
-              {!status.candidates.length && (
+              {!currentCandidates.length && (
                 <EmptyStage label={t("noCandidates")} />
               )}
             </div>
@@ -179,7 +191,8 @@ export function OpportunityField({
           <StageLabel
             icon={Sparkles}
             label={t("foundry")}
-            count={status.opportunities.length}
+            description={t("foundryDescription")}
+            count={currentOpportunities.length}
           />
           <div className="stage-stack">
             {visibleOpportunities.map((opportunity) => {
@@ -206,25 +219,29 @@ export function OpportunityField({
                   }
                 >
                   <div className="opportunity-card-top">
-                    <span>
-                      {opportunity.id}
-                      {rank ? ` · #${rank.position}` : ""}
+                    <span title={opportunity.id}>
+                      {rank
+                        ? t("rankedPosition", { rank: rank.position })
+                        : t("researchOpportunity")}
                     </span>
                     <StatusPill status={opportunity.status} />
                   </div>
                   <h3>{opportunity.title}</h3>
                   <div className="opportunity-card-bottom">
                     <span>
+                      {domain(opportunity.freshnessState ?? "unknown")} ·{" "}
                       {opportunity.foundryState
                         ? domain(opportunity.foundryState)
                         : t("building")}
                     </span>
-                    <span>{relative(opportunity.knownAt)}</span>
+                    <span>
+                      {relative(opportunity.freshnessAt ?? opportunity.knownAt)}
+                    </span>
                   </div>
                 </button>
               );
             })}
-            {!status.opportunities.length && (
+            {!currentOpportunities.length && (
               <EmptyStage label={t("foundryWaiting")} />
             )}
           </div>
@@ -245,7 +262,12 @@ export function OpportunityField({
             mobileStage === "committee" && "is-mobile-active",
           )}
         >
-          <StageLabel icon={Bot} label={t("committee")} count={agents.length} />
+          <StageLabel
+            icon={Bot}
+            label={t("committee")}
+            description={t("committeeDescription")}
+            count={agents.length}
+          />
           <div className="agent-matrix">
             {agents.map((agent) => (
               <button
@@ -266,13 +288,15 @@ export function OpportunityField({
                 }
               >
                 <span className="agent-glyph">
-                  <Bot />
+                  <AgentMark role={agent.id} />
                 </span>
                 <span className="agent-copy">
                   <strong>{domain(agent.id)}</strong>
-                  <small>
+                  <small
+                    title={`${agent.runId} · ${agent.modelId ?? agent.modelProvider ?? ""}`}
+                  >
                     {agent.modelId ?? agent.modelProvider ?? t("modelPending")}{" "}
-                    · {agent.runId}
+                    · {domain(agent.status)}
                   </small>
                 </span>
                 <span
@@ -351,6 +375,7 @@ export function OpportunityField({
         >
           <StageLabel
             icon={ShieldCheck}
+            description={t("actionDescription")}
             label={t("expressionAudit")}
             count={status.expressions.length}
           />
@@ -443,16 +468,23 @@ function StageLabel({
   icon: Icon,
   label,
   count,
+  description,
 }: {
   icon: typeof Sparkles;
   label: string;
   count: number;
+  description: string;
 }) {
   return (
-    <div className="stage-label">
-      <Icon />
-      <span>{label}</span>
-      <em>{count}</em>
+    <div className="stage-intro">
+      <div className="stage-label">
+        <span className="stage-glyph">
+          <Icon aria-hidden="true" />
+        </span>
+        <span>{label}</span>
+        <em>{count}</em>
+      </div>
+      <p>{description}</p>
     </div>
   );
 }

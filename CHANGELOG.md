@@ -8,6 +8,14 @@ semantic versioning while the project remains experimental.
 
 ### Added
 
+- A focused bilingual operator brief, stable Agent identity markers, clearer
+  opportunity cards and searchable, inspectable decision history. README
+  galleries now use language-matched captures of the current build's labeled
+  synthetic preview.
+- Explicit signal freshness states shared by discovery, ranking and the
+  console. New ingestion can enter the current frozen research snapshot;
+  expired evidence is kept for history rather than promoted as current work.
+
 - Opportunity Continuity v2 now treats a successful exact-question follow-up
   as a durable research attempt. Unchanged questions re-enter the bounded
   research queue on a horizon-aware cadence, while a changed Opportunity
@@ -95,6 +103,17 @@ semantic versioning while the project remains experimental.
   with responsive containment and an explicit ALTA product lockup.
 
 ### Fixed
+
+- Clock-dependent opportunity freshness is recalculated on each cached API
+  read. Database connection failures return sanitized 503 responses, and
+  malformed or implausibly future heartbeats fail readiness safely.
+- The console validates critical response structures, retains last-good data
+  through outages and fences late credential/capital polls behind newer
+  acknowledged actions. One secure-mutation path renews a rejected CSRF session
+  at most once and never automatically replays an uncertain mutation.
+- Gateway reads now cancel when the browser disconnects, enforce response
+  size and time bounds, and release stream resources. Mobile text inputs keep
+  a 16px floor to avoid automatic focus zoom.
 
 - Patched the `fast-uri` and `qs` transitive dependencies used by the local
   shadcn/MCP development toolchain, without taking unrelated major-version

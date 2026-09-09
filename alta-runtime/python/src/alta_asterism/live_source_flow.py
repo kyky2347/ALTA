@@ -1,6 +1,7 @@
 import hashlib
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
@@ -10,6 +11,7 @@ from .alpha_feedback import AlphaFeedbackProjector
 from .b5_runtime import _append_event, _contract_event
 from .contracts import Environment
 from .database import Database
+from .freshness import MAX_CURRENT_SIGNAL_AGE
 from .implementation import PortfolioRiskPolicy
 from .investment_thesis import pillar_research_question
 from .massive import MassiveDataset
@@ -244,19 +246,22 @@ class DatabaseSourceFlow:
                 """SELECT e.id, e.raw_id, r.source, r.content_hash, e.known_at,
                 e.summary, r.body, CASE
                 WHEN r.body->>'origin_fingerprint' ~ '^[a-f0-9]{64}$'
-                THEN r.body->>'origin_fingerprint' END
+                THEN r.body->>'origin_fingerprint' END, e.event_time
                 FROM research.evidence e
                 JOIN research.raw r ON r.id = e.raw_id
                 WHERE e.environment = %s AND r.environment = %s
                   AND e.known_at <= %s AND r.known_at <= %s
+                  AND coalesce(e.event_time, e.known_at) >= %s
                   AND lower(r.source) NOT LIKE '%%fixture%%'
                   AND coalesce(r.body->>'fixture','false') <> 'true'
-                ORDER BY e.known_at DESC, e.id LIMIT %s""",
+                ORDER BY coalesce(e.event_time, e.known_at) DESC,
+                         e.known_at DESC, e.id LIMIT %s""",
                 (
                     self.environment.value,
                     self.environment.value,
                     wake_at,
                     wake_at,
+                    wake_at - MAX_CURRENT_SIGNAL_AGE,
                     self.max_evidence * 8,
                 ),
             ).fetchall()
@@ -305,6 +310,7 @@ class DatabaseSourceFlow:
                 territory=_territory(row[2]),
                 source_locator=(_public_locator(row[6]) or f"alta://database/{row[1]}"),
                 known_at=row[4],
+                event_at=row[8],
                 content_hash=row[3],
                 origin_fingerprint=row[7],
                 summary=_text_prefix(row[5]),
@@ -670,11 +676,16 @@ class DatabaseSourceFlow:
             """SELECT r.id, r.known_at, r.source, r.body FROM research.raw r
             LEFT JOIN research.evidence e ON e.raw_id = r.id
             WHERE r.environment = %s AND r.known_at <= %s AND e.id IS NULL
+              AND r.known_at >= %s
               AND r.source_key NOT LIKE 'option-snapshot:%%'
               AND lower(r.source) NOT LIKE '%%fixture%%'
               AND coalesce(r.body->>'fixture','false') <> 'true'
-            ORDER BY r.known_at, r.id LIMIT 100""",
-            (self.environment.value, wake_at),
+            ORDER BY r.known_at DESC, r.id LIMIT 100""",
+            (
+                self.environment.value,
+                wake_at,
+                wake_at - MAX_CURRENT_SIGNAL_AGE,
+            ),
         ).fetchall()
         for raw_id, known_at, source, body in rows:
             summary = _market_summary(body) or _first_text(body)
@@ -747,6 +758,7 @@ class IngestingSourceFlow:
         massive_adapter=None,
         massive_daily_cursor=None,
         massive_discovery_enabled: bool = False,
+        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self.database_flow = database_flow
         # The outer flow owns the complete anchor because transport posture is
@@ -756,6 +768,7 @@ class IngestingSourceFlow:
         self.massive_adapter = massive_adapter
         self.massive_daily_cursor = massive_daily_cursor
         self.massive_discovery_enabled = massive_discovery_enabled
+        self.clock = clock
         self._finlight_retry = _ConnectorRetryGate()
         self._massive_retry = _ConnectorRetryGate()
 
@@ -800,8 +813,11 @@ class IngestingSourceFlow:
                 massive_posture = "degraded"
                 massive_reason = f"connector_error:{type(error).__name__}"
             self._massive_retry.record(wake_at, massive_posture)
+        freeze_at = max(wake_at, self.clock())
+        if freeze_at.tzinfo is None or freeze_at.utcoffset() is None:
+            raise ValueError("source freeze clock must be timezone-aware")
         frozen, postures = self.database_flow.schedule_and_wake(
-            cycle_id, wake_at, overrides
+            cycle_id, freeze_at, overrides
         )
         with self.database_flow.database.connect() as connection:
             _append_event(

@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -35,6 +36,8 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EventTimeline } from "@/components/event-timeline";
+import { OperatingBrief } from "@/components/operating-brief";
+import { AgentMark } from "@/components/agent-mark";
 import { LanguageToggle } from "@/components/language-toggle";
 import { RuntimeControl } from "@/components/runtime-control";
 import { StatusPill } from "@/components/status-pill";
@@ -104,7 +107,8 @@ const DetailInspector = lazy(async () => ({
 
 function preloadView(view: View) {
   if (view === "agents") return;
-  void viewLoaders[view]();
+  // Hover preloads are optional; navigation retains its normal loading path.
+  void viewLoaders[view]().catch(() => undefined);
 }
 
 function storedView(): View {
@@ -155,6 +159,8 @@ export default function App() {
   } = consoleState;
   const [view, setView] = useState<View>(storedView);
   const [selected, setSelected] = useState<SelectedEntity | null>(null);
+  const [inspectorOpen, setInspectorOpen] = useState(false);
+  const selectionTrigger = useRef<HTMLElement | null>(null);
   const [selectedOpportunityId, setSelectedOpportunityId] = useState<
     string | null
   >(null);
@@ -162,6 +168,10 @@ export default function App() {
   const [railOpen, setRailOpen] = useState(storedRail);
   const [actionError, setActionError] = useState<string | null>(null);
   const [, setClockTick] = useState(0);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }, [view]);
 
   useEffect(() => {
     const listener = (event: KeyboardEvent) => {
@@ -200,7 +210,17 @@ export default function App() {
 
   const handleSelect = useCallback(
     (entity: SelectedEntity) => {
+      if (
+        document.activeElement instanceof HTMLElement &&
+        !document.activeElement.closest(".inspector")
+      ) {
+        selectionTrigger.current = document.activeElement;
+      }
       setSelected(entity);
+      setInspectorOpen(true);
+      setView((current) =>
+        current === "credentials" || current === "capital" ? "field" : current,
+      );
       const opportunityId = opportunityIdForEntity(status, entity);
       setSelectedOpportunityId(opportunityId);
     },
@@ -240,6 +260,8 @@ export default function App() {
     : inspectorSelected;
   const visibleOperation = recentOperation(control?.operation);
   const runtimeReady = preview || Boolean(control?.runtime.ready);
+  const showInspector =
+    inspectorOpen && view !== "credentials" && view !== "capital";
   const currentCycleId =
     runtime?.config.autonomousStatus === "running"
       ? (runtime.config.currentCycleId ?? status?.currentPipelineId)
@@ -260,7 +282,13 @@ export default function App() {
 
   if (loading) return <LoadingScreen />;
   if (error && !preview)
-    return <ConnectionScreen error={error} state={connection.status} />;
+    return (
+      <ConnectionScreen
+        error={error}
+        state={connection.status}
+        onRetry={retryNow}
+      />
+    );
   if (!control && !preview)
     return <ConnectionScreen error={connection.message} onRetry={retryNow} />;
 
@@ -268,11 +296,15 @@ export default function App() {
     <div
       className={cn(
         "app-shell",
+        !showInspector && "inspector-closed",
         !railOpen && "rail-collapsed",
         view === "credentials" && "configuration-mode",
         view === "capital" && "capital-mode",
       )}
     >
+      <a className="skip-link" href="#main-content">
+        {t("skipToContent")}
+      </a>
       <header className="topbar">
         <div className="brand-lockup">
           <img src="/alta-brand-logo.png" alt="" className="brand-logo" />
@@ -345,8 +377,10 @@ export default function App() {
             className="command-button"
             aria-label={t("findAnything")}
             onClick={() => setCommandOpen(true)}
-            onPointerEnter={() => void loadCommandPalette()}
-            onFocus={() => void loadCommandPalette()}
+            onPointerEnter={() =>
+              void loadCommandPalette().catch(() => undefined)
+            }
+            onFocus={() => void loadCommandPalette().catch(() => undefined)}
           >
             <Search data-icon="inline-start" />
             <span>{t("findAnything")}</span>
@@ -378,10 +412,16 @@ export default function App() {
               className={cn("rail-item", view === id && "is-active")}
               key={id}
               aria-label={viewNavigationLabel(id, t)}
+              title={viewNavigationLabel(id, t)}
               aria-current={view === id ? "page" : undefined}
               onPointerEnter={() => preloadView(id)}
               onFocus={() => preloadView(id)}
-              onClick={() => startTransition(() => setView(id))}
+              onClick={() =>
+                startTransition(() => {
+                  setView(id);
+                  setInspectorOpen(false);
+                })
+              }
             >
               <Icon />
               <span>{viewNavigationLabel(id, t)}</span>
@@ -400,7 +440,7 @@ export default function App() {
         </div>
       </nav>
 
-      <main className="workspace">
+      <main className="workspace" id="main-content" tabIndex={-1}>
         <ConnectionBanner
           connection={connection}
           runtimeReady={Boolean(control?.runtime.ready)}
@@ -434,6 +474,7 @@ export default function App() {
         <div className="workspace-heading">
           <div>
             <h1>{viewHeading(view, t)}</h1>
+            <p className="workspace-description">{t(`${view}Description`)}</p>
           </div>
           <div className="workspace-context">
             <span>
@@ -442,9 +483,7 @@ export default function App() {
                 : domain(status?.environment ?? "shadow")}
             </span>
             <Separator orientation="vertical" />
-            <span>{currentCycleId ?? t("noActiveCycle")}</span>
-            <Separator orientation="vertical" />
-            <span>
+            <span title={currentCycleId ?? undefined}>
               {!runtimeReady && status
                 ? t("savedSnapshot")
                 : runtime?.config.autonomousStatus === "running"
@@ -496,13 +535,28 @@ export default function App() {
           ) : (
             <>
               {view === "field" && (
-                <OpportunityField
-                  status={status}
-                  runtime={runtime}
-                  selected={fieldSelected}
-                  selectedOpportunityId={effectiveOpportunityId}
-                  onSelect={handleSelect}
-                />
+                <>
+                  <OperatingBrief
+                    status={status}
+                    runtime={runtime}
+                    ready={runtimeReady}
+                    stale={connection.stale}
+                    preview={preview}
+                    onNavigate={(nextView) =>
+                      startTransition(() => {
+                        setView(nextView);
+                        setInspectorOpen(false);
+                      })
+                    }
+                  />
+                  <OpportunityField
+                    status={status}
+                    runtime={runtime}
+                    selected={fieldSelected}
+                    selectedOpportunityId={effectiveOpportunityId}
+                    onSelect={handleSelect}
+                  />
+                </>
               )}
               {view === "ledger" && (
                 <DecisionLedger
@@ -537,13 +591,15 @@ export default function App() {
                   onSelect={handleSelect}
                 />
               )}
-              <EventTimeline events={events} onSelect={handleSelect} />
+              {view === "ledger" && (
+                <EventTimeline events={events} onSelect={handleSelect} />
+              )}
             </>
           )}
         </Suspense>
       </main>
 
-      {view !== "credentials" && view !== "capital" && (
+      {showInspector && (
         <Suspense fallback={null}>
           <DetailInspector
             selected={inspectorSelected}
@@ -551,6 +607,12 @@ export default function App() {
             preview={preview}
             selectionExpired={selectionExpired}
             liveFallbackAvailable={Boolean(defaultOpportunityEntity)}
+            onClose={() => {
+              setInspectorOpen(false);
+              if (selectionTrigger.current?.isConnected)
+                selectionTrigger.current.focus();
+              else document.getElementById("main-content")?.focus();
+            }}
           />
         </Suspense>
       )}
@@ -746,7 +808,7 @@ function AgentDesk({
           >
             <div className="desk-card-top">
               <span>
-                <Bot />
+                <AgentMark role={agent.id} />
               </span>
               <StatusPill status={agent.status} live />
             </div>

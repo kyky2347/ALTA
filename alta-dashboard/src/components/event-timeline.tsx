@@ -33,25 +33,19 @@ export function EventTimeline({
   const active = items[activeIndex];
 
   useEffect(() => {
-    if (!playing || !items.length) return;
-    const timer = window.setInterval(() => {
-      setPlayCursor((current) => {
-        const currentIndex =
-          current === null
-            ? 0
-            : Math.max(
-                0,
-                items.findIndex((event) => event.cursor === current),
-              );
-        if (currentIndex >= items.length - 1) {
-          setPlaying(false);
-          return null;
-        }
-        return items[currentIndex + 1].cursor;
-      });
+    if (!playing || !active) return;
+    onSelect({
+      kind: "event",
+      id: active.eventId,
+      label: domain(active.eventType),
+      summary: active as unknown as Record<string, unknown>,
+    });
+    const timer = window.setTimeout(() => {
+      if (activeIndex >= items.length - 1) setPlaying(false);
+      else setPlayCursor(items[activeIndex + 1].cursor);
     }, 1100);
-    return () => window.clearInterval(timer);
-  }, [items, playing]);
+    return () => window.clearTimeout(timer);
+  }, [active, activeIndex, domain, items, onSelect, playing]);
 
   function selectAt(index: number) {
     const event = items[index];
@@ -89,7 +83,10 @@ export function EventTimeline({
           max={Math.max(0, items.length - 1)}
           value={activeIndex}
           disabled={!items.length}
-          onChange={(event) => selectAt(Number(event.target.value))}
+          onChange={(event) => {
+            setPlaying(false);
+            selectAt(Number(event.target.value));
+          }}
           aria-label={t("replayLoadedHistory")}
         />
         <div className="timeline-scale">

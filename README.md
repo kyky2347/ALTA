@@ -32,6 +32,15 @@ evidence, accountability, recovery, or portfolio discipline?**
 [Getting started](docs/operations/getting-started.md) ·
 [Research scope](docs/research-scope.md) · [Security](SECURITY.md)
 
+### Latest: clearer decisions, fresher evidence, safer recovery
+
+- **Find the signal:** distinguish live, current and expired clues; keep old
+  research inspectable without promoting it as a fresh opportunity.
+- **Follow the work:** an operating brief, focused opportunity cards, Agent
+  handoffs and a searchable decision history in English or Chinese.
+- **Keep your place:** retain valid data through disconnects and malformed
+  responses; prevent delayed polls from undoing acknowledged operator changes.
+
 ## The five-minute mental model
 
 ALTA treats an idea as a lifecycle, not a chat response:
@@ -101,9 +110,20 @@ can report configured/healthy/expired, never reveal a stored value.
 
 ![ALTA operator console in English](docs/assets/alta-operator-console-en.png)
 
-| System and portfolio                                             | Agent desk and handoffs                                |
-| ---------------------------------------------------------------- | ------------------------------------------------------ |
-| ![ALTA system overview](docs/assets/alta-system-overview-en.png) | ![ALTA agent desk](docs/assets/alta-agent-desk-en.png) |
+<details>
+<summary>Explore system health and Agent handoffs</summary>
+
+![ALTA system overview in English](docs/assets/alta-system-overview-en.png)
+
+![ALTA Agent desk in English](docs/assets/alta-agent-desk-en.png)
+
+</details>
+
+Captured from the current production build on September 9, 2026, with the
+English interface and explicitly labeled, read-only **synthetic preview** data.
+No real credentials, account details or market-provider payloads are shown.
+After starting the console, append `?preview=1` to its URL to explore this view
+without starting research or placing orders.
 
 The console is an operational lens, not a performance advertisement. Shadow
 returns, confidence ranges and model opinions are labeled according to their
@@ -202,6 +222,12 @@ Key properties:
 - idempotent migrations and restart reconciliation;
 - authenticated control plane bound to `127.0.0.1` by default.
 
+The console retains its last valid snapshot through malformed responses and
+connection failures. Late polls cannot overwrite acknowledged operator changes;
+cached opportunity freshness is rechecked on every read. See the
+[local reliability review](docs/audits/console-reliability.md) for verification
+scope and remaining limitations.
+
 These are strong local-runtime contracts, not a claim of exchange-grade or
 bank-grade availability. Operational assumptions and remaining limitations are
 kept explicit in [the runbook](docs/operations/autonomous-shadow.md).
@@ -222,24 +248,23 @@ The intended edge comes from breadth of search, independent disagreement,
 cross-domain clue synthesis, better expression, disciplined abstention and a
 durable learning record—not from asking one model for a ticker.
 
-## Verified state
+## Verified, not promised
 
-The current working release is `0.26.0` (`FORWARD_EVIDENCE_VERIFIED`). Its
-publication gate covers:
+The release baseline remains `0.26.0`; newer changes are recorded under
+[Unreleased](CHANGELOG.md). The September 9 local review verified:
 
-- **190** Node gateway and harness tests;
-- **373** Opportunity OS Python tests;
-- **38** isolated capital-boundary tests;
-- dashboard unit tests, lint and production build;
-- Ruff lint and format checks;
-- locked dependency installation and secret scanning.
+| Automated checks                                                          | Browser and integration checks                                                            |
+| ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| **644 passed:** 201 Node · 386 runtime · 38 Paper boundary · 19 dashboard | **84** view/language/viewport combinations in Chromium                                    |
+| TypeScript, lint, formatting and production build passed                  | **7** authenticated read routes through PostgreSQL, Python and the Node gateway           |
+| Recovery and freshness regression coverage                                | Disconnect/reconnect, malformed responses, delayed polls and bounded secure-session retry |
 
-The latest bounded deployment recovered an interrupted cycle, quarantined
-duplicate work, completed four independent Scout roles, reached `MVP_IDLE`,
-and shut down the dashboard, services, Agent children, PostgreSQL, Redis and
-loopback listeners cleanly. Capital remained disabled and no broker order was
-submitted. This validates a recovery path; it does not validate investment
-performance or 24×7 production availability.
+The real-stack smoke was read-only, with autonomous research and Tiger disabled.
+Temporary services and test data stores were stopped afterward. These results
+do not establish current broker connectivity, multi-day availability, physical
+power-loss recovery, universal browser compatibility or profitable Alpha.
+See the [reliability review](docs/audits/console-reliability.md) for limits and
+the [publication security audit](docs/audits/security-audit.md) for scan scope.
 
 ## Repository map
 

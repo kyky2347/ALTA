@@ -2,7 +2,7 @@
 
 Baseline audit date: 2026-08-31
 
-Latest delta revalidation: 2026-09-04
+Latest delta revalidation: 2026-09-09
 
 Target: the exact source tree and new Git history prepared for
 `https://github.com/kyky2347/ALTA`
@@ -22,6 +22,45 @@ This is a bounded engineering review, not a mathematical guarantee that every
 unknown secret format or software defect is impossible. Any later credential
 finding requires immediate publication stop, provider-side rotation, history
 remediation, and a complete rescan.
+
+## Publication delta — 2026-09-09
+
+This review covers the current bilingual console, signal-freshness gates,
+read-path resilience, documentation and six replacement screenshots. It does
+not reuse an earlier UI capture or claim a new investment-performance result.
+
+| Check                                                                            | Result                                                      |
+| -------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| Gitleaks 8.30.0, exact staged source export                                      | 0 findings under the existing reviewed rules                |
+| Gitleaks 8.30.0, complete reachable history                                      | 20 existing commits scanned before publication; 0 findings  |
+| Independent detect-secrets 1.5.0, complete staged export, no online verification | 705 raw matches reviewed; no operator credential identified |
+| GitHub secret-scanning alerts                                                    | No alerts returned at review time                           |
+| Frozen pnpm and both uv installations in an isolated source export               | Passed without copying local credential or runtime state    |
+| Language-matched production-build screenshots                                    | 3 English + 3 Chinese; synthetic preview only               |
+| Screenshot metadata                                                              | No PNG text or EXIF chunks                                  |
+
+The independent scan deliberately used no new file exclusions or allowlist.
+Its 705 raw matches comprise 547 package-integrity hashes in `pnpm-lock.yaml`,
+28 first-party test/preview/code-literal matches, and 130 matches in unchanged
+vendored source. The latter include dependency pins, non-production signing
+fixtures, redaction tests, protocol identifiers, and an upstream public client
+identifier. These are not ALTA operator credentials. A clean automated report
+must not be manufactured by deleting test coverage or hiding the vendor tree.
+
+The six screenshots were reviewed visually and captured through the current
+production frontend's read-only preview mode. No real account, provider
+payload, credential entry, local filesystem path or authentication URL was
+photographed. Existing license and attribution files remain intact.
+
+The [console reliability review](console-reliability.md) records the 644-test
+local application gate, real-stack read-only smoke and browser fault tests.
+Dashboard contract tests are now included explicitly in CI. No research cycle,
+credential replacement, broker verification or order was requested by this
+publication workflow. Existing operator services are not restarted by a push.
+
+The scanner results are bounded evidence, not a guarantee against every
+unknown secret format. Ignored runtime state and the external credential store
+are excluded from publication; they are not deleted from the operator's machine.
 
 ## Publication delta — 2026-09-04
 
@@ -134,8 +173,9 @@ PostgreSQL, Redis, and loopback listeners were stopped afterward.
 The full-tree Gitleaks scan uses the repository's default rules plus narrowly
 reviewed, exact-path exceptions for public upstream Codex fixtures. It has no
 broad vendor, extension, or generated-directory exemption. Public certificate
-fixtures required by the pinned upstream HTTP tests remain tracked; no private
-key is included.
+fixtures required by the pinned upstream HTTP tests remain tracked. Upstream
+signing tests also contain fixed, non-production private-key literals; these
+must never be used as operational credentials.
 
 detect-secrets separately scans the exact distributable source inventory,
 including tests and the attributed vendor snapshot. Tests contain intentionally

@@ -5,22 +5,23 @@ colors:
   accent-blue: "#3067e8"
   accent-blue-soft: "#e9eefc"
   accent-blue-ink: "#244fbb"
-  canvas: "#f3f4f2"
+  canvas: "#f4f6f8"
   surface: "#ffffff"
-  surface-muted: "#eceeeb"
-  ink: "#171918"
-  muted-ink: "#626862"
-  line: "#dfe3e1"
-  evidence-plane: "#171a19"
+  surface-muted: "#f7f9fb"
+  ink: "#1d2938"
+  brand-ink: "#203b59"
+  muted-ink: "#626f80"
+  line: "#e0e5eb"
+  evidence-plane: "#19232f"
   success: "#277456"
   destructive: "#bd3a50"
 typography:
   display:
     fontFamily: "Geist Variable, -apple-system, BlinkMacSystemFont, SF Pro Text, sans-serif"
     fontSize: "clamp(25px, 2.25vw, 38px)"
-    fontWeight: 580
-    lineHeight: 1
-    letterSpacing: "-0.045em"
+    fontWeight: 540
+    lineHeight: 1.2
+    letterSpacing: "-0.035em"
   headline:
     fontFamily: "Geist Variable, -apple-system, BlinkMacSystemFont, SF Pro Text, sans-serif"
     fontSize: "19px"
@@ -34,12 +35,12 @@ typography:
     lineHeight: 1.35
   body:
     fontFamily: "Geist Variable, -apple-system, BlinkMacSystemFont, SF Pro Text, sans-serif"
-    fontSize: "11px"
+    fontSize: "13px"
     fontWeight: 450
     lineHeight: 1.45
   label:
     fontFamily: "Geist Variable, -apple-system, BlinkMacSystemFont, SF Pro Text, sans-serif"
-    fontSize: "10px"
+    fontSize: "12px"
     fontWeight: 650
     lineHeight: 1.2
     letterSpacing: "0.08em"
@@ -102,7 +103,7 @@ components:
     typography: "{typography.body}"
     rounded: "{rounded.md}"
     padding: "0 12px"
-    height: "42px"
+    height: "46px"
 ---
 
 ## Design System: ALTA Operator Console
@@ -113,7 +114,7 @@ components:
 
 ALTA is a calm, evidence-first operating environment rather than a decorative market terminal. Its pale neutral workspace behaves like a precise physical instrument: hierarchy comes from position, scale, and material contrast, while saturated color is reserved for selection, motion, and operator action.
 
-The visual system joins two complementary modes. The live opportunity field uses matte white surfaces, thin cool-gray boundaries, and ordered horizontal handoffs to make the research lifecycle legible. The evidence inspector forms a persistent dark plane where decision packets, assessments, provenance, and normalized records can be read as durable institutional memory.
+The visual system joins two complementary modes. The live opportunity field uses matte white surfaces, thin cool-gray boundaries, and ordered horizontal handoffs to make the research lifecycle legible. Selecting a record opens a dark evidence plane where decision packets, assessments, provenance, and normalized records can be read as durable institutional memory. Closing it restores the full workspace.
 
 **Key Characteristics:**
 
@@ -125,7 +126,7 @@ The visual system joins two complementary modes. The live opportunity field uses
 
 ## Colors
 
-The palette is intentionally narrow: warm-neutral operational surfaces, near-black evidence, and a single clear blue punctuation color.
+The palette is intentionally narrow: cool-neutral operational surfaces, deep slate evidence, and a single clear blue interaction color. Desaturated navy anchors the brand and role marks without competing with operational states.
 
 ### Primary
 
@@ -176,19 +177,19 @@ The palette is intentionally narrow: warm-neutral operational surfaces, near-bla
 
 ### Named Rules
 
-**The Operational Readability Rule.** Compact type may organize metadata, but decision facts, status, and explanatory copy must meet the established 10–11px readability floor.
+**The Operational Readability Rule.** Primary record facts and explanatory copy use a 12–13px minimum, with 14px page descriptions. Smaller type is limited to secondary metadata, never the sole explanation of a state or action.
 
 **The Sentence Before Symbol Rule.** Important opportunities and decisions are named in plain language; identifiers, timestamps, and status labels support that title rather than replacing it.
 
 ## Layout
 
-Desktop uses a three-plane shell: a 174px navigation rail, a flexible central workspace, and a fixed 344px evidence inspector beneath a 72px top bar. The rail can collapse to 74px, while the central field remains the visual priority. Major workspace panels use 20–24px internal rhythm and 14–26px separation from surrounding content.
+Desktop uses a 194px navigation rail and flexible workspace beneath a 72px top bar. A 344px evidence inspector appears on record selection; it is not an empty permanent column. The rail can collapse to 74px. Major workspace panels use 20–24px internal rhythm and 18–28px separation from surrounding content.
 
-The live field is a directed four-stage topology—Discovery, Foundry, Committee, and Expression & Audit—with narrow connector columns between stages. Cards stack vertically inside stages and maintain clear handoff order. The replay ribbon sits below the current field, reinforcing that live state and durable history are two views of the same event ledger.
+The opportunity workspace starts with a plain-language runtime briefing and links to Agent activity, shadow positions, and history. Its directed four-stage topology—Discovery, Foundry, Committee, and Expression & Audit—adds a one-line explanation and restrained role mark to each stage. Cards prioritize titles, status, and freshness; machine identifiers belong in details. The field rests on a smooth recessed surface, without decorative dot grids. The replay ribbon lives on Activity & history, not on every page.
 
 The system overview opens with a single segmented operating pulse rather than a grid of unrelated KPI cards. Its six cells share one surface and one reading order, then recompose from six to three, two, and one column as space narrows. This keeps the console summary compact while making it feel like one instrument.
 
-At 1350px the rail collapses and the inspector narrows. At 1050px the evidence inspector moves below the workspace and the field becomes a two-column matrix. At 760px the shell becomes a continuous vertical page: the top bar fixes at 62px, navigation becomes a horizontally scrollable strip, and a four-option stage selector shows one lifecycle stage at a time. This is a structural re-composition, not a scaled-down desktop canvas.
+At 1350px the rail collapses and the inspector narrows. At 1220px the evidence inspector moves below the workspace. A container query switches the field to two columns whenever its own available width is insufficient, including when the inspector opens. At 760px the shell becomes a continuous vertical page: the top bar fixes at 62px, navigation remains a horizontally scrollable strip with text labels, and a four-option stage selector shows one lifecycle stage at a time.
 
 **The Lifecycle Order Rule.** Responsive layouts may change the number of visible stages, but the discover → foundry → committee → audit sequence stays explicit and navigable.
 
@@ -263,7 +264,7 @@ The inspector is a durable reading surface with Brief, Evidence, and Record tabs
 
 ### Replay Ribbon
 
-The replay ribbon anchors history beneath the live field. It combines a labeled durable-event count, current event readout, blue progress track, time bounds, and a “Live now” control. On mobile it stacks into a single column instead of compressing the timeline.
+The replay ribbon sits beneath the event ledger. It combines a labeled durable-event count, current event readout, blue progress track, time bounds, and a “Live now” control. Playback advances the selected evidence record, not just the slider. Controls reserve their intrinsic width so the track cannot cover them. On mobile it stacks into a single column.
 
 ## Do's and Don'ts
 

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { SnapshotFence } from "@/lib/snapshot-fence";
 import {
   ApiError,
   getJson,
@@ -139,11 +140,29 @@ export function useAltaConsole() {
   const lastRuntimeSignature = useRef(
     preview ? stableJson(previewRuntime) : "",
   );
-  const lastStatusCursor = useRef(preview ? previewStatus.eventCursor : -1);
+  const lastStatusSignature = useRef(preview ? stableJson(previewStatus) : "");
   const mounted = useRef(true);
   const hasSnapshot = useRef(preview);
   const credentialsNextPollAt = useRef(preview ? Number.POSITIVE_INFINITY : 0);
   const capitalNextPollAt = useRef(preview ? Number.POSITIVE_INFINITY : 0);
+  const credentialFence = useRef(new SnapshotFence());
+  const capitalFence = useRef(new SnapshotFence());
+
+  const publishCredentials = useCallback((next: CredentialInventory) => {
+    credentialFence.current.invalidate();
+    if (!mounted.current) return;
+    setCredentials(next);
+    setCredentialsError(null);
+    credentialsNextPollAt.current = Date.now() + AUXILIARY_POLL_MS;
+  }, []);
+
+  const publishCapital = useCallback((next: PaperCapitalStatus) => {
+    capitalFence.current.invalidate();
+    if (!mounted.current) return;
+    setCapital(next);
+    setCapitalError(null);
+    capitalNextPollAt.current = Date.now() + AUXILIARY_POLL_MS;
+  }, []);
 
   const markConnected = useCallback(
     (message: string | null, stale: boolean) => {
@@ -183,6 +202,7 @@ export function useAltaConsole() {
     activeRequest.current?.abort();
     const controller = new AbortController();
     activeRequest.current = controller;
+    const auxiliaryRequests: Promise<void>[] = [];
     try {
       let nextControl: ControlState;
       if (!csrfToken.current) {
@@ -225,40 +245,52 @@ export function useAltaConsole() {
             : LIVE_POLL_MS;
       const auxiliaryNow = Date.now();
       if (auxiliaryNow >= credentialsNextPollAt.current) {
+        const revision = credentialFence.current.begin();
         credentialsNextPollAt.current = auxiliaryNow + AUXILIARY_POLL_MS;
-        try {
-          const nextCredentials = await getJson<CredentialInventory>(
-            "/control/credentials",
-            {
-              signal: controller.signal,
-              timeoutMs: AUXILIARY_TIMEOUT_MS,
-            },
-          );
-          if (!mounted.current) return;
-          setCredentials(nextCredentials);
-          setCredentialsError(null);
-        } catch (error) {
-          if (!mounted.current) return;
-          setCredentialsError(messageFor(error));
-        }
+        auxiliaryRequests.push(
+          getJson<CredentialInventory>("/control/credentials", {
+            signal: controller.signal,
+            timeoutMs: AUXILIARY_TIMEOUT_MS,
+          })
+            .then((nextCredentials) => {
+              if (
+                !mounted.current ||
+                !credentialFence.current.accepts(revision)
+              )
+                return;
+              setCredentials(nextCredentials);
+              setCredentialsError(null);
+            })
+            .catch((error: unknown) => {
+              if (
+                !mounted.current ||
+                !credentialFence.current.accepts(revision)
+              )
+                return;
+              setCredentialsError(messageFor(error));
+            }),
+        );
       }
       if (auxiliaryNow >= capitalNextPollAt.current) {
+        const revision = capitalFence.current.begin();
         capitalNextPollAt.current = auxiliaryNow + AUXILIARY_POLL_MS;
-        try {
-          const nextCapital = await getJson<PaperCapitalStatus>(
-            "/control/capital",
-            {
-              signal: controller.signal,
-              timeoutMs: AUXILIARY_TIMEOUT_MS,
-            },
-          );
-          if (!mounted.current) return;
-          setCapital(nextCapital);
-          setCapitalError(null);
-        } catch (error) {
-          if (!mounted.current) return;
-          setCapitalError(messageFor(error));
-        }
+        auxiliaryRequests.push(
+          getJson<PaperCapitalStatus>("/control/capital", {
+            signal: controller.signal,
+            timeoutMs: AUXILIARY_TIMEOUT_MS,
+          })
+            .then((nextCapital) => {
+              if (!mounted.current || !capitalFence.current.accepts(revision))
+                return;
+              setCapital(nextCapital);
+              setCapitalError(null);
+            })
+            .catch((error: unknown) => {
+              if (!mounted.current || !capitalFence.current.accepts(revision))
+                return;
+              setCapitalError(messageFor(error));
+            }),
+        );
       }
 
       if (!nextControl.runtime.ready) {
@@ -300,8 +332,10 @@ export function useAltaConsole() {
           setEvents([]);
           reloadEvents = true;
         }
-        if (nextStatus.eventCursor !== lastStatusCursor.current) {
-          lastStatusCursor.current = nextStatus.eventCursor;
+        // Freshness can change with wall time without appending an event.
+        const signature = stableJson(nextStatus);
+        if (signature !== lastStatusSignature.current) {
+          lastStatusSignature.current = signature;
           setStatus(nextStatus);
         }
         hasSnapshot.current = true;
@@ -347,6 +381,10 @@ export function useAltaConsole() {
       if (partialFailures.length) throw partialFailures[0];
       markConnected(null, false);
     } finally {
+      // Render core health/research first; optional provider views must not
+      // serialize or block it. Keep requests bounded and abortable on unmount.
+      if (mounted.current) setLoading(false);
+      await Promise.allSettled(auxiliaryRequests);
       if (activeRequest.current === controller) activeRequest.current = null;
     }
   }, [markConnected, preview]);
@@ -462,14 +500,16 @@ export function useAltaConsole() {
       queueRefresh();
   }, [connection.status, queueRefresh]);
 
-  const controlRuntime = useCallback(
-    async (action: "start" | "stop" | "restart") => {
+  // Only a definitive pre-execution CSRF rejection may be retried. Timeouts
+  // and uncertain mutation outcomes must never trigger an automatic replay.
+  const runSecureMutation = useCallback(
+    async <T>(request: (token: string) => Promise<T>): Promise<T> => {
       if (preview)
         throw new Error("Controls are disabled in synthetic preview");
       if (!csrfToken.current)
         throw new Error("The secure console session is not ready yet");
       try {
-        await mutateRuntime(action, csrfToken.current);
+        return await request(csrfToken.current);
       } catch (error) {
         if (!(error instanceof ApiError) || error.code !== "mutation_forbidden")
           throw error;
@@ -478,152 +518,69 @@ export function useAltaConsole() {
         );
         csrfToken.current = bootstrap.csrfToken;
         consoleInstance.current = bootstrap.console.instanceId;
-        setControl(bootstrap);
-        await mutateRuntime(action, csrfToken.current);
+        if (mounted.current) setControl(bootstrap);
+        return request(csrfToken.current);
       }
+    },
+    [preview],
+  );
+
+  const controlRuntime = useCallback(
+    async (action: "start" | "stop" | "restart") => {
+      await runSecureMutation((token) => mutateRuntime(action, token));
       queueRefresh();
     },
-    [preview, queueRefresh],
+    [runSecureMutation, queueRefresh],
   );
 
   const refreshCredentials = useCallback(async () => {
     if (preview) return;
+    const revision = credentialFence.current.begin();
     const next = await getJson<CredentialInventory>("/control/credentials");
-    setCredentials(next);
-    setCredentialsError(null);
-    credentialsNextPollAt.current = Date.now() + AUXILIARY_POLL_MS;
-  }, [preview]);
+    if (credentialFence.current.accepts(revision)) publishCredentials(next);
+  }, [preview, publishCredentials]);
 
   const verifyCredentials = useCallback(
     async (force = false) => {
-      if (preview)
-        throw new Error(
-          "Credential verification is disabled in synthetic preview",
-        );
-      if (!csrfToken.current)
-        throw new Error("The secure console session is not ready yet");
-      try {
-        const next = await verifyCredentialHealth(csrfToken.current, force);
-        setCredentials(next);
-        setCredentialsError(null);
-        credentialsNextPollAt.current = Date.now() + AUXILIARY_POLL_MS;
-      } catch (error) {
-        if (!(error instanceof ApiError) || error.code !== "mutation_forbidden")
-          throw error;
-        const bootstrap = validateControl(
-          await getJson<Bootstrap>("/control/bootstrap"),
-        );
-        csrfToken.current = bootstrap.csrfToken;
-        consoleInstance.current = bootstrap.console.instanceId;
-        setControl(bootstrap);
-        const next = await verifyCredentialHealth(csrfToken.current, force);
-        setCredentials(next);
-        setCredentialsError(null);
-        credentialsNextPollAt.current = Date.now() + AUXILIARY_POLL_MS;
-      }
+      const next = await runSecureMutation((token) =>
+        verifyCredentialHealth(token, force),
+      );
+      publishCredentials(next);
     },
-    [preview],
+    [runSecureMutation, publishCredentials],
   );
 
   const loadCapital = useCallback(async () => {
     if (preview) return;
+    const revision = capitalFence.current.begin();
     const next = await getJson<PaperCapitalStatus>("/control/capital");
-    setCapital(next);
-    setCapitalError(null);
-    capitalNextPollAt.current = Date.now() + AUXILIARY_POLL_MS;
-  }, [preview]);
+    if (capitalFence.current.accepts(revision)) publishCapital(next);
+  }, [preview, publishCapital]);
 
   const refreshCapital = useCallback(async () => {
-    if (preview)
-      throw new Error("Capital controls are disabled in synthetic preview");
-    if (!csrfToken.current)
-      throw new Error("The secure console session is not ready yet");
-    try {
-      const next = await refreshPaperCapital(csrfToken.current);
-      setCapital(next);
-      setCapitalError(null);
-      capitalNextPollAt.current = Date.now() + AUXILIARY_POLL_MS;
-    } catch (error) {
-      if (!(error instanceof ApiError) || error.code !== "mutation_forbidden")
-        throw error;
-      const bootstrap = validateControl(
-        await getJson<Bootstrap>("/control/bootstrap"),
-      );
-      csrfToken.current = bootstrap.csrfToken;
-      consoleInstance.current = bootstrap.console.instanceId;
-      setControl(bootstrap);
-      const next = await refreshPaperCapital(csrfToken.current);
-      setCapital(next);
-      setCapitalError(null);
-      capitalNextPollAt.current = Date.now() + AUXILIARY_POLL_MS;
-    }
-  }, [preview]);
+    const next = await runSecureMutation((token) => refreshPaperCapital(token));
+    publishCapital(next);
+  }, [runSecureMutation, publishCapital]);
 
   const setCapitalAuthorization = useCallback(
     async (enabled: boolean) => {
-      if (preview)
-        throw new Error("Capital controls are disabled in synthetic preview");
-      if (!csrfToken.current)
-        throw new Error("The secure console session is not ready yet");
-      try {
-        const next = await setPaperCapitalAuthorization(
-          enabled,
-          csrfToken.current,
-        );
-        setCapital(next);
-        setCapitalError(null);
-        capitalNextPollAt.current = Date.now() + AUXILIARY_POLL_MS;
-      } catch (error) {
-        if (!(error instanceof ApiError) || error.code !== "mutation_forbidden")
-          throw error;
-        const bootstrap = validateControl(
-          await getJson<Bootstrap>("/control/bootstrap"),
-        );
-        csrfToken.current = bootstrap.csrfToken;
-        consoleInstance.current = bootstrap.console.instanceId;
-        setControl(bootstrap);
-        const next = await setPaperCapitalAuthorization(
-          enabled,
-          csrfToken.current,
-        );
-        setCapital(next);
-        setCapitalError(null);
-        capitalNextPollAt.current = Date.now() + AUXILIARY_POLL_MS;
-      }
+      const next = await runSecureMutation((token) =>
+        setPaperCapitalAuthorization(enabled, token),
+      );
+      publishCapital(next);
       queueRefresh();
     },
-    [preview, queueRefresh],
+    [runSecureMutation, publishCapital, queueRefresh],
   );
 
   const setProviderCredential = useCallback(
     async (slot: string, secret: string) => {
-      if (preview)
-        throw new Error(
-          "Credential controls are disabled in synthetic preview",
-        );
-      if (!csrfToken.current)
-        throw new Error("The secure console session is not ready yet");
-      try {
-        const next = await replaceCredential(slot, secret, csrfToken.current);
-        setCredentials(next);
-        setCredentialsError(null);
-        credentialsNextPollAt.current = Date.now() + AUXILIARY_POLL_MS;
-      } catch (error) {
-        if (!(error instanceof ApiError) || error.code !== "mutation_forbidden")
-          throw error;
-        const bootstrap = validateControl(
-          await getJson<Bootstrap>("/control/bootstrap"),
-        );
-        csrfToken.current = bootstrap.csrfToken;
-        consoleInstance.current = bootstrap.console.instanceId;
-        setControl(bootstrap);
-        const next = await replaceCredential(slot, secret, csrfToken.current);
-        setCredentials(next);
-        setCredentialsError(null);
-        credentialsNextPollAt.current = Date.now() + AUXILIARY_POLL_MS;
-      }
+      const next = await runSecureMutation((token) =>
+        replaceCredential(slot, secret, token),
+      );
+      publishCredentials(next);
     },
-    [preview],
+    [runSecureMutation, publishCredentials],
   );
 
   const loadOlderEvents = useCallback(async () => {

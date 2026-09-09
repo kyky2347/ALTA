@@ -723,12 +723,16 @@ export const previewStatus: MvpStatus = {
   candidates: [
     {
       id: "cand-294",
+      freshnessState: "live",
+      freshnessAt: time(11),
       title: "Index rebalance flow asymmetry",
       knownAt: time(11),
       alphaArchetype: "structural-flow",
     },
     {
       id: "cand-293",
+      freshnessState: "live",
+      freshnessAt: time(19),
       title: "Post-event volatility repricing",
       knownAt: time(19),
       alphaArchetype: "volatility",
@@ -737,6 +741,9 @@ export const previewStatus: MvpStatus = {
   opportunities: [
     {
       id: "opp-118",
+      actionableNow: true,
+      freshnessState: "live",
+      freshnessAt: time(4),
       title: "Delayed basket pressure after constituent migration",
       status: "under_review",
       knownAt: time(4),
@@ -744,6 +751,9 @@ export const previewStatus: MvpStatus = {
     },
     {
       id: "opp-117",
+      actionableNow: true,
+      freshnessState: "current",
+      freshnessAt: time(31),
       title: "Revision breadth versus crowded consensus",
       status: "ranked",
       knownAt: time(31),
@@ -751,6 +761,9 @@ export const previewStatus: MvpStatus = {
     },
     {
       id: "opp-116",
+      actionableNow: true,
+      freshnessState: "current",
+      freshnessAt: time(48),
       title: "Short-dated skew normalization",
       status: "expressed",
       knownAt: time(48),
@@ -761,7 +774,7 @@ export const previewStatus: MvpStatus = {
     {
       id: "rank-118",
       opportunityId: "opp-118",
-      book: "event",
+      book: "opportunity_1_90d",
       rankingRunId: "preview-ranking-latest",
       rankingRunItemCount: 2,
       rankingRunComplete: true,
@@ -772,7 +785,7 @@ export const previewStatus: MvpStatus = {
     {
       id: "rank-117",
       opportunityId: "opp-117",
-      book: "fundamental",
+      book: "opportunity_1_90d",
       rankingRunId: "preview-ranking-latest",
       rankingRunItemCount: 2,
       rankingRunComplete: true,

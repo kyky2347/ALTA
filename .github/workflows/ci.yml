@@ -32,6 +32,8 @@ jobs:
         run: corepack pnpm install --frozen-lockfile
       - name: Run Node tests
         run: ./alta test
+      - name: Run dashboard contract tests
+        run: node --test alta-dashboard/tests/*.test.mjs
       - name: Check formatting and Markdown
         run: corepack pnpm check
 

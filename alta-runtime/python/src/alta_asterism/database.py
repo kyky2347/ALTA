@@ -4,6 +4,7 @@ import threading
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -24,6 +25,7 @@ from .alpha_reporting import (
 )
 from .contracts import Event
 from .foundry import CandidateDraft, materialized_thesis_pillars
+from .freshness import signal_freshness_fields
 from .forecast_calibration import (
     ForecastCalibrationGovernance,
     ForecastCalibrationPolicy,
@@ -520,7 +522,8 @@ class Database:
                 (environment, bounded_limit),
             ).fetchall()
             candidate_rows = connection.execute(
-                """SELECT id, title, version, known_at, alpha_archetype
+                """SELECT id, title, version, known_at, alpha_archetype,
+                (foundry_snapshot->>'freshness_at')::timestamptz
                 FROM research.candidate
                 WHERE environment = %s
                 ORDER BY created_at DESC, id LIMIT %s""",
@@ -528,7 +531,8 @@ class Database:
             ).fetchall()
             opportunity_rows = connection.execute(
                 """SELECT id, title, status, version, known_at,
-                foundry_state, merge_parent_id, merge_revision, identity_version
+                foundry_state, merge_parent_id, merge_revision, identity_version,
+                freshness_at
                 FROM research.opportunity WHERE environment = %s
                 ORDER BY created_at DESC, id LIMIT %s""",
                 (environment, bounded_limit),
@@ -590,6 +594,7 @@ class Database:
                 "mvp.service.recovered": "MVP_RUNNING",
                 "mvp.pipeline.failed": "FAILED",
             }.get(latest_type, "RUNNING" if latest else "NOT_COMPLETED")
+        projected_at = datetime.now(UTC)
         return {
             "status": status,
             "environment": environment,
@@ -661,6 +666,8 @@ class Database:
                     "version": row[2],
                     "knownAt": row[3],
                     "alphaArchetype": row[4],
+                    "freshnessAt": row[5],
+                    **signal_freshness_fields(row[5], projected_at),
                 }
                 for row in candidate_rows
             ],
@@ -675,6 +682,8 @@ class Database:
                     "mergeParentId": row[6],
                     "mergeRevision": row[7],
                     "identityVersion": row[8],
+                    "freshnessAt": row[9],
+                    **signal_freshness_fields(row[9], projected_at, actionable=True),
                 }
                 for row in opportunity_rows
             ],

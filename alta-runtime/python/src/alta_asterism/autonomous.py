@@ -42,6 +42,10 @@ class IncompleteCycleSuperseded(RuntimeError):
     """A duplicate unfinished cycle was isolated in favor of the oldest wake."""
 
 
+class IncompleteCycleExpired(RuntimeError):
+    """An unfinished cycle is too old to represent the current market state."""
+
+
 class AutonomousRunner:
     def __init__(
         self,
@@ -51,6 +55,7 @@ class AutonomousRunner:
         state_callback: Callable[[str, dict], None] | None = None,
         monotonic: Callable[[], float] = time.monotonic,
         waiter: Callable[[threading.Event, float], bool] | None = None,
+        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self.database = database
         self.settings = settings
@@ -58,6 +63,7 @@ class AutonomousRunner:
         self.state_callback = state_callback
         self.monotonic = monotonic
         self.waiter = waiter or (lambda stop, seconds: stop.wait(seconds))
+        self.clock = clock
         self.evaluation = ForwardEvaluationLedger(database, settings)
 
     def run(self, stop: threading.Event, *, once: bool = False) -> int:
@@ -74,7 +80,7 @@ class AutonomousRunner:
             while not stop.is_set():
                 self.database.assert_autonomous_fence()
                 if cycle_id is None or wake_at is None:
-                    wake_at = datetime.now(UTC)
+                    wake_at = self.clock()
                     cycle_id = "live-" + wake_at.strftime("%Y%m%d-%H%M%S-%f")
                 self._notify(
                     "running",
@@ -285,11 +291,16 @@ class AutonomousRunner:
             return None, None, 0
 
         current_hash = contract_hash(evaluation_configuration(self.settings))
+        recovery_cutoff = self.clock() - timedelta(
+            seconds=self.settings.autonomous_cycle_timeout_seconds
+        )
         selected = None
         repository = ScoutRepository(self.database)
         for cycle in pending:
             error: Exception | None = None
-            if cycle.configuration_hash != current_hash:
+            if cycle.known_at < recovery_cutoff:
+                error = IncompleteCycleExpired()
+            elif cycle.configuration_hash != current_hash:
                 error = IncompleteCycleConfigurationChanged()
             else:
                 try:
@@ -333,6 +344,7 @@ class AutonomousRunner:
             "IncompleteCycleWithoutSnapshot": "incomplete_without_snapshot",
             "IncompleteCycleConfigurationChanged": "configuration_changed",
             "IncompleteCycleSuperseded": "superseded_incomplete_cycle",
+            "IncompleteCycleExpired": "expired_incomplete_cycle",
         }
         return names.get(type(error).__name__, "startup_recovery_failed")
 

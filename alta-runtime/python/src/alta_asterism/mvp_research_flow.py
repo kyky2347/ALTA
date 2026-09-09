@@ -117,7 +117,9 @@ class MvpResearchFlow:
         for preliminary_position, opportunity in enumerate(
             sorted(opportunities, key=lambda item: item.opportunity_id), start=1
         ):
-            if self.agentic_deliberator and pre_assessment_rejections(opportunity):
+            if self.agentic_deliberator and pre_assessment_rejections(
+                opportunity, self._stage_time(wake_at, 8)
+            ):
                 # Preserve the Opportunity for bounded follow-up research, but do not
                 # spend two private model calls on a thesis that deterministic gates
                 # already know cannot enter the ranking book.

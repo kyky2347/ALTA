@@ -11,6 +11,7 @@ from .deliberation import (
     validate_private_pair,
 )
 from .foundry import OpportunityDraft, canonical_hash
+from .freshness import classify_signal_freshness
 from .research_diligence import (
     RESEARCH_DECISION_HURDLE,
     research_quality_components,
@@ -131,7 +132,10 @@ def _research_rejections(opportunity: OpportunityDraft) -> tuple[str, ...]:
     return ()
 
 
-def pre_assessment_rejections(opportunity: OpportunityDraft) -> tuple[str, ...]:
+def pre_assessment_rejections(
+    opportunity: OpportunityDraft,
+    known_at: datetime | None = None,
+) -> tuple[str, ...]:
     """Return deterministic blockers before spending tokens on private debate."""
 
     reasons: list[str] = []
@@ -145,14 +149,21 @@ def pre_assessment_rejections(opportunity: OpportunityDraft) -> tuple[str, ...]:
         reasons.append("expectation_posture_unavailable")
     reasons.extend(_degraded_reasons(opportunity))
     reasons.extend(_research_rejections(opportunity))
+    freshness_state = classify_signal_freshness(
+        opportunity.freshness_at,
+        known_at or opportunity.known_at,
+    )
+    if freshness_state not in {"live", "current"}:
+        reasons.append(f"signal_freshness_{freshness_state}")
     return tuple(sorted(set(reasons)))
 
 
 def _gate(
     opportunity: OpportunityDraft,
     assessments: tuple[PrivateAssessment, ...] | None,
+    known_at: datetime,
 ) -> RankingGate:
-    pre_assessment = pre_assessment_rejections(opportunity)
+    pre_assessment = pre_assessment_rejections(opportunity, known_at)
     rejected: list[str] = [
         reason
         for reason in pre_assessment
@@ -316,7 +327,7 @@ def build_ranking_book(
     if not 1 <= len(opportunities) <= 20:
         raise ValueError("B4 ranking input must contain 1 to 20 opportunities")
     gates = tuple(
-        _gate(opportunity, assessments.get(opportunity.opportunity_id))
+        _gate(opportunity, assessments.get(opportunity.opportunity_id), known_at)
         for opportunity in sorted(opportunities, key=lambda item: item.opportunity_id)
     )
     gate_by_id = {item.opportunity_id: item for item in gates}

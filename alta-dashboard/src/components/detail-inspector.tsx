@@ -11,6 +11,7 @@ import {
   Sparkles,
   TriangleAlert,
   Waypoints,
+  X,
 } from "lucide-react";
 import { OpportunityDossier } from "@/components/opportunity-dossier";
 import {
@@ -60,12 +61,14 @@ export function DetailInspector({
   preview,
   selectionExpired,
   liveFallbackAvailable,
+  onClose,
 }: {
   selected: SelectedEntity | null;
   status: MvpStatus | null;
   preview: boolean;
   selectionExpired: boolean;
   liveFallbackAvailable: boolean;
+  onClose: () => void;
 }) {
   const { domain, systemMessage, t } = useI18n();
   const [request, setRequest] = useState<DetailRequest | null>(null);
@@ -77,6 +80,13 @@ export function DetailInspector({
     () => document.visibilityState !== "hidden",
   );
   const retryAttempts = useRef(new Map<string, number>());
+  const panel = useRef<HTMLElement>(null);
+  useEffect(() => {
+    panel.current?.focus({ preventScroll: true });
+    if (window.matchMedia("(max-width: 1220px)").matches) {
+      panel.current?.scrollIntoView({ block: "start", behavior: "instant" });
+    }
+  }, [selected?.id]);
   const path = selected ? entityDetailPath(selected.kind, selected.id) : null;
   const cachedEntry = path ? (detailCache.get(path) ?? null) : null;
 
@@ -223,7 +233,18 @@ export function DetailInspector({
             : Braces;
 
   return (
-    <aside className="inspector" aria-label={t("selectedRecordInspector")}>
+    <aside
+      ref={panel}
+      className="inspector"
+      tabIndex={-1}
+      aria-label={t("selectedRecordInspector")}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          event.stopPropagation();
+          onClose();
+        }
+      }}
+    >
       <div className="inspector-head">
         <div
           className="inspector-kicker"
@@ -238,10 +259,20 @@ export function DetailInspector({
           </span>
         </div>
         {selected ? (
-          <Badge variant="outline" className="inspector-id">
+          <Badge variant="outline" className="inspector-id" title={selected.id}>
             {selected.id}
           </Badge>
         ) : null}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="inspector-close"
+          aria-label={t("closeDetails")}
+          title={t("closeDetails")}
+          onClick={onClose}
+        >
+          <X />
+        </Button>
       </div>
       {selectionExpired && (
         <SelectionExpiredNotice hasFallback={liveFallbackAvailable} />

@@ -63,6 +63,11 @@ export function latestRankBookMap(status: MvpStatus) {
   const opportunityIds = new Set(
     status.opportunities.map((opportunity) => opportunity.id),
   );
+  const actionableOpportunityIds = new Set(
+    status.opportunities
+      .filter((opportunity) => opportunity.actionableNow !== false)
+      .map((opportunity) => opportunity.id),
+  );
 
   const latestRun = [...runs.entries()]
     .filter(
@@ -78,6 +83,7 @@ export function latestRankBookMap(status: MvpStatus) {
     })[0]?.[1];
   const byOpportunity = new Map<string, NormalizedRank>();
   for (const rank of latestRun ?? []) {
+    if (!actionableOpportunityIds.has(rank.opportunityId)) continue;
     const current = byOpportunity.get(rank.opportunityId);
     if (
       !current ||
@@ -115,12 +121,12 @@ export function focusedOpportunity(
   status: MvpStatus,
   selectedOpportunityId: string | null,
 ) {
-  if (selectedOpportunityId)
-    return (
-      status.opportunities.find(
-        (opportunity) => opportunity.id === selectedOpportunityId,
-      ) ?? latestRankLeader(status)
+  if (selectedOpportunityId) {
+    const selected = status.opportunities.find(
+      (opportunity) => opportunity.id === selectedOpportunityId,
     );
+    if (selected && selected.actionableNow !== false) return selected;
+  }
   return latestRankLeader(status);
 }
 

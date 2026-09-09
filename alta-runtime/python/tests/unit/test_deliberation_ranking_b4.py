@@ -169,6 +169,27 @@ def assessments_for(
     )
 
 
+def test_expired_signal_is_blocked_before_assessment_and_ranking() -> None:
+    opportunity = fixture_opportunity()
+    assert opportunity.freshness_at is not None
+    decision_at = opportunity.freshness_at + timedelta(days=5)
+
+    assert "signal_freshness_expired" in pre_assessment_rejections(
+        opportunity, decision_at
+    )
+    book = build_ranking_book(
+        "ranking_expired_signal",
+        (opportunity,),
+        {opportunity.opportunity_id: assessments_for(opportunity)},
+        {},
+        decision_at,
+    )
+
+    assert book.items == ()
+    assert book.gates[0].status == "rejected"
+    assert "signal_freshness_expired" in book.gates[0].reason_codes
+
+
 def test_private_pair_and_discussion_selection_resist_anchoring() -> None:
     opportunity = fixture_opportunity()
     assessments = assessments_for(opportunity)

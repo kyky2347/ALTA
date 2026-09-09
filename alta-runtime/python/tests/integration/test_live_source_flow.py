@@ -149,6 +149,101 @@ def test_database_source_flow_allows_autonomous_search_without_seed_evidence(
     assert postures == {"durable_database": "degraded"}
 
 
+def test_database_source_flow_rejects_late_arriving_old_evidence(
+    live_database: str,
+) -> None:
+    database = Database(live_database)
+    database.upgrade()
+    wake_at = datetime(2026, 9, 9, 15, tzinfo=UTC)
+    with database.connect() as connection:
+        connection.execute(
+            """INSERT INTO research.raw
+            (id, environment, version, known_at, source, source_key,
+             content_hash, body)
+            VALUES ('raw_late_old','shadow',1,%s,'finlight','late-old',%s,%s)""",
+            (
+                wake_at - timedelta(minutes=1),
+                hashlib.sha256(b"raw_late_old").hexdigest(),
+                Jsonb(
+                    {
+                        "title": "Old article received today",
+                        "source_url": "https://news.example/late-old",
+                        "semanticTimes": {
+                            "eventAt": (wake_at - timedelta(days=30)).isoformat()
+                        },
+                    }
+                ),
+            ),
+        )
+
+    frozen, postures = DatabaseSourceFlow(database, ("SPY",)).schedule_and_wake(
+        "cycle_late_old", wake_at, {}
+    )
+
+    assert frozen.evidence == ()
+    assert frozen.expectation_posture == "unavailable"
+    assert postures == {"durable_database": "degraded"}
+
+
+def test_database_source_flow_does_not_let_old_raw_backlog_block_current_data(
+    live_database: str,
+) -> None:
+    database = Database(live_database)
+    database.upgrade()
+    wake_at = datetime(2026, 9, 9, 15, tzinfo=UTC)
+    with database.connect() as connection:
+        for index in range(105):
+            connection.execute(
+                """INSERT INTO research.raw
+                (id, environment, version, known_at, source, source_key,
+                 content_hash, body)
+                VALUES (%s,'shadow',1,%s,'finlight',%s,%s,%s)""",
+                (
+                    f"raw_historical_backlog_{index}",
+                    wake_at - timedelta(days=30),
+                    f"historical-backlog-{index}",
+                    hashlib.sha256(f"historical-{index}".encode()).hexdigest(),
+                    Jsonb({"title": f"Historical record {index}"}),
+                ),
+            )
+        connection.execute(
+            """INSERT INTO research.raw
+            (id, environment, version, known_at, source, source_key,
+             content_hash, body)
+            VALUES ('raw_current_after_backlog','shadow',1,%s,'massive',
+                    'current-after-backlog',%s,%s)""",
+            (
+                wake_at - timedelta(seconds=5),
+                hashlib.sha256(b"current-after-backlog").hexdigest(),
+                Jsonb(
+                    {
+                        "source": {"url": "https://api.massive.com/v2/snapshot/AAPL"},
+                        "semanticTimes": {
+                            "eventAt": (wake_at - timedelta(seconds=10)).isoformat()
+                        },
+                        "payload": {
+                            "symbol": "AAPL",
+                            "snapshot": {
+                                "last_quote": {
+                                    "bid_price": 199.9,
+                                    "ask_price": 200.0,
+                                }
+                            },
+                        },
+                    }
+                ),
+            ),
+        )
+
+    frozen, postures = DatabaseSourceFlow(database, ("AAPL",)).schedule_and_wake(
+        "cycle_current_after_backlog", wake_at, {}
+    )
+
+    assert [item.raw_id for item in frozen.evidence] == ["raw_current_after_backlog"]
+    assert frozen.evidence[0].freshness_state(wake_at) == "live"
+    assert postures == {"massive": "healthy"}
+
+
 def test_database_source_flow_freezes_and_validates_market_research_agenda(
     live_database: str,
 ) -> None:
@@ -459,18 +554,100 @@ class FailingMassiveAdapter:
         raise RuntimeError("credential-like connector detail must stay redacted")
 
 
+class InsertingMassiveAdapter:
+    def __init__(self, database: Database, received_at: datetime) -> None:
+        self.database = database
+        self.received_at = received_at
+        self.calls = 0
+
+    def reset_budget(self, _cycle_id: str) -> None:
+        return None
+
+    def fetch(self, _dataset, _symbols):
+        self.calls += 1
+        with self.database.connect() as connection:
+            connection.execute(
+                """INSERT INTO research.raw
+                (id, environment, version, known_at, source, source_key,
+                 content_hash, body)
+                VALUES ('raw_post_poll_quote','shadow',1,%s,'massive',
+                        'post-poll-quote',%s,%s)
+                ON CONFLICT (id) DO NOTHING""",
+                (
+                    self.received_at,
+                    hashlib.sha256(b"post-poll-quote").hexdigest(),
+                    Jsonb(
+                        {
+                            "source": {
+                                "url": "https://api.massive.com/v2/snapshot/AAPL"
+                            },
+                            "semanticTimes": {
+                                "eventAt": (
+                                    self.received_at - timedelta(seconds=1)
+                                ).isoformat()
+                            },
+                            "payload": {
+                                "symbol": "AAPL",
+                                "snapshot": {
+                                    "last_quote": {
+                                        "bid_price": 199.9,
+                                        "ask_price": 200.0,
+                                    }
+                                },
+                            },
+                        }
+                    ),
+                ),
+            )
+        return SimpleNamespace(posture="healthy", reason="bounded_rest")
+
+
+def test_ingesting_source_freezes_after_transport_receipts(
+    live_database: str,
+) -> None:
+    database = Database(live_database)
+    database.upgrade()
+    scheduled_at = datetime(2026, 9, 9, 15, tzinfo=UTC)
+    received_at = scheduled_at + timedelta(seconds=10)
+    freeze_at = received_at + timedelta(seconds=1)
+    adapter = InsertingMassiveAdapter(database, received_at)
+    cursor = SimpleNamespace(
+        load=lambda: scheduled_at.date().isoformat(),
+        save=lambda _value: None,
+    )
+    flow = IngestingSourceFlow(
+        DatabaseSourceFlow(database, ("AAPL",)),
+        massive_adapter=adapter,
+        massive_daily_cursor=cursor,
+        massive_discovery_enabled=True,
+        clock=lambda: freeze_at,
+    )
+
+    frozen, postures = flow.schedule_and_wake(
+        "cycle_post_poll_freeze", scheduled_at, {}
+    )
+
+    assert frozen.known_at == freeze_at
+    assert [item.raw_id for item in frozen.evidence] == ["raw_post_poll_quote"]
+    assert frozen.evidence[0].freshness_state(freeze_at) == "live"
+    assert postures["massive"] == "healthy"
+    assert postures["massive_transport"] == "healthy"
+    assert adapter.calls == 1
+
+
 def test_massive_transport_failure_degrades_source_without_aborting_cycle(
     live_database: str,
 ) -> None:
     database = Database(live_database)
     database.upgrade()
     adapter = FailingMassiveAdapter()
+    wake_at = datetime(2026, 8, 23, 15, tzinfo=UTC)
     flow = IngestingSourceFlow(
         DatabaseSourceFlow(database, ("SPY",)),
         massive_adapter=adapter,
         massive_discovery_enabled=True,
+        clock=lambda: wake_at,
     )
-    wake_at = datetime(2026, 8, 23, 15, tzinfo=UTC)
 
     frozen, postures = flow.schedule_and_wake("cycle_degraded_001", wake_at, {})
     recovered, recovered_postures = flow.schedule_and_wake(
@@ -1110,6 +1287,7 @@ def test_autonomous_runner_resumes_the_durable_incomplete_cycle_after_restart(
         database,
         settings,
         runtime_factory=lambda _database, _settings: runtime,
+        clock=lambda: wake_at + timedelta(minutes=5),
     ).run(stop)
 
     assert result == 0
@@ -1143,6 +1321,7 @@ def test_autonomous_runner_quarantines_duplicate_incomplete_cycle_on_restart(
         runtime_factory=lambda _database, _settings: CapturingAutonomousRuntime(
             stop, cycle_ids
         ),
+        clock=lambda: new_wake + timedelta(minutes=5),
     ).run(stop)
 
     assert result == 0
@@ -1179,6 +1358,7 @@ def test_autonomous_runner_fails_closed_on_incomplete_cycle_without_snapshot(
         runtime_factory=lambda _database, _settings: CapturingAutonomousRuntime(
             stop, cycle_ids
         ),
+        clock=lambda: wake_at + timedelta(minutes=5),
     ).run(stop)
 
     assert result == 0
@@ -1191,6 +1371,48 @@ def test_autonomous_runner_fails_closed_on_incomplete_cycle_without_snapshot(
             (abandoned_cycle,),
         ).fetchone()[0]
     assert failure["error_type"] == "IncompleteCycleWithoutSnapshot"
+    assert failure["retry_scheduled"] is False
+
+
+def test_autonomous_runner_expires_an_old_frozen_cycle_instead_of_resuming_it(
+    live_database: str,
+) -> None:
+    database = Database(live_database)
+    database.upgrade()
+    settings = Settings(
+        DATABASE_URL=live_database,
+        REDIS_URL="redis://127.0.0.1:1/0",
+        ALTA_ENVIRONMENT="shadow",
+        ALTA_AUTONOMOUS_CYCLE_TIMEOUT_SECONDS="3600",
+    )
+    now = datetime(2026, 9, 9, 16, tzinfo=UTC)
+    wake_at = now - timedelta(hours=4)
+    abandoned_cycle = "live-20260909-120000-000000"
+    AutonomousRunner(database, settings).evaluation.bind_cycle(abandoned_cycle, wake_at)
+    DatabaseSourceFlow(database, ("SPY",)).schedule_and_wake(
+        abandoned_cycle, wake_at, {}
+    )
+    stop = threading.Event()
+    cycle_ids: list[str] = []
+
+    result = AutonomousRunner(
+        database,
+        settings,
+        runtime_factory=lambda _database, _settings: CapturingAutonomousRuntime(
+            stop, cycle_ids
+        ),
+        clock=lambda: now,
+    ).run(stop)
+
+    assert result == 0
+    assert cycle_ids == ["live-20260909-160000-000000"]
+    with database.connect() as connection:
+        failure = connection.execute(
+            """SELECT payload FROM ops.event
+            WHERE aggregate_id = %s AND event_type = 'mvp.pipeline.failed'""",
+            (abandoned_cycle,),
+        ).fetchone()[0]
+    assert failure["error_type"] == "IncompleteCycleExpired"
     assert failure["retry_scheduled"] is False
 
 

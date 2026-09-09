@@ -26,7 +26,7 @@ export class ApiError extends Error {
 
 function timeoutSignal(parent?: AbortSignal, timeoutMs = DEFAULT_TIMEOUT_MS) {
   const controller = new AbortController();
-  const timer = window.setTimeout(
+  const timer = globalThis.setTimeout(
     () =>
       controller.abort(new DOMException("Request timed out", "TimeoutError")),
     timeoutMs,
@@ -37,7 +37,7 @@ function timeoutSignal(parent?: AbortSignal, timeoutMs = DEFAULT_TIMEOUT_MS) {
   return {
     signal: controller.signal,
     dispose() {
-      window.clearTimeout(timer);
+      globalThis.clearTimeout(timer);
       parent?.removeEventListener("abort", abort);
     },
   };
@@ -78,13 +78,30 @@ async function requestJson<T>(
       headers: { Accept: "application/json", ...init.headers },
       signal: bounded.signal,
     });
-    const payload = await response.json().catch(() => ({}));
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      if (bounded.signal.aborted) throw bounded.signal.reason;
+      if (response.ok)
+        throw new ApiError({
+          message:
+            "The local service returned an invalid response. The last valid snapshot is preserved; ALTA will retry.",
+          code: "invalid_response",
+          status: response.status,
+          retriable: true,
+        });
+      payload = null;
+    }
     if (!response.ok) {
-      const code = payload?.error?.code ?? `http_${response.status}`;
+      const detail =
+        isRecord(payload) && isRecord(payload.error) ? payload.error : {};
+      const code =
+        typeof detail.code === "string"
+          ? detail.code
+          : `http_${response.status}`;
       const message =
-        payload?.error?.message ??
-        payload?.error?.code ??
-        `HTTP ${response.status}`;
+        typeof detail.message === "string" ? detail.message : code;
       throw new ApiError({
         message,
         code,
@@ -96,6 +113,14 @@ async function requestJson<T>(
           response.status >= 500,
       });
     }
+    if (!isRecord(payload) || !validConsolePayload(path, payload.data))
+      throw new ApiError({
+        message:
+          "The local service returned an invalid response. The last valid snapshot is preserved; ALTA will retry.",
+        code: "invalid_response",
+        status: response.status,
+        retriable: true,
+      });
     return payload.data as T;
   } catch (error) {
     throw failure(error);
@@ -205,3 +230,4 @@ export function entityDetailPath(kind: string, id: string) {
     return `/proxy/api/v1/expressions/${encodeURIComponent(id)}`;
   return null;
 }
+import { isRecord, validConsolePayload } from "./response-contract.ts";

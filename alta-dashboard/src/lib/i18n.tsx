@@ -13,6 +13,48 @@ export type Locale = "en" | "zh-CN";
 const STORAGE_KEY = "alta.console.locale";
 
 const en = {
+  skipToContent: "Skip to content",
+  closeDetails: "Close details",
+  currentStatus: "Current status",
+  fieldDescription:
+    "Follow each opportunity from its first signal to an audited decision.",
+  ledgerDescription:
+    "Search decisions, inspect evidence, and replay what happened.",
+  overviewDescription:
+    "Check service health, data availability, and research performance.",
+  agentsDescription:
+    "See who is researching, what they are testing, and what they have recorded.",
+  shadowDescription:
+    "Track simulated positions and outcomes. These are not broker fills.",
+  capitalDescription:
+    "Manage Tiger Paper authorization, verified positions, and orders. Never live trading.",
+  credentialsDescription:
+    "Configure providers and see which connections need attention. Keys stay private.",
+  briefStopped: "Research runtime is stopped",
+  briefStale: "Waiting for a fresh connection",
+  briefRunning: "Research cycle in progress",
+  briefWaiting: "Between research cycles",
+  briefReady: "Runtime connected",
+  briefSnapshotDetail:
+    "You are viewing saved records. Check system health for the current connection state.",
+  briefRunningDetail:
+    "Agents are working through discovery, review, and decision-making. Select a record to inspect its evidence.",
+  briefScheduledDetail:
+    "Next cycle {{time}}. Explore the latest records below or open the full history.",
+  briefReadyDetail:
+    "Explore the latest records below. Scheduling and recovery details are in System health.",
+  briefAgents: "{{count}} active agents in snapshot",
+  briefPositions: "{{count}} open shadow positions in snapshot",
+  viewHistory: "View history",
+  discoveryDescription: "Signals worth investigating",
+  foundryDescription: "Current research hypotheses",
+  committeeDescription: "Independent review & debate",
+  actionDescription: "Expression, audit & observation",
+  openRecordHint: "Select a record to see its evidence and decisions",
+  rankedPosition: "Rank {{rank}}",
+  researchOpportunity: "Research hypothesis",
+  clearFilters: "Clear filters",
+  matchingEvents: "{{count}} matching events",
   productSubtitle: "Autonomous LLM Trading Asterism",
   switchToChinese: "Switch to Chinese",
   switchToEnglish: "Switch to English",
@@ -26,12 +68,12 @@ const en = {
   findAnything: "Find anything",
   dashboardSections: "Dashboard sections",
   toggleNavigation: "Toggle navigation rail",
-  liveField: "Live field",
-  decisionLedger: "Decision ledger",
-  systemOverview: "System overview",
-  agentDesk: "Agent desk",
-  shadowBook: "Shadow book",
-  capitalDesk: "Capital desk",
+  liveField: "Opportunities",
+  decisionLedger: "Activity & history",
+  systemOverview: "System health",
+  agentDesk: "Agents",
+  shadowBook: "Shadow positions",
+  capitalDesk: "Paper trading",
   brokerCapital: "Tiger Paper capital",
   paperCapitalSubtitle:
     "A bounded, fail-closed authorization path for simulated brokerage execution.",
@@ -66,8 +108,8 @@ const en = {
   configurationBinding: "Configuration binding",
   executionPolicy: "Execution policy",
   riskSizedLimitDay:
-    "Agent-sized · DAY limit · up to {notional} · {positions} positions",
-  dispatchQuoteWindow: "Fresh quote required within {seconds}s",
+    "Agent-sized · DAY limit · up to {{notional}} · {{positions}} positions",
+  dispatchQuoteWindow: "Fresh quote required within {{seconds}}s",
   usStocksOnly: "US stocks only",
   regularHoursOnly: "Regular hours only",
   brokerSnapshot: "Broker snapshot",
@@ -134,7 +176,7 @@ const en = {
   dismiss: "Dismiss",
   olderHistoryUnavailable: "Older history is temporarily unavailable",
   liveSyncContinues: "Live synchronization continues independently.",
-  firmInMotion: "The firm, in motion",
+  firmInMotion: "Opportunity workspace",
   everyDecisionTrail: "Every decision leaves a trail",
   operatingPosture: "Operating posture",
   specializedMinds: "Specialized minds",
@@ -314,10 +356,10 @@ const en = {
   committee: "Committee",
   audit: "Audit",
   unclassified: "Unclassified",
-  noCandidates: "No candidates yet",
+  noCandidates: "No current candidates",
   candidateStream: "Candidate stream",
   building: "Building",
-  foundryWaiting: "Foundry is waiting for candidates",
+  foundryWaiting: "No current opportunity has cleared the freshness gate",
   modelPending: "Model pending",
   assessments: "Assessments",
   arguments: "Arguments",
@@ -535,7 +577,7 @@ const en = {
   dashboardRenderFailedDetail:
     "The research runtime was not changed. Reload the local console to rebuild this browser view from durable backend state.",
   reloadConsole: "Reload console",
-  credentials: "Credentials",
+  credentials: "API connections",
   secureProviderConfiguration: "Secure provider configuration",
   secureConfiguration: "Secure configuration",
   providerCredentials: "Provider credentials",
@@ -624,6 +666,39 @@ const en = {
 type MessageKey = keyof typeof en;
 
 const zhCN: Record<MessageKey, string> = {
+  skipToContent: "跳转到主要内容",
+  closeDetails: "关闭详情",
+  currentStatus: "当前状态",
+  fieldDescription: "从第一条线索到审计后的决策，看清每个机会如何推进。",
+  ledgerDescription: "检索决策、查看证据，回放系统曾经发生的事情。",
+  overviewDescription: "检查服务健康、数据可用性和研究运行情况。",
+  agentsDescription: "看清谁在研究、正在验证什么，以及已经留下哪些记录。",
+  shadowDescription: "跟踪影子模拟持仓与结果；这里的记录不是券商成交。",
+  capitalDescription: "管理 Tiger 模拟盘权限、已核验的持仓与订单；不涉及实盘。",
+  credentialsDescription: "配置供应商，查看哪些连接需要处理；密钥始终保密。",
+  briefStopped: "研究系统已停止",
+  briefStale: "正在等待连接恢复",
+  briefRunning: "研究周期进行中",
+  briefWaiting: "正在等待下一轮研究",
+  briefReady: "运行系统已连接",
+  briefSnapshotDetail: "当前展示已保存的记录；请在系统状态页查看最新连接情况。",
+  briefRunningDetail:
+    "Agent 正在推进发现、评估与决策；点击具体记录即可查看依据。",
+  briefScheduledDetail:
+    "下一轮研究{{time}}。下方可查看近期记录，也可进入完整历史。",
+  briefReadyDetail: "下方可查看近期记录；调度与恢复详情见系统状态页。",
+  briefAgents: "快照内 {{count}} 个 Agent 工作中",
+  briefPositions: "快照内 {{count}} 个影子持仓",
+  viewHistory: "查看历史",
+  discoveryDescription: "值得进一步调查的线索",
+  foundryDescription: "当前有效的研究假设",
+  committeeDescription: "独立评估与多方辩论",
+  actionDescription: "表达、审计与持仓观察",
+  openRecordHint: "点击记录，查看证据与决策详情",
+  rankedPosition: "排名 {{rank}}",
+  researchOpportunity: "研究假设",
+  clearFilters: "清除筛选",
+  matchingEvents: "{{count}} 条匹配记录",
   productSubtitle: "自主 LLM 交易星群",
   switchToChinese: "切换为中文",
   switchToEnglish: "Switch to English",
@@ -637,12 +712,12 @@ const zhCN: Record<MessageKey, string> = {
   findAnything: "全局查找",
   dashboardSections: "控制台分区",
   toggleNavigation: "展开或收起导航栏",
-  liveField: "实时机会场",
-  decisionLedger: "决策账本",
-  systemOverview: "系统总览",
-  agentDesk: "Agent 工作台",
-  shadowBook: "影子账簿",
-  capitalDesk: "资本控制台",
+  liveField: "机会工作台",
+  decisionLedger: "活动与历史",
+  systemOverview: "系统状态",
+  agentDesk: "Agent 协作",
+  shadowBook: "影子持仓",
+  capitalDesk: "模拟盘交易",
   brokerCapital: "Tiger 模拟盘资金",
   paperCapitalSubtitle: "面向模拟券商执行的有界、故障关闭式授权通道。",
   tigerPaper: "Tiger Trade · 模拟盘",
@@ -674,8 +749,8 @@ const zhCN: Record<MessageKey, string> = {
   configurationBinding: "配置绑定",
   executionPolicy: "执行策略",
   riskSizedLimitDay:
-    "Agent 自主定仓 · 当日限价 · 单笔不超过 {notional} · 最多 {positions} 个持仓",
-  dispatchQuoteWindow: "提交报价必须在 {seconds} 秒内保持新鲜",
+    "Agent 自主定仓 · 当日限价 · 单笔不超过 {{notional}} · 最多 {{positions}} 个持仓",
+  dispatchQuoteWindow: "提交报价必须在 {{seconds}} 秒内保持新鲜",
   usStocksOnly: "仅限美股",
   regularHoursOnly: "仅限正常交易时段",
   brokerSnapshot: "券商快照",
@@ -742,7 +817,7 @@ const zhCN: Record<MessageKey, string> = {
   dismiss: "关闭",
   olderHistoryUnavailable: "暂时无法读取更早历史",
   liveSyncContinues: "实时同步仍会独立继续。",
-  firmInMotion: "正在运转的虚拟交易公司",
+  firmInMotion: "机会工作台",
   everyDecisionTrail: "每个决策都有可追溯记录",
   operatingPosture: "当前运行态势",
   specializedMinds: "专业化 Agent 思维网络",
@@ -915,10 +990,10 @@ const zhCN: Record<MessageKey, string> = {
   committee: "委员会",
   audit: "审计",
   unclassified: "未分类",
-  noCandidates: "尚无候选机会",
+  noCandidates: "暂无时效有效的候选机会",
   candidateStream: "候选机会流",
   building: "构建中",
-  foundryWaiting: "机会铸造等待候选输入",
+  foundryWaiting: "暂无通过时效门禁的当前机会",
   modelPending: "等待模型",
   assessments: "评估",
   arguments: "论点",
@@ -1124,7 +1199,7 @@ const zhCN: Record<MessageKey, string> = {
   dashboardRenderFailedDetail:
     "研究运行时未受影响。请重新载入本机控制台，以持久化后端状态重建浏览器视图。",
   reloadConsole: "重新载入控制台",
-  credentials: "API 凭据",
+  credentials: "API 连接",
   secureProviderConfiguration: "安全的供应商配置",
   secureConfiguration: "安全配置",
   providerCredentials: "供应商 API 凭据",
@@ -1229,6 +1304,9 @@ const domainZh: Record<string, string> = {
   closed: "已关闭",
   conditional: "有条件通过",
   current: "当前",
+  unknown: "时效未验证",
+  expired: "已过期",
+  invalid: "无效",
   degraded: "降级",
   deliberation: "审议",
   disabled: "已禁用",
@@ -1407,6 +1485,18 @@ function localizeDomainValue(value: string, locale: Locale) {
 }
 
 const systemMessageZh: Record<string, string> = {
+  "The local service returned an invalid response. The last valid snapshot is preserved; ALTA will retry.":
+    "本机服务返回了无效数据。已保留上次有效快照，ALTA 将自动重试。",
+  "The local service did not respond before the timeout.":
+    "本机服务响应超时，将自动重试。",
+  "Research storage is temporarily unavailable.":
+    "研究数据库暂时不可用，将自动重试。",
+  "The research service is temporarily unreachable.":
+    "研究服务暂时无法访问，将自动重试。",
+  "The research service did not respond before the timeout.":
+    "研究服务响应超时，将自动重试。",
+  "The research response exceeded the console safety limit.":
+    "研究数据响应超出控制台安全大小限制，请缩小查询范围。",
   "The local operator service is temporarily unreachable.":
     "本机操作服务暂时无法访问。",
   "The dashboard build and local operator service use different protocol versions. Rebuild the dashboard and restart the console.":
@@ -1487,12 +1577,24 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
 
   const context = useMemo<I18nContextValue>(() => {
     const dictionary = locale === "zh-CN" ? zhCN : en;
+    const numberFormatter = new Intl.NumberFormat(locale);
+    const relativeFormatter = new Intl.RelativeTimeFormat(locale, {
+      numeric: "auto",
+    });
+    const clockFormatter = new Intl.DateTimeFormat(locale, {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
     const t = (key: MessageKey, values?: Record<string, string | number>) =>
       interpolate(dictionary[key], values);
     const number = (value?: number, options?: Intl.NumberFormatOptions) =>
       value === undefined
         ? t("unavailable")
-        : new Intl.NumberFormat(locale, options).format(value);
+        : (options
+            ? new Intl.NumberFormat(locale, options)
+            : numberFormatter
+          ).format(value);
     return {
       locale,
       toggleLocale,
@@ -1503,9 +1605,7 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
         const timestamp = new Date(value).getTime();
         if (!Number.isFinite(timestamp)) return t("unavailable");
         const seconds = Math.round((timestamp - Date.now()) / 1000);
-        const formatter = new Intl.RelativeTimeFormat(locale, {
-          numeric: "auto",
-        });
+        const formatter = relativeFormatter;
         if (Math.abs(seconds) < 60) return formatter.format(seconds, "second");
         const minutes = Math.round(seconds / 60);
         if (Math.abs(minutes) < 60) return formatter.format(minutes, "minute");
@@ -1517,11 +1617,7 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
         if (!value) return t("unavailable");
         const timestamp = new Date(value).getTime();
         if (!Number.isFinite(timestamp)) return t("unavailable");
-        return new Intl.DateTimeFormat(locale, {
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-        }).format(timestamp);
+        return clockFormatter.format(timestamp);
       },
       number,
       value: (value) => {
