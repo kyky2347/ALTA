@@ -119,6 +119,20 @@ can report configured/healthy/expired, never reveal a stored value.
 
 </details>
 
+<details>
+<summary>Follow the decision history and inspect an opportunity</summary>
+
+Search the durable event ledger and move through its replay timeline.
+
+![ALTA decision history in English](docs/assets/alta-decision-history-en.png)
+
+Open an opportunity alongside the workspace to inspect its saved research
+record. Agent-authored artifacts retain their original language.
+
+![ALTA opportunity detail in English](docs/assets/alta-opportunity-detail-en.png)
+
+</details>
+
 Captured from the current production build on September 9, 2026, with the
 English interface and explicitly labeled, read-only **synthetic preview** data.
 No real credentials, account details or market-provider payloads are shown.

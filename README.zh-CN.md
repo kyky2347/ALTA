@@ -109,6 +109,19 @@ LLM 负责开放式研究、反事实思考和判断；确定性代码负责不�
 
 </details>
 
+<details>
+<summary>展开查看决策历史与机会详情</summary>
+
+检索持久化事件账本，通过回放时间轴追踪系统的决策过程。
+
+![ALTA 中文决策历史](docs/assets/alta-decision-history-zh.png)
+
+在工作台旁打开机会详情，查看已保存的研究记录。Agent 撰写的原始内容保留原语言。
+
+![ALTA 中文机会详情](docs/assets/alta-opportunity-detail-zh.png)
+
+</details>
+
 截图于 2026 年 9 月 9 日从当前生产构建拍摄，使用中文界面与明确标注的、只读的
 **合成演示数据**，不含真实密钥、账户信息或行情供应商数据。启动控制台后，在地址
 末尾添加 `?preview=1` 即可浏览该模式，无需启动研究，也不会下单。
