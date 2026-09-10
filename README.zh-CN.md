@@ -27,7 +27,8 @@ ALTA 是一个面向公开市场、Evidence-first、Opportunity-centric 的研�
 
 [English](README.md) · [架构](docs/architecture/overview.md) ·
 [快速开始](docs/operations/getting-started.md) ·
-[研究边界](docs/research-scope.md) · [安全策略](SECURITY.md)
+[研究边界](docs/research-scope.md) · [安全策略](SECURITY.md) ·
+[官网](https://alta.silment.com)
 
 ### 本轮更新：决策更清楚，证据更新鲜，恢复更可靠
 

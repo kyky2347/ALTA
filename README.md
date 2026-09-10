@@ -30,7 +30,8 @@ evidence, accountability, recovery, or portfolio discipline?**
 
 [中文说明](README.zh-CN.md) · [Architecture](docs/architecture/overview.md) ·
 [Getting started](docs/operations/getting-started.md) ·
-[Research scope](docs/research-scope.md) · [Security](SECURITY.md)
+[Research scope](docs/research-scope.md) · [Security](SECURITY.md) ·
+[Website](https://alta.silment.com)
 
 ### Latest: clearer decisions, fresher evidence, safer recovery
 
