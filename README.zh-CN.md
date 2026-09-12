@@ -10,7 +10,7 @@ _由专业 LLM Agent 协作运行的虚拟交易平台。_
 
 [English](README.md) · [繁體中文](README.zh-HK.md) ·
 [快速启动](#本地运行) · [系统架构](docs/architecture/overview.md) ·
-[验收记录](docs/audits/release-readiness-2026-09-12.md) · [网站](https://alta.silment.com)
+[验收记录](docs/audits/operator-scout-reliability-2026-09-12.md) · [网站](https://alta.silment.com)
 
 **交易的是机会；股票、ETF 或期权，只是兑现机会的载体。**
 
@@ -31,15 +31,20 @@ ALTA 把自主市场研究变成持久、可检查的工作流程。四类 Scout
 当前版本看板，展示近期已保存的研究记录和专业研究团队。
 点击图片可查看完整尺寸；研究假设不等于已批准交易。
 
-[![机会工作台](docs/assets/alta-operator-console-zh.png)](docs/assets/alta-operator-console-zh.png)
+[![机会工作台](docs/assets/alta-operator-console-zh.jpg)](docs/assets/alta-operator-console-zh.jpg)
 
 | 研究团队                                                                                | 机会内部                                                                                              |
 | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| [![Agent 协作](docs/assets/alta-agent-desk-zh.png)](docs/assets/alta-agent-desk-zh.png) | [![机会证据](docs/assets/alta-opportunity-detail-zh.png)](docs/assets/alta-opportunity-detail-zh.png) |
+| [![Agent 协作](docs/assets/alta-agent-desk-zh.jpg)](docs/assets/alta-agent-desk-zh.jpg) | [![机会证据](docs/assets/alta-opportunity-detail-zh.jpg)](docs/assets/alta-opportunity-detail-zh.jpg) |
 | 独立评审的分工、模型与已记录工作。                                                      | 原始决策摘要，可在看板追查完整记录。                                                                  |
 
+| 券商连接                                                                                              | 模型分工                                                                                            |
+| ----------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| [![券商配置](docs/assets/alta-broker-connections-zh.jpg)](docs/assets/alta-broker-connections-zh.jpg) | [![Agent 模型设置](docs/assets/alta-model-settings-zh.jpg)](docs/assets/alta-model-settings-zh.jpg) |
+| 六家券商各自的配置表单，密钥保存与执行权限分离。                                                      | 按角色选择模型，保留独立评审。                                                                      |
+
 2026 年 9 月 12 日 · 简体中文界面 · Agent 原始产物保留其撰写语言。
-截图范围、记录 ID 和图片哈希见[发布验收记录](docs/audits/release-readiness-2026-09-12.md)。
+截图范围、记录 ID 和图片哈希见[发布验收记录](docs/audits/operator-scout-reliability-2026-09-12.md)。
 不包含密钥或账户资料。
 
 ## 这家虚拟机构如何协作
@@ -67,7 +72,9 @@ flowchart LR
 | 评估   | 时点冻结预测、前瞻结果、相对基准表现与只能下调风险的校准                                    |
 | 运维   | 三语看板、API/SSE、运行历史、只写密钥、模型设置与启停控制                                   |
 
-Scout 每次尝试默认 **11 次工具调用、98k 按系统预算口径计入的 Token、300 秒**，仍有硬上限。
+Scout 每次尝试默认 **11 次工具调用、196k 按系统预算口径计入的 Token、420 秒**，仍有硬上限。
+结构化草稿可在原研究上下文内修正一次，沿用预算、精确引用并留下审计记录。
+证据过期或不足仍需等待，不以增加重试次数代替当前有效信号。
 增加预算用于补证，不是增加机会数量的配额。数据源有节流、取消和分层超时，
 不完整的检索结果仍会标注。[检索设计与实测限制 →](docs/audits/research-retrieval-review.md)
 

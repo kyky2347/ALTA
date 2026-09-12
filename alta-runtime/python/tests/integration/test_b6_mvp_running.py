@@ -1334,7 +1334,7 @@ def test_one_click_demo_api_sse_reconnect_and_supervisor_crash_recovery(
         }
         assert runtime["data"]["config"]["traderMinds"] == {
             "count": 4,
-            "promptVersion": "alpha-trader-v28",
+            "promptVersion": "alpha-trader-v30",
             "toolCatalogVersion": "alta-active-research-v11",
             "activeResearchRequired": True,
             "memoryMode": "bounded_non_evidence",

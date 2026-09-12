@@ -9,7 +9,7 @@ _由專業 LLM Agent 協作運作的虛擬交易平台。_
 [![用途：僅供研究](https://img.shields.io/badge/use-research--only-orange.svg)](docs/research-scope.md)
 
 [English](README.md) · [简体中文](README.zh-CN.md) · [快速開始](#本機運行) ·
-[架構](docs/architecture/overview.md) · [驗收紀錄](docs/audits/release-readiness-2026-09-12.md) ·
+[架構](docs/architecture/overview.md) · [驗收紀錄](docs/audits/operator-scout-reliability-2026-09-12.md) ·
 [網站](https://alta.silment.com)
 
 **交易的是機會；股票、ETF 或期權，只是把握機會的工具。**
@@ -31,15 +31,20 @@ ALTA 把自主市場研究變成持久、可查核的工作流程。四類 Scout
 最新版本看板，聚焦近期已儲存的研究紀錄與專業研究團隊。
 按圖片可查看完整尺寸；研究假設不等於已批准交易。
 
-[![機會工作台](docs/assets/alta-operator-console-hk.png)](docs/assets/alta-operator-console-hk.png)
+[![機會工作台](docs/assets/alta-operator-console-hk.jpg)](docs/assets/alta-operator-console-hk.jpg)
 
 | 研究團隊                                                                                | 機會內部                                                                                              |
 | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| [![Agent 協作](docs/assets/alta-agent-desk-hk.png)](docs/assets/alta-agent-desk-hk.png) | [![機會摘要](docs/assets/alta-opportunity-detail-hk.png)](docs/assets/alta-opportunity-detail-hk.png) |
+| [![Agent 協作](docs/assets/alta-agent-desk-hk.jpg)](docs/assets/alta-agent-desk-hk.jpg) | [![機會摘要](docs/assets/alta-opportunity-detail-hk.jpg)](docs/assets/alta-opportunity-detail-hk.jpg) |
 | 獨立評審的分工、模型及已儲存工作。                                                      | 假設與決策摘要，可在看板追查完整紀錄。                                                                |
 
+| 券商連接                                                                                              | 模型分工                                                                                            |
+| ----------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| [![券商設定](docs/assets/alta-broker-connections-hk.jpg)](docs/assets/alta-broker-connections-hk.jpg) | [![Agent 模型設定](docs/assets/alta-model-settings-hk.jpg)](docs/assets/alta-model-settings-hk.jpg) |
+| 六家券商各自的設定表單，密鑰儲存與執行權限分開處理。                                                  | 按角色選擇模型，保留獨立評審。                                                                      |
+
 2026 年 9 月 12 日 · 繁體中文介面 · Agent 原始產物保留其撰寫語言。
-截圖範圍、紀錄 ID 及圖片雜湊見[發佈驗收紀錄](docs/audits/release-readiness-2026-09-12.md)。
+截圖範圍、紀錄 ID 及圖片雜湊見[發佈驗收紀錄](docs/audits/operator-scout-reliability-2026-09-12.md)。
 不包含密鑰或賬戶資料。
 
 ## 這家虛擬機構如何協作
@@ -67,7 +72,9 @@ flowchart LR
 | 評估   | 時點凍結預測、前瞻結果、相對基準表現及只能下調風險的校準                                    |
 | 運維   | 三語看板、API/SSE、運行歷史、只寫密鑰、模型設定及啟停控制                                   |
 
-Scout 每次嘗試預設 **11 次工具呼叫、98k 按系統預算口徑計入的 Token、300 秒**，仍設硬上限。
+Scout 每次嘗試預設 **11 次工具呼叫、196k 按系統預算口徑計入的 Token、420 秒**，仍設硬上限。
+結構化草稿可在原有研究脈絡內修正一次，沿用預算、精確引用並留下審核紀錄。
+證據過期或不足仍須等待，不以增加重試次數代替目前有效的訊號。
 增加預算用於補足證據，不是增加機會數目的配額。數據源有節流、取消及分層逾時；
 不完整的檢索結果仍會標示。[檢索設計與實測限制 →](docs/audits/research-retrieval-review.md)
 

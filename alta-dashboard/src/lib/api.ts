@@ -173,7 +173,7 @@ export async function requestBrokerConnection(
       headers: { "Content-Type": "application/json", "X-ALTA-CSRF": csrfToken },
       body: JSON.stringify(payload),
     },
-    { timeoutMs: 50000 },
+    { timeoutMs: 95_000 },
   );
   if (action === "verify" && !validBrokerVerification(result))
     throw new ApiError({

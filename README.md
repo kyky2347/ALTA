@@ -10,7 +10,7 @@ _A virtual trading platform operated by specialized LLM agents._
 
 [简体中文](README.zh-CN.md) · [繁體中文](README.zh-HK.md) ·
 [Quick start](#run-locally) · [Architecture](docs/architecture/overview.md) ·
-[Verification](docs/audits/release-readiness-2026-09-12.md) · [Website](https://alta.silment.com)
+[Verification](docs/audits/operator-scout-reliability-2026-09-12.md) · [Website](https://alta.silment.com)
 
 **Trade the opportunity. The stock, ETF, or option is only its carrier.**
 
@@ -33,16 +33,21 @@ ticker. The test is whether an idea survives evidence, disagreement, costs and t
 Current console captures, focused on recent saved research and the specialist team.
 Open an image for the full view. Research hypotheses are not approved trades.
 
-[![Opportunity workspace](docs/assets/alta-operator-console-en.png)](docs/assets/alta-operator-console-en.png)
+[![Opportunity workspace](docs/assets/alta-operator-console-en.jpg)](docs/assets/alta-operator-console-en.jpg)
 
 | The research team                                                                       | Inside an opportunity                                                                                             |
 | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| [![Agent desk](docs/assets/alta-agent-desk-en.png)](docs/assets/alta-agent-desk-en.png) | [![Opportunity evidence](docs/assets/alta-opportunity-detail-en.png)](docs/assets/alta-opportunity-detail-en.png) |
+| [![Agent desk](docs/assets/alta-agent-desk-en.jpg)](docs/assets/alta-agent-desk-en.jpg) | [![Opportunity evidence](docs/assets/alta-opportunity-detail-en.jpg)](docs/assets/alta-opportunity-detail-en.jpg) |
 | Independent reviewers, model routes and recorded work.                                  | Original decision brief; complete lineage remains inspectable.                                                    |
+
+| Broker connections                                                                                                | Model routing                                                                                             |
+| ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| [![Broker configuration](docs/assets/alta-broker-connections-en.jpg)](docs/assets/alta-broker-connections-en.jpg) | [![Agent model settings](docs/assets/alta-model-settings-en.jpg)](docs/assets/alta-model-settings-en.jpg) |
+| Six provider-specific forms; credentials and execution authority stay separate.                                   | Assign models by role while preserving independent review.                                                |
 
 September 12, 2026 · English interface · original Agent artifacts retain their
 authored language. Capture scope, record IDs and image hashes are in the
-[release review](docs/audits/release-readiness-2026-09-12.md).
+[release review](docs/audits/operator-scout-reliability-2026-09-12.md).
 No credentials or account details are included.
 
 ## How the firm works
@@ -71,10 +76,14 @@ and move broker capital. Missing evidence is a reason to wait, not improvise.
 | Evaluation | Point-in-time forecasts, forward outcomes, benchmark-relative measures and downside-only risk calibration             |
 | Operations | Three-language console, API/SSE, run history, write-only credentials, model settings and lifecycle controls           |
 
-Scouts default to **11 tool calls, 98k chargeable tokens and 300 seconds per
+Scouts default to **11 tool calls, 196k chargeable tokens and 420 seconds per
 attempt**, within hard caps. More budget buys verification, not an idea quota.
 Sources have pacing, cancellation and nested deadlines; incomplete retrievals
 stay visible. [Retrieval design and measured limits →](docs/audits/research-retrieval-review.md)
+
+Structured drafts get one budget-bound correction in the same research context,
+with exact retrieved citations and an audit trail. Insufficient or stale evidence
+still leads to `Wait`—more retries are not a substitute for a current signal.
 
 ## Run locally
 
@@ -91,7 +100,7 @@ npm run dashboard
 The command installs locked frontend dependencies when needed, builds the current
 console and opens an authenticated loopback page. In the console:
 
-1. **API connections** — enter your own provider credentials; saved secrets are never returned.
+1. **API connections** — separate research/data APIs and broker connections; saved secrets are never returned.
 2. **Agents → Agent models** — select available models; independent opposing roles must differ.
 3. **Start** — prepare the locked backend environment and start its managed dependencies.
 4. **Stop** — drain the research service and stop its managed database/cache.

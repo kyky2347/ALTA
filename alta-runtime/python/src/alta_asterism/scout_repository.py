@@ -655,6 +655,8 @@ class ScoutRepository:
             "output": output.model_dump(mode="json"),
             "research_diligence": diligence.model_dump(mode="json"),
         }
+        if turn.finalization_audit is not None:
+            artifact["finalization_repair"] = turn.finalization_audit
         with self.database.connect() as connection:
             updated = connection.execute(
                 """UPDATE research.run SET status = 'succeeded', error_code = NULL,
@@ -940,6 +942,7 @@ class ScoutRepository:
                     _utf8_prefix(redact(turn.final_response), 6_000) if turn else None
                 ),
                 "retry_feedback": retry_feedback,
+                "finalization_repair": turn.finalization_audit if turn else None,
                 "usage": turn.usage if turn else {},
             }
             content = bounded_failure_artifact(content)

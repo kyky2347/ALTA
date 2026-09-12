@@ -1,5 +1,10 @@
 # Release-readiness review — September 12, 2026
 
+Historical acceptance record for the earlier same-day release. The current
+Scout fixes, console captures and acceptance results are in the
+[later operator reliability review](operator-scout-reliability-2026-09-12.md).
+The PNG capture hashes below identify that earlier release, not the current JPEGs.
+
 This is a bounded engineering verification of the current application and its
 publication set. It is not an uptime certification, brokerage acceptance, legal
 opinion or evidence of profitable Alpha. Earlier dated reviews remain historical.

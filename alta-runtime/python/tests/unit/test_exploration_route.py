@@ -35,8 +35,8 @@ def test_research_token_budget_preserves_operator_choice_and_hard_cap() -> None:
         DATABASE_URL="postgresql://localhost/test", REDIS_URL="redis://localhost/0"
     )
     defaults = Settings(**base)
-    assert defaults.scout_max_total_tokens == 98_000
-    assert defaults.agent_deadline_seconds == 300
+    assert defaults.scout_max_total_tokens == 196_000
+    assert defaults.agent_deadline_seconds == 420
     chosen = Settings(
         **base,
         ALTA_SCOUT_MAX_TOTAL_TOKENS=40_000,
@@ -47,6 +47,6 @@ def test_research_token_budget_preserves_operator_choice_and_hard_cap() -> None:
     assert chosen.safe_dump()["scout_max_total_tokens"] == 40_000
     assert chosen.scout_max_tool_calls == 6
     assert chosen.agent_deadline_seconds == 120
-    for invalid in (999, 100_001):
+    for invalid in (999, 200_001):
         with pytest.raises(ValidationError):
             Settings(**base, ALTA_SCOUT_MAX_TOTAL_TOKENS=invalid)

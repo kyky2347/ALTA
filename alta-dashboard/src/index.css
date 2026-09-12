@@ -214,6 +214,7 @@
   line-height: 1;
 }
 .brand-logo {
+  mix-blend-mode: multiply;
   width: 150px;
   height: 46px;
   flex: 0 0 auto;
@@ -4818,6 +4819,25 @@ html[lang^="zh"] .status-pill {
   }
 }
 @media (max-width: 360px) {
+  /* Keep the wordmark and 44px controls distinct on very narrow phones. */
+  .app-shell,
+  .app-shell.rail-collapsed {
+    padding-top: calc(104px + env(safe-area-inset-top));
+  }
+  .topbar {
+    height: calc(104px + env(safe-area-inset-top));
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 30px 48px;
+    align-content: center;
+    gap: 4px;
+  }
+  .topbar-actions {
+    justify-self: end;
+  }
+  .side-rail {
+    top: calc(104px + env(safe-area-inset-top));
+  }
   .language-button {
     width: 34px;
     min-width: 34px;

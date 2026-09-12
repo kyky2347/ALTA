@@ -45,12 +45,20 @@ def handle(request, profiles):
                 "acceptance": "not_verified",
             }
             if configured:
-                profile = profiles.load(entry["provider"])
-                row.update(
-                    revision=profile.revision,
-                    environment=profile.environment,
-                    binding=profile.binding,
-                )
+                try:
+                    profile = profiles.load(entry["provider"])
+                    row.update(
+                        revision=profile.revision,
+                        environment=profile.environment,
+                        binding=profile.binding,
+                    )
+                except (OSError, ValueError, BrokerError):
+                    # One damaged account must not hide every connector. Do not
+                    # overwrite it or expose its file path / validation payload.
+                    row.update(
+                        revision="unavailable",
+                        profile_error="broker_profile_unreadable",
+                    )
             rows.append(row)
         return {"brokers": rows}
     if action == "save":

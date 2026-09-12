@@ -14,6 +14,11 @@ from pydantic import (
     model_validator,
 )
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from .scout_limits import (
+    DEFAULT_SCOUT_DEADLINE_SECONDS,
+    DEFAULT_SCOUT_TOKEN_BUDGET,
+    MAX_SCOUT_TOKEN_BUDGET,
+)
 
 AgentProvider = Literal["openai", "deepseek", "grok", "kimi"]
 MODEL_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._-]{1,127}$"
@@ -307,7 +312,7 @@ class Settings(BaseSettings):
         validation_alias="ALTA_AUDIT_MODEL",
     )
     agent_deadline_seconds: int = Field(
-        default=300,
+        default=DEFAULT_SCOUT_DEADLINE_SECONDS,
         ge=15,
         le=600,
         validation_alias="ALTA_AGENT_DEADLINE_SECONDS",
@@ -332,9 +337,9 @@ class Settings(BaseSettings):
         default=11, ge=1, le=12, validation_alias="ALTA_SCOUT_MAX_TOOL_CALLS"
     )
     scout_max_total_tokens: int = Field(
-        default=98_000,
+        default=DEFAULT_SCOUT_TOKEN_BUDGET,
         ge=1_000,
-        le=100_000,
+        le=MAX_SCOUT_TOKEN_BUDGET,
         validation_alias="ALTA_SCOUT_MAX_TOTAL_TOKENS",
     )
     universe_csv: str = Field(

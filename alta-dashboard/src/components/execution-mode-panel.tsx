@@ -54,6 +54,7 @@ export function ExecutionModePanel({
   const choice = draftChoice ?? current?.requested ?? "shadow";
   const locked = disabled || busy || !current;
   const phrase = choice === "shadow" ? "SHADOW" : "TIGER PAPER";
+  const changed = current !== undefined && choice !== current.requested;
   const message = (reason: unknown) => {
     const code =
       reason && typeof reason === "object" && "code" in reason
@@ -74,6 +75,7 @@ export function ExecutionModePanel({
     try {
       await onMode(choice, current.revision);
       setConfirmation("");
+      setChoice(null);
     } catch (reason) {
       setError(message(reason));
     } finally {
@@ -109,7 +111,9 @@ export function ExecutionModePanel({
               ? t("brokerApiMode")
               : current?.effective === "close_only"
                 ? t("paperRecoveryOnly")
-                : t("executionBlocked")}
+                : current
+                  ? t("executionBlocked")
+                  : t("loading")}
         </strong>
       </p>
       <Tabs
@@ -139,32 +143,39 @@ export function ExecutionModePanel({
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
-      <FieldGroup>
-        <Field>
-          <FieldLabel htmlFor="execution-confirm">
-            {t("executionTypePhrase", { phrase })}
-          </FieldLabel>
-          <Input
-            id="execution-confirm"
-            value={confirmation}
-            disabled={locked}
-            autoComplete="off"
-            onChange={(e) => setConfirmation(e.target.value)}
-          />
-        </Field>
-      </FieldGroup>
+      {changed && (
+        <FieldGroup>
+          <Field>
+            <FieldLabel htmlFor="execution-confirm">
+              {t("executionTypePhrase", { phrase })}
+            </FieldLabel>
+            <Input
+              id="execution-confirm"
+              value={confirmation}
+              disabled={locked}
+              autoComplete="off"
+              onChange={(e) => setConfirmation(e.target.value)}
+            />
+          </Field>
+        </FieldGroup>
+      )}
+      {!changed && current && (
+        <p className="execution-explainer">{t("executionAlreadyApplied")}</p>
+      )}
       <div className="execution-actions">
-        <Button
-          onClick={() => void apply()}
-          disabled={
-            locked ||
-            confirmation !== phrase ||
-            (choice === "broker_paper" && !capital?.configured) ||
-            current?.requested === choice
-          }
-        >
-          {busy ? t("loading") : t("executionApply")}
-        </Button>
+        {changed && (
+          <Button
+            onClick={() => void apply()}
+            disabled={
+              locked ||
+              confirmation !== phrase ||
+              (choice === "broker_paper" && !capital?.configured) ||
+              current?.requested === choice
+            }
+          >
+            {busy ? t("loading") : t("executionApply")}
+          </Button>
+        )}
         <Button
           variant="outline"
           disabled={locked || capital?.requestedEnabled}

@@ -1,11 +1,29 @@
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from alta_asterism.freshness import (
     MAX_CURRENT_SIGNAL_AGE,
     classify_signal_freshness,
+    current_signal_window,
     signal_age_seconds,
     signal_is_current,
 )
+
+
+def test_prompt_window_matches_inclusive_admission_boundaries() -> None:
+    now = datetime(2026, 9, 12, 18, 30, tzinfo=UTC)
+    window = current_signal_window(now)
+    earliest = datetime.fromisoformat(window["earliest_event_at"])
+    latest = datetime.fromisoformat(window["latest_event_at"])
+    assert earliest == now - MAX_CURRENT_SIGNAL_AGE
+    assert latest == now
+    assert signal_is_current(earliest, now)
+    assert signal_is_current(latest, now)
+    assert not signal_is_current(earliest - timedelta(microseconds=1), now)
+    assert not signal_is_current(latest + timedelta(microseconds=1), now)
+    with pytest.raises(ValueError, match="timezone-aware"):
+        current_signal_window(now.replace(tzinfo=None))
 
 
 def test_signal_freshness_uses_event_time_not_retrieval_time() -> None:

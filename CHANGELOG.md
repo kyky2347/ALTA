@@ -8,6 +8,21 @@ semantic versioning while the project remains experimental.
 
 ### Added
 
+- Scout prompt v30 freezes exploration/follow-up lineage in its generation
+  schema, preserves intraday timestamps, and reports actionable contract errors.
+  One in-context finalization repair selects exact retrieved citations and shares
+  the original deadline and token allowance; its draft hash and reason persist.
+  Defaults now allow 196k charged tokens, 420 seconds and a 12,000-byte response;
+  research-call admission stays at 11. The charged-token ceiling is 200k.
+  Research and finalization receive the validator's exact current-event window.
+  Same-thread App Server usage is cumulative, not charged again per snapshot;
+  missing or regressing counters remain unknown and fail closed.
+- A shared six-broker connection workspace in API Trading and API connections,
+  provider-specific credential fields, locked lazy SDK setup, per-profile fault
+  isolation and explicit read-only verification. Saving does not enable trading.
+  Language menus use the shared overlay layer; mode confirmations appear only
+  when a change is selected. Three-language README views cover both workflows.
+
 - A full-graph Node dependency advisory gate in CI, including development tools.
   Reviewed patch overrides update Hono to 4.13.5, js-yaml 4.x to 4.3.2 and
   smol-toml to 1.7.1, resolving five known advisories without relaxing the general

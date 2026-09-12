@@ -1,0 +1,6 @@
+"""Shared ceilings for a durable Scout attempt, including finalization."""
+
+DEFAULT_SCOUT_TOKEN_BUDGET = 196_000
+MAX_SCOUT_TOKEN_BUDGET = 200_000
+DEFAULT_SCOUT_DEADLINE_SECONDS = 420
+FINALIZATION_TOKEN_HEADROOM = 20_000

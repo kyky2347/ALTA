@@ -413,7 +413,7 @@ mode-0600 supervisor state.
 
 `ALTA_AUTONOMOUS_CYCLE_TIMEOUT_SECONDS` is the maximum running-heartbeat age. It
 must cover at least four times the longer of the Scout and judgment-role
-deadlines. Scouts default to 240 seconds; slower heterogeneous PM, debate,
+deadlines. Scouts default to 420 seconds; heterogeneous PM, debate,
 expression, and audit roles default to 300 seconds. A Scout deadline, transient
 App Server failure, malformed structured result, or missed active-research
 requirement may receive up to two fresh attempts against the same frozen input and
@@ -426,16 +426,19 @@ activates the supervisor watchdog. The built-in scheduler remains responsible
 for research cadence; no external cron job or Agent should invoke individual
 cycles.
 
-Scout research defaults are 11 tool calls, 98,000 chargeable tokens and a
-300-second per-attempt deadline. `ALTA_SCOUT_MAX_TOOL_CALLS` (1–12),
-`ALTA_SCOUT_MAX_TOTAL_TOKENS` (1,000–100,000) and `ALTA_AGENT_DEADLINE_SECONDS`
+Scout research defaults are 11 tool calls, 196,000 chargeable tokens and a
+420-second per-attempt deadline. `ALTA_SCOUT_MAX_TOOL_CALLS` (1–12),
+`ALTA_SCOUT_MAX_TOTAL_TOKENS` (1,000–200,000) and `ALTA_AGENT_DEADLINE_SECONDS`
 (15–600) are captured by the managed service. Existing explicit settings take
 precedence; edit the local non-secret service settings while stopped. Full
 provider usage remains auditable; cached input is excluded from the Scout token
 charge. Token usage is checked after each model turn, not a provider billing cap.
+App Server reports thread-cumulative counters: a same-thread finalization uses
+the last cumulative snapshot, not a sum of cumulative snapshots. Missing,
+negative or regressing counters fail closed as unknown usage.
 Retries are separately recorded attempts, so per-cycle spending can exceed one
 attempt's budget. Additional budget never changes evidence or trading gates.
-Defaults leave one call and 2,000 tokens below the existing ceilings for earned
+Defaults leave one call and 4,000 tokens below the ceilings for earned
 research incentives; reviewer budgets and operator overrides are unchanged.
 The operator binds tool admission to the Run ID and its durable attempt deadline;
 transport reconnection preserves the allowance, while an admitted research retry
@@ -443,8 +446,17 @@ receives a fresh one. A gateway permits at most three attempt scopes per Run and
 does not evict recent counters under capacity pressure. These in-memory limits
 are not an account-wide or restart-durable billing ledger; PostgreSQL remains
 authoritative for the three-attempt research lifecycle. Oversized-output retries
-receive explicit UTF-8 length guidance; the 8,000-byte production output ceiling
-and evidence requirements remain unchanged.
+receive explicit UTF-8 length guidance. Scout production output allows 12,000
+bytes for complete citations, below the 16,384-byte durable artifact ceiling.
+The SDK can correct one invalid draft in the same thread, using a citation enum
+drawn only from completed source-scoped retrievals. It shares the original
+deadline and charged-token budget, requires at least 30 seconds and 20,000 tokens
+of headroom, and persists the original draft hash and correction reason. It is
+not an unbounded retry or automatic approval. The outer three-attempt ceiling,
+freshness, exact lineage and evidence requirements remain in force.
+Both prompt stages receive the same inclusive `current_signal_window` used by
+the freshness validator. Correcting JSON cannot make an old event current;
+the Agent must retrieve a genuinely new observable or explicitly abstain.
 
 Search recency uses documented native filters where supported and explicit query
 hints elsewhere. Returned `freshness.mode` distinguishes these; neither verifies

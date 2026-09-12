@@ -507,6 +507,43 @@ def test_failed_scout_job_reopens_same_cycle_with_audited_attempt(
     ]
 
 
+def test_sdk_repairs_a_contract_in_the_same_thread_with_shared_budget(
+    empty_b3_database: str, tmp_path: Path
+) -> None:
+    database = Database(empty_b3_database)
+    database.upgrade()
+    frozen = seed_frozen_input(database)
+    command, log = fake_command(tmp_path, None, "--invalid-first-finalization")
+    spec = make_run_spec(
+        run_id="run_finalization_repair",
+        trace_id="trace_finalization_repair",
+        scout=SCOUTS[0],
+        frozen_input=frozen.for_territories(SCOUTS[0].primary_sources),
+        budget=RunBudget(
+            max_tool_calls=2,
+            max_total_tokens=40_000,
+            max_output_bytes=8_192,
+            require_active_research=True,
+        ),
+        deadline_at=datetime.now(UTC) + timedelta(seconds=60),
+        model_provider="fixture",
+        model_id="fixture-model",
+    )
+    with client_for(tmp_path, command) as client:
+        turn = client.run(spec, build_prompt(spec), output_schema(spec))
+    starts = [row for row in read_log(log) if row["method"] == "turn/start"]
+    assert len(starts) == 2
+    assert starts[0]["params"]["threadId"] == starts[1]["params"]["threadId"]
+    assert turn.total_tokens == 320
+    assert (
+        turn.finalization_audit["feedback"]["issues"][0]["code"]
+        == "explore_lineage_must_be_empty"
+    )
+    assert len(turn.finalization_audit["draft_sha256"]) == 64
+    assert "unassigned-parent" not in str(turn.finalization_audit)
+    assert json.loads(turn.final_response).get("parent_opportunity_id") is None
+
+
 def test_sdk_requests_one_no_tool_finalization_after_empty_provider_response(
     empty_b3_database: str, tmp_path: Path
 ) -> None:
@@ -650,7 +687,7 @@ def test_fake_app_server_runs_four_scouts_with_sdk_and_persists_provenance(
     assert all(
         row[5:9]
         == (
-            "alpha-trader-v28",
+            "alpha-trader-v30",
             "alta-active-research-v11",
             "fixture",
             "fixture-model",

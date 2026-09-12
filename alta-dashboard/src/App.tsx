@@ -52,6 +52,7 @@ import {
 } from "@/lib/opportunity-selection";
 import type { ControlState, SelectedEntity } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { runtimeSchedule } from "@/lib/runtime-schedule";
 
 type View =
   | "field"
@@ -265,6 +266,7 @@ export default function App() {
     : inspectorSelected;
   const visibleOperation = recentOperation(control?.operation);
   const runtimeReady = preview || Boolean(control?.runtime.ready);
+  const schedule = runtimeSchedule(runtimeReady, Boolean(status), runtime);
   const showInspector =
     inspectorOpen && view !== "credentials" && view !== "capital";
   const currentCycleId =
@@ -478,20 +480,16 @@ export default function App() {
           <div className="workspace-context">
             <span>
               {view === "capital"
-                ? t("tigerPaper")
+                ? capital?.execution?.effective === "broker_paper"
+                  ? t("tigerPaper")
+                  : t("shadowSimulation")
                 : domain(status?.environment ?? "shadow")}
             </span>
             <Separator orientation="vertical" />
             <span title={currentCycleId ?? undefined}>
-              {!runtimeReady && status
-                ? t("savedSnapshot")
-                : runtime?.config.autonomousStatus === "running"
-                  ? t("cycleInProgress")
-                  : runtime?.config.nextCycleAt
-                    ? t("nextCycle", {
-                        time: relative(runtime.config.nextCycleAt),
-                      })
-                    : t("scheduleUnavailable")}
+              {schedule.key === "nextCycle"
+                ? t(schedule.key, { time: relative(schedule.at) })
+                : t(schedule.key)}
             </span>
           </div>
         </div>
@@ -523,6 +521,8 @@ export default function App() {
               preview={preview}
               onVerify={verifyCredentials}
               onSave={setProviderCredential}
+              online={connection.status === "online"}
+              onBrokerConnection={brokerConnection}
             />
           ) : view === "capital" ? (
             <CapitalConsole

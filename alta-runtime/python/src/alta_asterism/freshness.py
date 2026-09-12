@@ -11,6 +11,17 @@ LIVE_SIGNAL_AGE = timedelta(minutes=15)
 FreshnessState = Literal["live", "current", "expired", "unknown", "invalid"]
 
 
+def current_signal_window(known_at: datetime) -> dict[str, str]:
+    """Expose the exact validator interval to research and finalization prompts."""
+    if known_at.tzinfo is None or known_at.utcoffset() is None:
+        raise ValueError("known_at must be timezone-aware")
+    return {
+        "earliest_event_at": (known_at - MAX_CURRENT_SIGNAL_AGE).isoformat(),
+        "latest_event_at": known_at.isoformat(),
+        "basis": "thesis-changing source event, not retrieval time; inclusive bounds",
+    }
+
+
 def signal_age_seconds(anchor: datetime | None, known_at: datetime) -> int | None:
     if anchor is None:
         return None

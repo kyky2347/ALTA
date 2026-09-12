@@ -16,6 +16,8 @@ from .mind_worker import (
     budget_charge_tokens,
 )
 from .scout_repository import ScoutRepository, ScoutRunOutcome
+from .scout_feedback import ActiveResearchRequired, build_scout_retry_feedback
+from .scout_limits import MAX_SCOUT_TOKEN_BUDGET
 from .scouts import (
     ACTIVE_RESEARCH_TOOLS,
     SCOUTS,
@@ -31,76 +33,6 @@ from .scouts import (
 )
 
 SCOUT_CONTROL_TOOLS = RESEARCH_BUDGET_EXEMPT_CONTROL_TOOLS
-
-
-class ActiveResearchRequired(Exception):
-    pass
-
-
-SCOUT_RETRY_ISSUE_LIMIT = 2
-
-
-def _bounded_issue_part(value: object, maximum: int = 96) -> str:
-    normalized = "_".join(str(value).strip().split())
-    return normalized[:maximum] or "unknown"
-
-
-def build_scout_retry_feedback(error_code: str, error: Exception) -> dict[str, object]:
-    """Return bounded correction metadata without replaying model output."""
-
-    issues: list[dict[str, str]] = []
-    if isinstance(error, ValidationError):
-        category = "schema_validation"
-        for item in error.errors()[:SCOUT_RETRY_ISSUE_LIMIT]:
-            location = ".".join(_bounded_issue_part(part, 32) for part in item["loc"])
-            issues.append(
-                {
-                    "path": location[:64] or "$",
-                    "code": _bounded_issue_part(item.get("type"), 40),
-                }
-            )
-    elif isinstance(error, json.JSONDecodeError):
-        category = "json_contract"
-        issues.append({"path": "$", "code": "invalid_json"})
-    elif isinstance(error, ActiveResearchRequired):
-        category = "active_research"
-        issues.append({"path": "tool_calls", "code": "active_research_required"})
-    elif str(error) == "Scout output exceeds max_output_bytes":
-        category = "output_budget"
-        issues.append({"path": "$", "code": "output_bytes_exceeded"})
-    else:
-        message = str(error).casefold()
-        category = "semantic_contract"
-        semantic_codes = (
-            ("decision-complete", "decision_fields_incomplete"),
-            ("thesis pillar", "thesis_pillar_invalid"),
-            ("research attention seat", "attention_seat_violation"),
-            ("alpha_archetype", "alpha_archetype_invalid"),
-            ("evidence outside", "evidence_scope_violation"),
-            ("tool evidence", "tool_evidence_binding_invalid"),
-            ("assigned opportunity", "follow_up_parent_invalid"),
-            ("assigned research question", "follow_up_question_invalid"),
-            ("freshness_at", "freshness_invalid"),
-            ("finance market context", "market_context_required"),
-            ("expectation posture", "market_context_required"),
-        )
-        code = next(
-            (value for fragment, value in semantic_codes if fragment in message),
-            "semantic_contract_invalid",
-        )
-        issues.append({"path": "$", "code": code})
-    feedback: dict[str, object] = {
-        "previous_error_code": _bounded_issue_part(error_code, 64),
-        "category": category,
-        "issues": issues,
-    }
-    if category == "output_budget":
-        feedback["correction"] = (
-            "UTF-8 JSON below max_output_bytes. Prose <=320 chars/field; pillars "
-            "<=160. Preserve required fields, exact refs, independent evidence "
-            "roles and lineage; no_op if it cannot fit. Never truncate citations."
-        )
-    return feedback
 
 
 def tools_within_scout_territory(
@@ -129,7 +61,8 @@ def incentive_adjusted_budget(
         update={
             "max_tool_calls": min(12, base.max_tool_calls + incentive.bonus_tool_calls),
             "max_total_tokens": min(
-                100_000, base.max_total_tokens + incentive.bonus_total_tokens
+                MAX_SCOUT_TOKEN_BUDGET,
+                base.max_total_tokens + incentive.bonus_total_tokens,
             ),
         }
     )
@@ -270,7 +203,7 @@ class MindWorker:
             turn: ModelTurn | None = None
             try:
                 turn = self.client.run(
-                    spec, build_prompt(spec, retry_feedback), output_schema()
+                    spec, build_prompt(spec, retry_feedback), output_schema(spec)
                 )
                 self._validate_budget(spec, turn)
                 available_tool_evidence = {

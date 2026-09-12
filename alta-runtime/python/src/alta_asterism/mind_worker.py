@@ -15,7 +15,11 @@ from urllib.parse import urlsplit, urlunsplit
 from openai_codex import ApprovalMode, Codex, CodexConfig, Sandbox
 
 from .ingest import redact
+from .mind_usage import USAGE_FIELDS, cumulative_thread_usage
+from .scout_finalization import finalization_repair
+from .scout_limits import FINALIZATION_TOKEN_HEADROOM
 from .scouts import (
+    SCOUTS,
     ScoutRunSpec,
     ToolProvenance,
 )
@@ -45,6 +49,7 @@ class ModelTurn:
     latency_ms: int | None = None
     discovered_evidence: tuple["ToolEvidenceDiscovery", ...] = ()
     completed_at: datetime | None = None
+    finalization_audit: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -649,6 +654,48 @@ class SdkAppServerMindClient:
                     sandbox=Sandbox.read_only,
                 )
                 results.append(await_result(recovery_turn))
+            finalization_audit = None
+            first = results[-1]
+            # Retain the original research thread and its exact citations. A
+            # malformed draft must not automatically waste a whole research
+            # attempt. One correction shares the original deadline and budget.
+            if (
+                len(results) == 1
+                and spec.budget.require_active_research
+                and spec.scout.scout_id in {scout.scout_id for scout in SCOUTS}
+                and "tool_evidence_refs" in schema.get("properties", {})
+                and first.usage is not None
+                and first.usage.total.total_tokens
+                - first.usage.total.cached_input_tokens
+                < spec.budget.max_total_tokens - FINALIZATION_TOKEN_HEADROOM
+                and (spec.deadline_at - self._clock()).total_seconds() >= 30
+            ):
+                discoveries = _tool_evidence(first.items)
+                repair = finalization_repair(
+                    spec,
+                    first.final_response,
+                    schema,
+                    {(item.tool_call_id, item.source_locator) for item in discoveries},
+                    {
+                        (item.tool_call_id, item.source_locator)
+                        for item in discoveries
+                        if item.tool_name == "alta_finance_data"
+                    },
+                )
+                if repair is not None:
+                    repair_prompt, repair_schema, finalization_audit = repair
+                    finalization_audit["charged_tokens_before"] = (
+                        first.usage.total.total_tokens
+                        - first.usage.total.cached_input_tokens
+                    )
+                    repaired = thread.turn(
+                        repair_prompt,
+                        approval_mode=ApprovalMode.deny_all,
+                        model=self._model_id,
+                        output_schema=_strict_output_schema(repair_schema),
+                        sandbox=Sandbox.read_only,
+                    )
+                    results.append(await_result(repaired))
             result = results[-1]
             if not (result.final_response or "").strip():
                 raise ValueError("App Server turn did not return a final response")
@@ -661,19 +708,14 @@ class SdkAppServerMindClient:
                         ensure_ascii=False,
                         separators=(",", ":"),
                     )
-            usage_fields = (
-                "input_tokens",
-                "cached_input_tokens",
-                "output_tokens",
-                "reasoning_output_tokens",
-                "total_tokens",
+            usage_totals = cumulative_thread_usage(
+                [
+                    {field: getattr(item.usage.total, field) for field in USAGE_FIELDS}
+                    if item.usage is not None
+                    else None
+                    for item in results
+                ]
             )
-            usage_totals = None
-            if all(item.usage is not None for item in results):
-                usage_totals = {
-                    field: sum(getattr(item.usage.total, field) for item in results)
-                    for field in usage_fields
-                }
             items = tuple(item for child in results for item in child.items)
             return ModelTurn(
                 final_response=final_response,
@@ -685,4 +727,5 @@ class SdkAppServerMindClient:
                 latency_ms=max(0, int((time.monotonic() - started) * 1_000)),
                 discovered_evidence=_tool_evidence(items),
                 completed_at=self._clock(),
+                finalization_audit=finalization_audit,
             )

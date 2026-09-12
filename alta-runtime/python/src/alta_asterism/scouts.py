@@ -22,7 +22,12 @@ from .context_budget import (
     canonical_json_bytes,
 )
 from .contracts import Environment
-from .freshness import classify_signal_freshness, signal_is_current
+from .scout_limits import MAX_SCOUT_TOKEN_BUDGET
+from .freshness import (
+    classify_signal_freshness,
+    current_signal_window,
+    signal_is_current,
+)
 from .investment_thesis import ThesisPillarDraft
 from .market_research import MarketResearchAgenda
 from .opportunity_memory import PriorOpportunitySnapshot
@@ -47,7 +52,7 @@ from .trader_mind import (
 )
 
 MAX_FROZEN_INPUT_BYTES = MAX_FROZEN_SCOUT_INPUT_BYTES
-SCOUT_PROMPT_VERSION = "alpha-trader-v28"
+SCOUT_PROMPT_VERSION = "alpha-trader-v30"
 SCOUT_TOOL_CATALOG_VERSION = "alta-active-research-v11"
 SCOUT_RETRY_PROMPT_RESERVE_BYTES = 384
 CANONICAL_SOURCE_LOCATOR_PATTERN = r"^(?:https|fixture|alta)://[^/?#\s]+(?:/[^?#\s]*)?$"
@@ -355,7 +360,7 @@ class RunBudget(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     max_tool_calls: int = Field(ge=0, le=12)
-    max_total_tokens: int = Field(ge=1, le=100_000)
+    max_total_tokens: int = Field(ge=1, le=MAX_SCOUT_TOKEN_BUDGET)
     max_output_bytes: int = Field(ge=256, le=65_536)
     require_active_research: bool = False
 
@@ -691,8 +696,8 @@ def _scout_prompt_budget_fits(
     )
 
 
-def output_schema() -> dict[str, Any]:
-    """Generation limits reserve space for citations inside the 8 KiB gate.
+def output_schema(spec: ScoutRunSpec | None = None) -> dict[str, Any]:
+    """Generation limits reserve citation space within the frozen output budget.
 
     Historical parsing contracts remain unchanged; these shorter prose limits
     guide new provider responses, never truncate returned evidence or proposals.
@@ -808,6 +813,26 @@ def output_schema() -> dict[str, Any]:
         },
         "reason": {"type": "string", "maxLength": 2_000},
     }
+    if spec is not None:
+        drive = spec.frozen_input.opportunity_drive
+        assignment = drive.assigned_research
+        properties["research_mode"]["enum"] = [drive.assigned_mode]
+        # Lineage is an operator-frozen assignment, not something to infer from
+        # registry memory. Constrain generation; parsing still checks it again.
+        properties["parent_opportunity_id"]["enum"] = [
+            assignment.opportunity_id if assignment else ""
+        ]
+        properties["research_question"]["enum"] = [
+            next(
+                question.prompt
+                for parent in spec.frozen_input.prior_opportunities
+                if assignment and parent.opportunity_id == assignment.opportunity_id
+                for question in parent.research_questions
+                if question.question_id == assignment.question_id
+            )
+            if assignment
+            else ""
+        ]
     return {
         "type": "object",
         "properties": properties,
@@ -898,7 +923,9 @@ def _normalized_candidate(
     ]
     freshness = selected.get("freshness_at")
     if isinstance(freshness, str) and (
-        date_only := re.match(r"^(\d{4}-\d{2}-\d{2})(?:$|\D)", freshness)
+        date_only := re.fullmatch(
+            r"(\d{4}-\d{2}-\d{2})(?:\s+[A-Za-z][^\r\n]*)?", freshness
+        )
     ):
         selected["freshness_at"] = f"{date_only.group(1)}T00:00:00+00:00"
     return selected
@@ -1112,6 +1139,7 @@ def build_prompt(
         "forbidden_capabilities": spec.scout.forbidden_capabilities,
         "frozen_input": spec.frozen_input.model_dump(mode="json"),
         "budget": spec.budget.model_dump(mode="json"),
+        "current_signal_window": current_signal_window(spec.frozen_input.known_at),
         "retry_feedback": retry_feedback,
         "exploration_start": (
             exploration_start(
@@ -1122,7 +1150,10 @@ def build_prompt(
             if spec.frozen_input.opportunity_drive.assigned_mode == "explore"
             else ()
         ),
-        "rules": _prompt_rules(spec),
+        "rules": [
+            "freshness_at must be a thesis-changing event time inside current_signal_window, never retrieval time. Use RFC3339 (or YYYY-MM-DD for date-only sources). Old facts require genuine current revalidation or no_op. Each pillar expected_by_days <= horizon_days; never invent an earlier catalyst to fit.",
+            *_prompt_rules(spec),
+        ],
     }
     prompt = json.dumps(
         contract, ensure_ascii=False, separators=(",", ":"), sort_keys=True
@@ -1143,7 +1174,7 @@ def _prompt_rules(spec: ScoutRunSpec) -> list[str]:
             "Use evidence event_at, quote time, filing time, or publication time—not retrieval or database insertion time—to decide recency. A current fetch of an old fact is still old. Revalidate the thesis against a current market observable and return no_op when the newest causal signal is expired.",
             "Locate the exact observable, fetch primary records, test expectations and the strongest rival. Use crawl query for issuer index pages, fetch focus/offset for long documents, and Finnhub company_profile/earnings_surprises for identity/historical EPS, not fresh catalysts. Stay inside the Scout territory.",
             "When budget.require_active_research is true, make at least one allowed active research call. Respect max_tool_calls and stop immediately when a tool reports zero remaining calls.",
-            "Cite only frozen evidence_ids or exact tool evidence refs returned this turn. Copy the visible HTTPS URL and tool_call_id; never reconstruct a locator.",
+            "Cite only frozen evidence_ids or exact tool evidence refs returned this turn. Copy the exact HTTPS URL and leave tool_call_id empty for runtime binding; never invent an ID or reconstruct a locator.",
             "Search discovery is not Evidence. Prefer fetched filings, official releases, versioned operating artifacts, market data, and independently retrieved counterevidence; discard unrelated search noise.",
             "Give each tool ref one role: primary_fact, mechanism, market_context, or counterevidence. Decision-grade work needs all four, at least two cited non-news calls, and three independently frozen records across three domains.",
             "Counterevidence must be a distinct source record and origin from the primary fact and mechanism. If it cannot be retrieved, keep the result screen-grade or return no_op.",
@@ -1181,8 +1212,6 @@ def _prompt_rules(spec: ScoutRunSpec) -> list[str]:
         "beneficiary_path must connect the change through a measurable operating, estimate, cash-flow, positioning, or forced-flow channel to a listed security, with denominator and timing. disconfirming_evidence gives the strongest sourced rival; next_test names the next observable upgrade/rejection fact.",
         "Return 1-3 thesis_pillars: one causal claim each, with observable, separate confirmation/invalidation, and expected_by_days within horizon. These are hypotheses, not risk limits; invent no unsupported thresholds.",
         "For a Candidate, set alpha_archetype to exactly one value from this Mind's alpha_archetypes. Return no_op rather than inventing an unsupported archetype.",
-        "Set freshness_at to the newest thesis-changing event, quote, filing, or publication time as an RFC 3339 timestamp—not the retrieval time. If the source supports only a calendar date, use YYYY-MM-DD with no surrounding prose. A current fetch of an old fact is still old; return no_op unless a current observable revalidates it.",
-        "Think like an experienced public-equity portfolio manager looking for a non-consensus, time-bounded, executable edge rather than a news summary.",
         "Do not default to news. Seek auditable changes in expectations, positioning, flows, volatility, structure, filings, operations, pricing, supply chains, policy transmission, and public software.",
         "Finnhub company_profile locates issuer websites; earnings_surprises supplies historical actual/estimate EPS, NOT current consensus or event time. Fetch issuer proof and respect stale/partial flags; finance snapshots are not new catalysts.",
         "Use alta_finance_data source=sec with ticker/CIK for Form 4, SC 13D/13G, 8-K, 10-Q/10-K, S-3 and 424B. Test ownership, financing, dilution, covenants and operations through retrieved filing content, not its title.",
@@ -1195,7 +1224,6 @@ def _prompt_rules(spec: ScoutRunSpec) -> list[str]:
         "For explore, leave parent/question lineage empty. An exact follow_up follows its separate frozen assignment and may not silently switch to explore.",
         "When route_change_required, vary entity, source class, or causal hypothesis within mandate and budget.",
         "An opposite-direction thesis is not a duplicate, but it still requires new auditable evidence and a distinct causal prediction.",
-        "The gateway admits at most budget.max_tool_calls. Stop when evidence is sufficient or budget exhausted; return Candidate/no_op and never retry a rejected call.",
         "Stay inside this Scout's primary source and search territory.",
         "Do not discuss, rank, propose an expression, or contact a broker.",
     ]

@@ -2,7 +2,31 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import test from "node:test";
-import { runBrokerProcess } from "../broker-connections.mjs";
+import {
+  brokerRuntimeCommand,
+  runBrokerProcess,
+} from "../broker-connections.mjs";
+
+test("broker runtime uses locked lazy setup without shell or credentials", () => {
+  assert.deepEqual(
+    brokerRuntimeCommand("/project with spaces", () => "/bin/uv"),
+    [
+      "/bin/uv",
+      "run",
+      "--frozen",
+      "--all-extras",
+      "--no-dev",
+      "--project",
+      "/project with spaces/alta-runtime/broker-python",
+      "python",
+      "-m",
+      "alta_brokers",
+    ],
+  );
+  assert.throws(() => brokerRuntimeCommand("/project", () => null), {
+    code: "broker_dependencies_not_installed",
+  });
+});
 
 function launch(result, observed) {
   return (_command, args, options) => {

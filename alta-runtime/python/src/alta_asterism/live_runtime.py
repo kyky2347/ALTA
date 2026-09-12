@@ -122,7 +122,9 @@ class LiveRuntime:
                 model_provider=provider,
                 model_id=model_id,
                 max_total_tokens=30_000,
-                max_output_bytes=8_000,
+                # Leave room for exact citations and UTF-8 prose, while staying
+                # below the durable 16 KiB artifact ceiling after normalization.
+                max_output_bytes=12_000,
                 deadline_seconds=settings.reasoning_agent_deadline_seconds,
             )
             role_runners[route] = runner

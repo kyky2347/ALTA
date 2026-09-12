@@ -4,12 +4,35 @@ import {
   validBrokerCatalog,
   validBrokerVerification,
   brokerCredentialFields,
+  brokerFieldKind,
+  brokerConnectionError,
 } from "../src/lib/broker-connections.ts";
+
+test("broker inputs distinguish gateways, key material and secrets", () => {
+  assert.equal(brokerFieldKind("private_key"), "key");
+  assert.equal(brokerFieldKind("port"), "number");
+  assert.equal(brokerFieldKind("client_id"), "number");
+  assert.equal(brokerFieldKind("security_firm"), "firm");
+  assert.equal(brokerFieldKind("access_token"), "secret");
+  assert.equal(
+    brokerConnectionError("account_environment_mismatch"),
+    "brokerFieldsInvalid",
+  );
+  assert.equal(
+    brokerConnectionError("broker_connection_timed_out"),
+    "brokerConnectionTimeout",
+  );
+  assert.equal(
+    brokerConnectionError("secret-reply"),
+    "brokerConnectionUnavailable",
+  );
+});
 
 const rows = () =>
   ["tiger", "alpaca", "ibkr", "futu", "longport", "schwab"].map((provider) => ({
     provider,
     name: provider,
+    docs: "https://docs.alpaca.markets/us/docs/getting-started-with-trading-api",
     configured: false,
     revision: "new",
     fields: ["api_key"],
@@ -25,6 +48,8 @@ test("broker catalog rejects missing, duplicate, unknown, and falsely activated 
     [...rows().slice(1), rows()[1]],
     rows().map((r) => ({ ...r, fields: ["unknown_secret"] })),
     rows().map((r) => ({ ...r, autonomous_execution: true })),
+    rows().map((r) => ({ ...r, docs: "javascript:alert(1)" })),
+    rows().map((r) => ({ ...r, environment: "LIVE" })),
   ])
     assert.equal(validBrokerCatalog({ brokers }), false);
 });

@@ -87,6 +87,32 @@ The sidebar uses **API Trading**. Its current operational adapter is Tiger Paper
 five additional providers are pre-adapted, not live-account accepted. The two
 autonomous execution modes remain internal Shadow and authorized Tiger Paper.
 
+**API Trading** separates **Execution & account** from **Broker connections**.
+The latter is also available inside **API connections**, alongside—not mixed
+into—the research/data provider inventory. Both entrances use the same form and
+validation.
+
+Select a broker, explicitly select the account environment, and enter its exact
+account binding plus the fields required by that provider. Gateway-backed brokers
+need gateway configuration; OAuth brokers need current OAuth tokens; RSA
+credentials use a multiline secret field. A generic key is not a substitute for
+these protocols. Saved credentials are write-only. Switching broker clears
+unsaved secrets, and running research locks credential replacement.
+
+**Save connection** stores the profile without enabling trading. **Verify
+connection** is a separate, explicit read-only account request. The experimental
+six-provider boundary does not expose order submission or live authorization in
+this console. Tiger Paper execution remains separately account-bound and audited.
+Selecting a different execution mode displays its confirmation; an already-saved
+mode does not ask the operator to apply it again.
+
+Opening broker configuration prepares the isolated SDK environment from its
+lockfile using `uv`, even before the research backend has started. The first
+opening needs package-network access and may take longer. A bounded timeout or
+offline error keeps editing disabled and offers a reload; it does not silently
+discard profiles. A damaged provider profile is isolated so the other five
+remain inspectable, but replacing the damaged file is deliberately blocked.
+
 **Research radar** shows separate Opportunity and Candidate records with a
 seven-day or full-snapshot scope, search, pagination, timestamps and evidence
 inspection. The snapshot is bounded; use Activity & history for earlier events.

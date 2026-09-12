@@ -32,6 +32,7 @@ export type BrokerConnection = {
   revision: string;
   environment?: "PAPER" | "LIVE";
   binding?: string;
+  profile_error?: "broker_profile_unreadable";
   autonomous_execution: false;
   acceptance: "not_verified";
 };
@@ -72,6 +73,25 @@ export function brokerCredentialFields(
         field === "trade_password"
       ),
   );
+}
+
+export function brokerFieldKind(
+  field: string,
+): "secret" | "number" | "firm" | "key" {
+  if (field === "port" || field === "client_id") return "number";
+  if (field === "security_firm") return "firm";
+  if (field === "private_key") return "key";
+  return "secret";
+}
+
+export function brokerConnectionError(code: string) {
+  if (code === "broker_dependencies_not_installed")
+    return "brokerInstallRequired";
+  if (/conflict|credential_change|account_profile/.test(code))
+    return "brokerConnectionConflict";
+  if (/invalid|mismatch/.test(code)) return "brokerFieldsInvalid";
+  if (/timed_out|timeout/.test(code)) return "brokerConnectionTimeout";
+  return "brokerConnectionUnavailable";
 }
 
 export function validBrokerVerification(
@@ -124,6 +144,7 @@ export function validBrokerCatalog(
       if (!row || !providers.delete(row.provider)) return false;
       return (
         typeof row.name === "string" &&
+        safeBrokerDocs(row.docs) &&
         typeof row.configured === "boolean" &&
         typeof row.revision === "string" &&
         BROKER_AUTH.includes(row.authentication) &&
@@ -134,9 +155,35 @@ export function validBrokerCatalog(
         Array.isArray(row.environments) &&
         row.environments.length > 0 &&
         row.environments.every((v: unknown) => v === "PAPER" || v === "LIVE") &&
+        (row.environment === undefined ||
+          row.environments.includes(row.environment)) &&
+        (row.profile_error === undefined ||
+          row.profile_error === "broker_profile_unreadable") &&
         row.autonomous_execution === false &&
         row.acceptance === "not_verified"
       );
     })
   );
+}
+
+function safeBrokerDocs(value: unknown) {
+  if (typeof value !== "string") return false;
+  try {
+    const url = new URL(value);
+    return (
+      url.protocol === "https:" &&
+      !url.username &&
+      !url.password &&
+      [
+        "docs-en.itigerup.com",
+        "docs.alpaca.markets",
+        "www.interactivebrokers.com",
+        "openapi.futunn.com",
+        "open.longbridge.com",
+        "developer.schwab.com",
+      ].includes(url.hostname)
+    );
+  } catch {
+    return false;
+  }
 }

@@ -17,6 +17,7 @@ def arguments() -> argparse.Namespace:
     parser.add_argument("--crash-scout", default="")
     parser.add_argument("--omit-usage-scout", default="")
     parser.add_argument("--empty-first-turn", action="store_true")
+    parser.add_argument("--invalid-first-finalization", action="store_true")
     return parser.parse_args()
 
 
@@ -26,6 +27,7 @@ WRITE_LOCK = threading.Lock()
 TURN_STATE: dict[str, tuple[str, threading.Event]] = {}
 THREAD_COUNT = 0
 TURN_COUNT = 0
+THREAD_USAGE: dict[str, dict[str, int]] = {}
 
 
 def write(value: dict) -> None:
@@ -81,7 +83,10 @@ def complete_turn(thread_id: str, turn_id: str, scout: str, turn_number: int) ->
     if state.wait(delay):
         return
     response = RESPONSES[scout]
-    for tool in response.get("tools", []):
+    tools = response.get("tools", [])
+    if ARGS.invalid_first_finalization and turn_number > 1:
+        tools = []
+    for tool in tools:
         write(
             {
                 "method": "item/completed",
@@ -114,6 +119,10 @@ def complete_turn(thread_id: str, turn_id: str, scout: str, turn_number: int) ->
         if ARGS.empty_first_turn and turn_number == 1
         else json.dumps(response["output"], separators=(",", ":"))
     )
+    if ARGS.invalid_first_finalization and turn_number == 1:
+        output_text = json.dumps(
+            {**response["output"], "parent_opportunity_id": "unassigned-parent"}
+        )
     write(
         {
             "method": "item/completed",
@@ -138,6 +147,9 @@ def complete_turn(thread_id: str, turn_id: str, scout: str, turn_number: int) ->
         "totalTokens": 160,
     }
     if scout != ARGS.omit_usage_scout:
+        previous = THREAD_USAGE.get(thread_id, {})
+        total = {key: value + previous.get(key, 0) for key, value in usage.items()}
+        THREAD_USAGE[thread_id] = total
         write(
             {
                 "method": "thread/tokenUsage/updated",
@@ -146,7 +158,7 @@ def complete_turn(thread_id: str, turn_id: str, scout: str, turn_number: int) ->
                     "turnId": turn_id,
                     "tokenUsage": {
                         "last": usage,
-                        "total": usage,
+                        "total": total,
                         "modelContextWindow": 10000,
                     },
                 },
