@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
 from psycopg.types.json import Jsonb
@@ -39,6 +39,7 @@ class ResearchRuntimeConfig:
     max_concurrency: int = 1
     use_wall_clock: bool = False
     require_active_research: bool = False
+    model_overrides: dict[str, tuple[str, str]] = field(default_factory=dict)
 
 
 class MvpResearchFlow:
@@ -69,6 +70,7 @@ class MvpResearchFlow:
             client=self.mind_client,
             model_provider=self.config.model_provider,
             model_id=self.config.model_id,
+            model_overrides=self.config.model_overrides,
             budget=RunBudget(
                 max_tool_calls=self.config.max_tool_calls,
                 max_total_tokens=self.config.max_total_tokens,

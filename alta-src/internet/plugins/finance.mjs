@@ -5,12 +5,12 @@ import {
   uniqueStrings,
 } from "./support.mjs";
 import {
-  boundedRecord,
   dateBefore,
   dateToday,
   isoDate,
   provenance,
   readJson,
+  readJsonResult,
   requiredText,
 } from "./finance-shared.mjs";
 import {
@@ -32,6 +32,7 @@ import {
   GLOBAL_FINANCE_SOURCES,
 } from "./finance-global.mjs";
 import { runSource } from "./source-runtime.mjs";
+import { finnhub } from "./finance-finnhub.mjs";
 
 const BASE_SOURCES = [
   "nasdaq",
@@ -411,13 +412,20 @@ async function secIdentity(service, args, options) {
 }
 
 async function sec(service, args, maximum, options) {
+  const from = args.from_date ? isoDate(args.from_date, "") : "";
+  const to = args.to_date ? isoDate(args.to_date, "") : "";
+  if (from && to && from > to)
+    throw Object.assign(new Error("from_date must not exceed to_date"), {
+      status: 400,
+      code: "alta_finance_invalid_date_range",
+    });
   const identity = await secIdentity(service, args, options);
   const { cik } = identity;
   const forms = uniqueStrings(args.forms, 10, 20).map((form) =>
     form.toUpperCase(),
   );
   const sourceUrl = `https://data.sec.gov/submissions/CIK${cik}.json`;
-  const value = await readJson(
+  const { value, status } = await readJsonResult(
     service,
     {
       url: sourceUrl,
@@ -435,17 +443,23 @@ async function sec(service, args, maximum, options) {
       accession,
       form: recent.form?.[index],
       filed_at: recent.filingDate?.[index],
+      accepted_at: recent.acceptanceDateTime?.[index] ?? null,
       report_date: recent.reportDate?.[index],
       primary_document: recent.primaryDocument?.[index],
       description: recent.primaryDocDescription?.[index],
     }))
     .filter((filing) => !forms.length || forms.includes(filing.form))
+    .filter(
+      (filing) =>
+        (!from || filing.filed_at >= from) && (!to || filing.filed_at <= to),
+    )
     .slice(0, maximum)
     .map((filing) => ({
       ...filing,
       url: `https://www.sec.gov/Archives/edgar/data/${Number(cik)}/${filing.accession.replaceAll("-", "")}/${filing.primary_document}`,
     }));
   return {
+    ...status,
     source: "sec",
     cik,
     requested_symbol: identity.symbol,
@@ -465,149 +479,6 @@ async function sec(service, args, maximum, options) {
             identity.mapping_url,
           )
         : undefined,
-  };
-}
-
-const FINNHUB_DATASETS = new Set([
-  "company_news",
-  "earnings_calendar",
-  "insider_transactions",
-  "peers",
-  "metrics",
-  "recommendations",
-]);
-
-const FINNHUB_FIELDS = {
-  company_news: [
-    "category",
-    "datetime",
-    "headline",
-    "id",
-    "image",
-    "related",
-    "source",
-    "summary",
-    "url",
-  ],
-  earnings_calendar: [
-    "date",
-    "epsActual",
-    "epsEstimate",
-    "hour",
-    "quarter",
-    "revenueActual",
-    "revenueEstimate",
-    "symbol",
-    "year",
-  ],
-  insider_transactions: [
-    "change",
-    "filingDate",
-    "name",
-    "share",
-    "symbol",
-    "transactionCode",
-    "transactionDate",
-    "transactionPrice",
-  ],
-  metrics: ["metric", "series", "symbol"],
-  recommendations: [
-    "buy",
-    "hold",
-    "period",
-    "sell",
-    "strongBuy",
-    "strongSell",
-    "symbol",
-  ],
-};
-
-function finnhubRecords(dataset, value, maximum) {
-  if (dataset === "peers")
-    return (Array.isArray(value) ? value : [])
-      .slice(0, maximum)
-      .map((symbol) => ({ symbol: String(symbol).slice(0, 20) }));
-  const rows =
-    dataset === "earnings_calendar"
-      ? value.earningsCalendar
-      : dataset === "insider_transactions"
-        ? value.data
-        : dataset === "metrics"
-          ? [value]
-          : value;
-  return (Array.isArray(rows) ? rows : [])
-    .slice(0, maximum)
-    .map((row) => boundedRecord(row, FINNHUB_FIELDS[dataset] ?? [], 1_000));
-}
-
-async function finnhub(service, args, maximum, options) {
-  if (!service.finnhubKey)
-    throw Object.assign(
-      new Error(
-        "Finnhub credential is not configured in the external ALTA credential store",
-      ),
-      { status: 503, code: "alta_finance_finnhub_credential_missing" },
-    );
-  const dataset = FINNHUB_DATASETS.has(args.dataset)
-    ? args.dataset
-    : "company_news";
-  const symbol = requiredText(
-    args.symbol,
-    "symbol",
-    /^[A-Za-z0-9.^-]{1,20}$/,
-    20,
-  ).toUpperCase();
-  const fromDate = isoDate(args.from_date, dateBefore(30));
-  const toDate = isoDate(args.to_date, dateToday());
-  if (fromDate > toDate)
-    throw Object.assign(new Error("from_date must not exceed to_date"), {
-      status: 400,
-      code: "alta_finance_invalid_date_range",
-    });
-  const endpoints = {
-    company_news: "/api/v1/company-news",
-    earnings_calendar: "/api/v1/calendar/earnings",
-    insider_transactions: "/api/v1/stock/insider-transactions",
-    peers: "/api/v1/stock/peers",
-    metrics: "/api/v1/stock/metric",
-    recommendations: "/api/v1/stock/recommendation",
-  };
-  const url = new URL(endpoints[dataset], "https://finnhub.io");
-  url.searchParams.set("symbol", symbol);
-  if (
-    ["company_news", "earnings_calendar", "insider_transactions"].includes(
-      dataset,
-    )
-  ) {
-    url.searchParams.set("from", fromDate);
-    url.searchParams.set("to", toDate);
-  }
-  if (dataset === "metrics") url.searchParams.set("metric", "all");
-  url.searchParams.set("token", service.finnhubKey);
-  const value = await readJson(
-    service,
-    {
-      url: url.href,
-      accept: "application/json",
-      max_chars: 768_000,
-      cache_namespace: `finance-finnhub-${dataset}`,
-      attempts: 2,
-    },
-    options,
-  );
-  const sourceUrl = new URL(url);
-  sourceUrl.searchParams.delete("token");
-  return {
-    source: "finnhub",
-    dataset,
-    symbol,
-    records: finnhubRecords(dataset, value, maximum),
-    provenance: {
-      publisher: "Finnhub",
-      source_url: sourceUrl.href,
-      official: true,
-      authentication: "api_key",
-    },
   };
 }
 
@@ -695,7 +566,7 @@ export const financePlugin = {
     defineTool(
       "alta_finance_data",
       "ALTA Public Finance Data",
-      "Query 17 login-free public sources plus authenticated Finnhub company intelligence for markets, macro, positioning, filings, events, peers, and fundamentals. Returns bounded provenance; not financial advice.",
+      "Read bounded, sourced markets, macro, filings and company data. Finnhub requires a key. company_profile locates issuer sites; earnings_surprises is historical EPS, not current consensus.",
       {
         type: "object",
         properties: {
@@ -703,7 +574,7 @@ export const financePlugin = {
             type: "string",
             enum: SOURCE_NAMES,
             description:
-              "Markets: nasdaq/coinbase/kraken; company intelligence: finnhub; macro: fred/bls/worldbank/imf/oecd/eurostat; rates/FX: nyfed/ecb/boc; fiscal: treasury; regulatory: fdic/cftc/sec/sec_xbrl.",
+              "Markets: nasdaq/coinbase/kraken; issuer: finnhub/sec/sec_xbrl; others: official macro/regulatory sources.",
           },
           symbol: { type: "string" },
           product: { type: "string" },
@@ -759,6 +630,8 @@ export const financePlugin = {
               "failures",
               "summary",
               "company_news",
+              "company_profile",
+              "earnings_surprises",
               "earnings_calendar",
               "insider_transactions",
               "peers",

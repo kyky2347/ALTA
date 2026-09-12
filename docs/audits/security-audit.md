@@ -2,6 +2,9 @@
 
 Baseline audit date: 2026-08-31
 
+Current publication review: [September 12, 2026](release-readiness-2026-09-12.md).
+Earlier sections below remain historical evidence, not current capability claims.
+
 Latest delta revalidation: 2026-09-09
 
 Target: the exact source tree and new Git history prepared for

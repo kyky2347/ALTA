@@ -50,6 +50,7 @@ The primary ALTA maintenance boundary is:
 | `alta-src/`                    | Provider catalog, local gateway, bounded tools, storage controls, supervisor, and Node tests            |
 | `alta-runtime/python/`         | Opportunity OS, evidence contracts, orchestration, durable state, API/SSE, migrations, and Python tests |
 | `alta-runtime/capital-python/` | Isolated Tiger Paper-only acceptance executor and tests                                                 |
+| `alta-runtime/broker-python/`  | Independent multi-broker connector contracts, external profiles and experimental execution ledger       |
 | `alta-runtime/compose.yaml`    | Loopback-only PostgreSQL and Redis services                                                             |
 | `docs/`                        | Architecture, operations, implementation history, and audit records                                     |
 
@@ -65,8 +66,8 @@ Locked dependencies include:
 
 - `openai-codex`, the official Codex App Server client;
 - `finlight-client` and `massive`, wrapped by ALTA's bounded, raw-first adapters;
-- `tigeropen==3.7.0`, used only by the separately locked Paper acceptance
-  package under its declared Apache-2.0 license;
+- `tigeropen==3.7.0`, used by the separately locked Paper acceptance and broker
+  connector packages under its declared Apache-2.0 license;
 - `psycopg`, `psycopg-pool`, and `pgvector` for durable PostgreSQL state;
 - `redis` and `hiredis` for coordination, with PostgreSQL remaining the source
   of truth;
@@ -75,6 +76,17 @@ Locked dependencies include:
 
 Exact versions and hashes are in `alta-runtime/python/uv.lock`. The isolated
 capital package has its own `pyproject.toml` and lockfile.
+
+The optional broker connector package has an independent lockfile. It uses
+`httpx` (BSD-3-Clause), Pydantic (MIT), `futu-api` (Apache-2.0), `longport`
+(Apache-2.0 OR MIT), and `ib_async` (BSD-2-Clause). These are dependencies,
+not copied broker applications. `ib_async` implements the IBKR wire protocol;
+ALTA does not claim that it is an official Interactive Brokers SDK. Alpaca and
+Schwab adapters are ALTA-maintained clients of documented HTTP APIs. The broker
+names describe compatibility targets, not affiliation or endorsement.
+Account eligibility, market-data entitlements, API terms and gateway software
+licenses remain the user's responsibility; ALTA's Apache license does not grant
+brokerage access or redistribution rights to provider data.
 
 ### Node.js and Rust
 
@@ -88,6 +100,10 @@ Vite, and the remaining frontend build tools are development dependencies.
 Exact versions, integrity hashes, and transitive packages are recorded in
 `pnpm-lock.yaml`; their own package license files remain installed with the
 packages.
+
+OpenCC-JS 1.4.2 (MIT) was used as an offline editorial aid for the initial
+Hong Kong character conversion. ALTA maintains the reviewed wording in its own
+locale catalogs; it does not bundle OpenCC code or dictionaries in the console.
 
 Rust package versions, sources, and checksums for the Codex substrate are
 recorded in `vendor/openai-codex/codex-rs/Cargo.lock`. ALTA does not relicense

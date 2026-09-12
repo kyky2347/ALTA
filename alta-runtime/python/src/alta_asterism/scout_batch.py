@@ -65,6 +65,9 @@ def build_scout_retry_feedback(error_code: str, error: Exception) -> dict[str, o
     elif isinstance(error, ActiveResearchRequired):
         category = "active_research"
         issues.append({"path": "tool_calls", "code": "active_research_required"})
+    elif str(error) == "Scout output exceeds max_output_bytes":
+        category = "output_budget"
+        issues.append({"path": "$", "code": "output_bytes_exceeded"})
     else:
         message = str(error).casefold()
         category = "semantic_contract"
@@ -86,11 +89,18 @@ def build_scout_retry_feedback(error_code: str, error: Exception) -> dict[str, o
             "semantic_contract_invalid",
         )
         issues.append({"path": "$", "code": code})
-    return {
+    feedback: dict[str, object] = {
         "previous_error_code": _bounded_issue_part(error_code, 64),
         "category": category,
         "issues": issues,
     }
+    if category == "output_budget":
+        feedback["correction"] = (
+            "UTF-8 JSON below max_output_bytes. Prose <=320 chars/field; pillars "
+            "<=160. Preserve required fields, exact refs, independent evidence "
+            "roles and lineage; no_op if it cannot fit. Never truncate citations."
+        )
+    return feedback
 
 
 def tools_within_scout_territory(
@@ -135,6 +145,7 @@ class MindWorker:
         client: MindClient,
         model_provider: str,
         model_id: str,
+        model_overrides: dict[str, tuple[str, str]] | None = None,
         budget: RunBudget,
         deadline_seconds: float,
         max_concurrency: int = 1,
@@ -148,6 +159,7 @@ class MindWorker:
         self.client = client
         self.model_provider = model_provider
         self.model_id = model_id
+        self.model_overrides = dict(model_overrides or {})
         self.budget = budget
         self.deadline_seconds = deadline_seconds
         self.max_concurrency = max_concurrency
@@ -244,8 +256,12 @@ class MindWorker:
             frozen_input=scout_input,
             budget=scout_budget,
             deadline_at=deadline_at,
-            model_provider=self.model_provider,
-            model_id=self.model_id,
+            model_provider=self.model_overrides.get(
+                config.scout_id, (self.model_provider, self.model_id)
+            )[0],
+            model_id=self.model_overrides.get(
+                config.scout_id, (self.model_provider, self.model_id)
+            )[1],
         )
 
     def _run_one(self, job_id: str, spec: ScoutRunSpec) -> ScoutRunOutcome:

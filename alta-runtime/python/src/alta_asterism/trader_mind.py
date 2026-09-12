@@ -13,6 +13,15 @@ CORE_ACTIVE_RESEARCH_TOOLS = (
     "alta_social_search",
     "alta_finance_data",
 )
+OPEN_WEB_RESEARCH_TOOLS = (
+    "alta_web_fetch",
+    "alta_web_crawl",
+    "alta_web_sitemap",
+    "alta_web_feed",
+    "alta_web_archive",
+    "alta_academic_search",
+    "alta_social_read",
+)
 PRODUCTION_ACTIVE_RESEARCH_REQUIRED = True
 TRADER_MIND_MEMORY_MODE = "bounded_non_evidence"
 TRADER_MIND_MEMORY_SCHEMA = "alta.trader-mind-memory.v3"
@@ -21,6 +30,7 @@ ACTIVE_RESEARCH_TOOLS = frozenset(
     {
         *CORE_ACTIVE_RESEARCH_TOOLS,
         "alta_web_crawl",
+        "alta_web_sitemap",
         "alta_web_feed",
         "alta_web_archive",
         "alta_academic_search",
@@ -59,7 +69,7 @@ class ScoutConfig(BaseModel):
 SCOUTS = (
     ScoutConfig(
         scout_id="change_event_scout",
-        version="alpha-v7",
+        version="alpha-v8",
         mission=(
             "Identify newly changed facts whose causal earnings, cash-flow, or "
             "positioning implications may still be propagating into listed prices."
@@ -84,18 +94,11 @@ SCOUTS = (
         ),
         primary_sources=("finlight_event", "company_filing"),
         search_territories=("event_primary_search",),
-        allowed_tools=(
-            *CORE_ACTIVE_RESEARCH_TOOLS,
-            "alta_web_fetch",
-            "alta_social_read",
-            "alta_web_crawl",
-            "alta_web_feed",
-            "alta_web_archive",
-        ),
+        allowed_tools=(*CORE_ACTIVE_RESEARCH_TOOLS, *OPEN_WEB_RESEARCH_TOOLS),
     ),
     ScoutConfig(
         scout_id="market_dislocation_scout",
-        version="alpha-v7",
+        version="alpha-v8",
         mission=(
             "Identify price, volume, volatility, breadth, or cross-asset "
             "dislocations with a testable non-technical catalyst or mechanism."
@@ -120,16 +123,11 @@ SCOUTS = (
         ),
         primary_sources=("massive_bar", "relative_market_move"),
         search_territories=("market_timeseries_scan",),
-        allowed_tools=(
-            *CORE_ACTIVE_RESEARCH_TOOLS,
-            "alta_web_fetch",
-            "alta_social_read",
-            "alta_web_crawl",
-        ),
+        allowed_tools=(*CORE_ACTIVE_RESEARCH_TOOLS, *OPEN_WEB_RESEARCH_TOOLS),
     ),
     ScoutConfig(
         scout_id="causal_policy_scout",
-        version="alpha-v6",
+        version="alpha-v8",
         mission=(
             "Trace underappreciated first- and second-order listed-equity effects "
             "from official policy, regulation, rates, commodities, and macro changes."
@@ -154,19 +152,11 @@ SCOUTS = (
         ),
         primary_sources=("official_policy", "official_macro"),
         search_territories=("official_policy_search",),
-        allowed_tools=(
-            *CORE_ACTIVE_RESEARCH_TOOLS,
-            "alta_web_fetch",
-            "alta_social_read",
-            "alta_academic_search",
-            "alta_web_crawl",
-            "alta_web_feed",
-            "alta_web_archive",
-        ),
+        allowed_tools=(*CORE_ACTIVE_RESEARCH_TOOLS, *OPEN_WEB_RESEARCH_TOOLS),
     ),
     ScoutConfig(
         scout_id="expectation_gap_scout",
-        version="alpha-v6",
+        version="alpha-v8",
         mission=(
             "Find a measurable gap between market expectations and emerging "
             "fundamental evidence, including evidence that supports a short thesis."
@@ -191,14 +181,7 @@ SCOUTS = (
         ),
         primary_sources=("expectation_primitive", "narrative_counterevidence"),
         search_territories=("expectation_counterevidence_search",),
-        allowed_tools=(
-            *CORE_ACTIVE_RESEARCH_TOOLS,
-            "alta_web_fetch",
-            "alta_social_read",
-            "alta_academic_search",
-            "alta_web_crawl",
-            "alta_web_archive",
-        ),
+        allowed_tools=(*CORE_ACTIVE_RESEARCH_TOOLS, *OPEN_WEB_RESEARCH_TOOLS),
     ),
 )
 
@@ -221,6 +204,8 @@ def validate_orthogonal_scouts(configs: tuple[ScoutConfig, ...] = SCOUTS) -> Non
             raise ValueError(
                 "every Trader Mind requires web, research, news, social, and finance discovery"
             )
+        if not set(OPEN_WEB_RESEARCH_TOOLS).issubset(config.allowed_tools):
+            raise ValueError("every Trader Mind requires bounded open-web retrieval")
         if not set(config.allowed_tools).issubset(
             ACTIVE_RESEARCH_TOOLS | {"alta_web_fetch", "alta_social_read"}
         ):

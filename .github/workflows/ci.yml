@@ -61,6 +61,12 @@ jobs:
           ./alta env python -m ruff format --check alta-runtime/python/src alta-runtime/python/tests
       - name: Run isolated Paper-boundary tests
         run: uv run --frozen --project alta-runtime/capital-python pytest -q alta-runtime/capital-python/tests
+      - name: Run isolated broker connector contracts without accounts
+        run: |
+          uv sync --frozen --all-extras --project alta-runtime/broker-python
+          uv run --frozen --all-extras --project alta-runtime/broker-python pytest -q alta-runtime/broker-python/tests
+          uv run --frozen --project alta-runtime/broker-python ruff check alta-runtime/broker-python/src alta-runtime/broker-python/tests
+          uv run --frozen --project alta-runtime/broker-python ruff format --check alta-runtime/broker-python/src alta-runtime/broker-python/tests
       - name: Stop managed services
         if: always()
         run: ./alta env down || true

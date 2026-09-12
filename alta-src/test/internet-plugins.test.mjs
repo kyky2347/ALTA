@@ -431,7 +431,7 @@ test("automatic search fails over and federated search deduplicates sources", as
   };
   const automatic = await executeSearch(context, { ...base, backend: "auto" });
   assert.equal(automatic.backend, "xai");
-  assert.deepEqual(automatic.fallback_chain, ["brave"]);
+  assert.deepEqual(automatic.fallback_chain, ["brave:no-results"]);
 
   context.request = async () => ({
     body: JSON.stringify({

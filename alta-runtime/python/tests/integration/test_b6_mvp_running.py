@@ -354,6 +354,14 @@ def test_fixture_e2e_replay_is_stable_and_projects_every_mvp_stage(
     first = runtime.run("b6-baseline", wake_at)
     replay = runtime.run("b6-baseline", wake_at)
     status = database.mvp_status()
+    assert status["assessments"]
+    with database.connect() as connection:
+        for assessment in status["assessments"]:
+            row = connection.execute(
+                "SELECT run_id FROM research.assessment WHERE id = %s",
+                (assessment["id"],),
+            ).fetchone()
+            assert assessment["runId"] == row[0]
     assert database.event_cursor("shadow") == status["eventCursor"]
     opportunity_detail = database.opportunity_detail(first.opportunity_ids[0], "shadow")
 
@@ -1232,6 +1240,21 @@ def test_one_click_demo_api_sse_reconnect_and_supervisor_crash_recovery(
         )
         assert run_detail["data"]["frozenInput"]
         assert run_detail["data"]["modelId"]
+        candidate_id = status["data"]["candidates"][0]["id"]
+        candidate_detail = request_json(port, f"/api/v1/candidates/{candidate_id}")
+        assert candidate_detail["data"]["id"] == candidate_id
+        assert candidate_detail["data"]["evidenceIds"]
+        assert candidate_detail["data"]["evidence"]
+        assert all(
+            len(item["contentHash"]) == 64
+            for item in candidate_detail["data"]["evidence"]
+        )
+        assert "frozenInput" not in candidate_detail["data"]
+        candidate_database = Database(empty_b6_database)
+        try:
+            assert candidate_database.candidate_detail(candidate_id, "paper") is None
+        finally:
+            candidate_database.close()
         opportunity_detail = request_json(
             port,
             f"/api/v1/opportunities/{status['data']['opportunities'][0]['id']}",
@@ -1311,8 +1334,8 @@ def test_one_click_demo_api_sse_reconnect_and_supervisor_crash_recovery(
         }
         assert runtime["data"]["config"]["traderMinds"] == {
             "count": 4,
-            "promptVersion": "alpha-trader-v21",
-            "toolCatalogVersion": "alta-active-research-v8",
+            "promptVersion": "alpha-trader-v28",
+            "toolCatalogVersion": "alta-active-research-v11",
             "activeResearchRequired": True,
             "memoryMode": "bounded_non_evidence",
             "coreActiveTools": [

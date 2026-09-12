@@ -197,6 +197,13 @@ export type PaperCapitalAuditEvent = {
 };
 
 export type PaperCapitalStatus = {
+  execution?: {
+    requested: "shadow" | "broker_paper";
+    effective: "shadow" | "broker_paper" | "blocked" | "close_only";
+    revision: string;
+    provider: "tiger";
+    environment: "PAPER";
+  };
   version: 1;
   provider: "Tiger Trade";
   environment: "PAPER";
@@ -263,6 +270,7 @@ export type Opportunity = {
 
 export type Assessment = {
   id: string;
+  runId?: string;
   opportunityId: string;
   assessor: string;
   verdict: string;
@@ -659,7 +667,13 @@ export type RuntimeDetail = {
 };
 
 export type SelectedEntity = {
-  kind: "opportunity" | "run" | "expression" | "event" | "position";
+  kind:
+    | "candidate"
+    | "opportunity"
+    | "run"
+    | "expression"
+    | "event"
+    | "position";
   id: string;
   label: string;
   summary?: Record<string, unknown>;

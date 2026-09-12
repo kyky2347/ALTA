@@ -1,5 +1,11 @@
 import { assertPublicUrl } from "../content.mjs";
 import {
+  assertFeedDocument,
+  feedFilter,
+  filterFeedItems,
+} from "../feed-filter.mjs";
+import { retrievalStatus } from "../retrieval-status.mjs";
+import {
   boundedInteger,
   defineTool,
   errorMessage,
@@ -162,6 +168,7 @@ async function discoverSitemap(service, args, options) {
 
 async function readFeed(service, args, options) {
   const maximum = boundedInteger(args.max_items, 20, 1, 50);
+  const filter = feedFilter(args);
   let url = args.url;
   if (args.discover === true) {
     const page = await service.fetchPage(
@@ -180,12 +187,22 @@ async function readFeed(service, args, options) {
     },
     options,
   );
-  const items = parseFeed(response.text, response.url, maximum);
+  assertFeedDocument(response.text);
+  const scanned = parseFeed(response.text, response.url, 500);
+  const matches = filterFeedItems(scanned, filter);
+  const items = matches.slice(0, maximum);
   return {
+    ...retrievalStatus(response),
     url: response.url,
     items,
     item_count: items.length,
-    truncated: items.length >= maximum || response.truncated,
+    scanned_count: scanned.length,
+    matching_count: matches.length,
+    publication_time_unverified: true,
+    truncated:
+      matches.length > maximum ||
+      scanned.length >= 500 ||
+      Boolean(response.truncated),
   };
 }
 
@@ -339,13 +356,16 @@ export const discoveryPlugin = {
     defineTool(
       "alta_web_feed",
       "ALTA Feed Reader",
-      "Read RSS, Atom, or JSON Feed data; optionally discover the feed URL from a web page first.",
+      "Read/discover RSS, Atom or JSON feeds. Filter query/date before limiting; publisher dates still need verification.",
       {
         type: "object",
         properties: {
           url: { type: "string" },
           discover: { type: "boolean", default: false },
           max_items: { type: "integer", minimum: 1, maximum: 50 },
+          query: { type: "string", maxLength: 200 },
+          from_date: { type: "string" },
+          to_date: { type: "string" },
         },
         required: ["url"],
         additionalProperties: false,

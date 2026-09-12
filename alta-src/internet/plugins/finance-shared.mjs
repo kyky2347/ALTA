@@ -1,3 +1,5 @@
+import { retrievalStatus } from "../retrieval-status.mjs";
+
 export function invalid(message, code = "alta_finance_invalid_argument") {
   return Object.assign(new Error(message), { status: 400, code });
 }
@@ -79,9 +81,16 @@ export function assertPeriodRange(from, to) {
 }
 
 export async function readJson(service, request, options) {
+  return (await readJsonResult(service, request, options)).value;
+}
+
+export async function readJsonResult(service, request, options) {
   const response = await service.readText(request, options);
   try {
-    return JSON.parse(response.text);
+    return {
+      value: JSON.parse(response.text),
+      status: retrievalStatus(response),
+    };
   } catch {
     throw Object.assign(new Error("Financial source returned invalid JSON"), {
       status: 502,

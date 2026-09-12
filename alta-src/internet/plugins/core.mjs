@@ -24,7 +24,10 @@ const SEARCH_SCHEMA = {
       maxItems: 5,
       items: { type: "string" },
     },
-    freshness: { type: "string" },
+    freshness: {
+      type: "string",
+      description: "day/week/month/year or YYYY-MM-DDtoYYYY-MM-DD",
+    },
     language: { type: "string" },
     backend: {
       type: "string",
@@ -51,20 +54,22 @@ export const corePlugin = {
     defineTool(
       "alta_web_search",
       "ALTA Web Search",
-      "Search the live public internet with automatic provider failover or federated multi-engine retrieval. Every ALTA agent can call this independently at any depth.",
+      "Search the public internet with provider failover or federated retrieval. Choose only advertised engines; corroborate results with source documents.",
       SEARCH_SCHEMA,
       (service, args, options) => service.search(args, options),
     ),
     defineTool(
       "alta_web_fetch",
       "ALTA Web Fetch",
-      "Fetch and extract a public page. Auto mode can use the bundled Jina Reader adapter for JavaScript-heavy pages, PDFs, or blocked direct fetches.",
+      "Fetch and extract a public page. For long filings use focus (a literal phrase, such as revenue) and/or offset to retrieve the relevant excerpt instead of boilerplate. Returned offsets refer to extracted text, not HTML. Auto mode can use Jina Reader for PDFs or blocked direct fetches.",
       {
         type: "object",
         properties: {
           url: { type: "string" },
           max_chars: { type: "integer", minimum: 1_000, maximum: 40_000 },
           reader: { type: "string", enum: ["auto", "direct", "reader"] },
+          focus: { type: "string", maxLength: 200 },
+          offset: { type: "integer", minimum: 0, maximum: 4_000_000 },
         },
         required: ["url"],
         additionalProperties: false,
@@ -74,7 +79,7 @@ export const corePlugin = {
     defineTool(
       "alta_web_crawl",
       "ALTA Web Crawl",
-      "Crawl a hard-bounded set of same-origin public pages for documentation or site research.",
+      "Crawl bounded same-origin pages. Optional query prioritizes retrieved links by matching URL/anchor text, e.g. investor earnings filings, instead of menu order. Link priority is not evidence.",
       {
         type: "object",
         properties: {
@@ -82,6 +87,7 @@ export const corePlugin = {
           max_pages: { type: "integer", minimum: 1, maximum: 12 },
           max_depth: { type: "integer", minimum: 0, maximum: 2 },
           max_chars: { type: "integer", minimum: 2_000, maximum: 40_000 },
+          query: { type: "string", maxLength: 400 },
         },
         required: ["url"],
         additionalProperties: false,

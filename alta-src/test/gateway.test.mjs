@@ -789,6 +789,17 @@ test("gateway serves one authenticated stateless MCP internet surface", async ()
     );
     assert.equal(exhausted.status, 429);
     assert.match(await exhausted.text(), /tool call budget exhausted/);
+    const retry = await invoke(
+      {
+        jsonrpc: "2.0",
+        id: 8,
+        method: "tools/call",
+        params: { name: "alta_file_read", arguments: { path: "report.txt" } },
+      },
+      "internet-token",
+      { ...budgetHeaders, "X-ALTA-Attempt-ID": "b".repeat(64) },
+    ).then((response) => response.json());
+    assert.match(retry.result.content[0].text, /1 of 2 tool calls remain/);
   } finally {
     await gateway.close();
     fs.rmSync(root, { recursive: true, force: true });

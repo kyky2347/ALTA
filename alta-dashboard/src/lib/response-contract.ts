@@ -21,6 +21,47 @@ function rows(value: unknown, fields: string[] = []) {
 export function validConsolePayload(path: string, value: unknown): boolean {
   if (!isRecord(value)) return false;
   const route = path.split("?", 1)[0];
+  if (
+    ["/control/execution-mode", "/control/broker-credentials/tiger"].includes(
+      route,
+    )
+  )
+    return (
+      validConsolePayload("/control/capital", value) &&
+      isRecord(value.execution) &&
+      ["shadow", "broker_paper"].includes(String(value.execution.requested)) &&
+      ["shadow", "broker_paper", "blocked", "close_only"].includes(
+        String(value.execution.effective),
+      ) &&
+      typeof value.execution.revision === "string" &&
+      /^[a-f0-9]{64}$/.test(value.execution.revision)
+    );
+  if (route === "/control/agent-models") {
+    const settings = value.settings;
+    const model = (route: unknown) =>
+      isRecord(route) && strings(route, ["provider", "model"]);
+    return (
+      typeof value.revision === "string" &&
+      /^[a-f0-9]{64}$/.test(value.revision) &&
+      Array.isArray(value.scoutIds) &&
+      value.scoutIds.every((id) => typeof id === "string") &&
+      Array.isArray(value.providers) &&
+      value.providers.every((id) => typeof id === "string") &&
+      isRecord(settings) &&
+      isRecord(settings.roles) &&
+      isRecord(settings.scouts) &&
+      [
+        "scout",
+        "thesis",
+        "disconfirming",
+        "moderator",
+        "expression",
+        "audit",
+        "position",
+      ].every((id) => model((settings.roles as RecordValue)[id])) &&
+      Object.values(settings.scouts).every(model)
+    );
+  }
   if (route === "/control/bootstrap" || route === "/control/state") {
     return (
       isRecord(value.console) &&

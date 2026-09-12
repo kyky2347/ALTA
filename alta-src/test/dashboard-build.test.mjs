@@ -65,6 +65,26 @@ test("dashboard preparation is a no-op when the built UI is current", async (t) 
   );
 });
 
+test("compiler and Vite configuration updates invalidate the dashboard build", (t) => {
+  const rootDir = fixture(t);
+  const dashboard = path.join(rootDir, "alta-dashboard");
+  const dist = path.join(dashboard, "dist");
+  fs.mkdirSync(dist, { recursive: true });
+  fs.writeFileSync(path.join(dist, "index.html"), "built\n");
+  for (const name of [
+    "vite.config.ts",
+    "tsconfig.app.json",
+    "tsconfig.node.json",
+  ]) {
+    const file = path.join(dashboard, name);
+    fs.writeFileSync(file, "configuration\n");
+    const future = new Date(Date.now() + 2000);
+    fs.utimesSync(file, future, future);
+    assert.equal(dashboardBuildRequired(rootDir), true);
+    fs.unlinkSync(file);
+  }
+});
+
 test("dashboard preparation falls back to pinned pnpm through npm", async (t) => {
   const rootDir = fixture(t);
   const calls = [];

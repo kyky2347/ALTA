@@ -20,8 +20,9 @@ import {
   flattenNativeNamespaces,
   nativeBody,
   providerForModel,
-  restoreNativeNamespaceCalls,
 } from "./gateway-native-request.mjs";
+import { restoreDeclaredToolCalls } from "./gateway-tool-identities.mjs";
+import { admitBoundedScoutToolCall } from "./gateway-scout-budget.mjs";
 import {
   HeartbeatHub,
   writeSseChunk,
@@ -258,37 +259,6 @@ async function handleInternetMcp(req, res, context) {
   }
 }
 
-function admitBoundedScoutToolCall(req, context, message) {
-  if (message?.method !== "tools/call") return null;
-  const runId = req.headers["x-alta-run-id"];
-  const rawLimit = req.headers["x-alta-max-tool-calls"];
-  if (runId === undefined && rawLimit === undefined) return null;
-  if (
-    typeof runId !== "string" ||
-    !/^run_[a-f0-9]{32}$/.test(runId) ||
-    typeof rawLimit !== "string" ||
-    !/^([0-9]|1[0-2])$/.test(rawLimit)
-  )
-    throw Object.assign(new Error("Invalid ALTA Scout tool budget headers"), {
-      status: 400,
-      code: "alta_scout_budget_invalid",
-    });
-  const limit = Number(rawLimit);
-  context.scoutToolCalls ??= new Map();
-  const previous = context.scoutToolCalls.get(runId) ?? 0;
-  if (previous >= limit)
-    throw Object.assign(new Error("ALTA Scout tool call budget exhausted"), {
-      status: 429,
-      code: "alta_scout_tool_budget_exhausted",
-    });
-  context.scoutToolCalls.set(runId, previous + 1);
-  if (context.scoutToolCalls.size > 1_000) {
-    const oldest = context.scoutToolCalls.keys().next().value;
-    context.scoutToolCalls.delete(oldest);
-  }
-  return { limit, used: previous + 1, remaining: limit - previous - 1 };
-}
-
 function assertGatewayReady(context) {
   if (context.closing)
     throw Object.assign(new Error("ALTA gateway is draining"), {
@@ -385,6 +355,7 @@ async function requestUpstreamResponse({
     return kimiToResponse(result, translated.identities);
   }
   const upstreamBody = nativeBody(body, providerName);
+  const declaredTools = upstreamBody.tools;
   const namespaceAliases = ["deepseek", "xai"].includes(providerName)
     ? flattenNativeNamespaces(upstreamBody)
     : new Map();
@@ -397,8 +368,7 @@ async function requestUpstreamResponse({
     context,
     requestHooks,
   );
-  if (namespaceAliases.size)
-    restoreNativeNamespaceCalls(result, namespaceAliases);
+  restoreDeclaredToolCalls(result, declaredTools, namespaceAliases);
   const response = normalizeNativeResponse(result);
   if (providerName === "deepseek") annotateDeepSeekCalls(response);
   return response;

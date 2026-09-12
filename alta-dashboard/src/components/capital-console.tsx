@@ -2,7 +2,6 @@ import { useMemo, useState } from "react";
 import {
   CircleCheck,
   Clock3,
-  KeyRound,
   Landmark,
   LockKeyhole,
   RefreshCw,
@@ -30,8 +29,10 @@ import {
   FieldDescription,
   FieldLabel,
 } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
+import {
+  ExecutionModePanel,
+  type BrokerCredentialRequest,
+} from "./execution-mode-panel";
 import {
   Table,
   TableBody,
@@ -44,6 +45,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useI18n } from "@/lib/i18n";
 import type { ControlState, PaperCapitalStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { BrokerConnections } from "./broker-connections";
+import type {
+  BrokerConnectionRequest,
+  BrokerVerification,
+} from "@/lib/broker-connections";
 
 type CapitalConsoleProps = {
   capital: PaperCapitalStatus | null;
@@ -53,9 +59,14 @@ type CapitalConsoleProps = {
   online: boolean;
   onRefresh: () => Promise<void>;
   onAuthorization: (enabled: boolean) => Promise<void>;
+  onMode: (mode: "shadow" | "broker_paper", revision: string) => Promise<void>;
+  onCredentials: (request: BrokerCredentialRequest) => Promise<void>;
+  onBrokerConnection: (
+    request: BrokerConnectionRequest,
+  ) => Promise<BrokerVerification>;
 };
 
-type PendingAction = "refresh" | "enable" | "disable" | null;
+type PendingAction = "refresh" | "disable" | null;
 
 function finite(value: string | null | undefined) {
   if (value === null || value === undefined || value.trim() === "") return null;
@@ -71,13 +82,13 @@ export function CapitalConsole({
   online,
   onRefresh,
   onAuthorization,
+  onMode,
+  onCredentials,
+  onBrokerConnection,
 }: CapitalConsoleProps) {
   const { clock, domain, locale, relative, systemMessage, t } = useI18n();
   const [pending, setPending] = useState<PendingAction>(null);
-  const [confirming, setConfirming] = useState<"enable" | "disable" | null>(
-    null,
-  );
-  const [confirmation, setConfirmation] = useState("");
+  const [confirming, setConfirming] = useState<"disable" | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const snapshot = capital?.snapshot ?? null;
   const recoveryOnly = Boolean(
@@ -118,25 +129,16 @@ export function CapitalConsole({
           maximumFractionDigits: 2,
         }).format(number);
   };
-  const canRequestEnable = Boolean(
-    capital?.configured &&
-      !capital.requestedEnabled &&
-      !runtimeActive &&
-      online &&
-      !preview &&
-      !pending,
-  );
   const canRevoke = Boolean(
     capital?.requestedEnabled && online && !preview && !pending,
   );
 
-  async function applyAuthorization(enabled: boolean) {
-    setPending(enabled ? "enable" : "disable");
+  async function revokeAuthorization() {
+    setPending("disable");
     setActionError(null);
     try {
-      await onAuthorization(enabled);
+      await onAuthorization(false);
       setConfirming(null);
-      setConfirmation("");
     } catch (reason) {
       setActionError(
         systemMessage(reason instanceof Error ? reason.message : null) ??
@@ -162,14 +164,6 @@ export function CapitalConsole({
     }
   }
 
-  function requestChange(checked: boolean) {
-    if (checked && !canRequestEnable) return;
-    if (!checked && !canRevoke) return;
-    setActionError(null);
-    setConfirmation("");
-    setConfirming(checked ? "enable" : "disable");
-  }
-
   return (
     <section
       className="capital-console"
@@ -185,9 +179,24 @@ export function CapitalConsole({
         </Badge>
       </header>
 
+      <p className="execution-explainer">{t("brokerSupportSummary")}</p>
+      <ExecutionModePanel
+        capital={capital}
+        disabled={runtimeActive || !online || preview || pending !== null}
+        onMode={onMode}
+        onCredentials={onCredentials}
+      />
+      <div className="execution-actions">
+        <BrokerConnections
+          offline={!online || preview}
+          runtimeActive={runtimeActive}
+          onRequest={onBrokerConnection}
+        />
+      </div>
+
       {(error ||
         actionError ||
-        capital?.configurationError ||
+        (capital?.requestedEnabled && capital?.configurationError) ||
         capital?.authorizationError ||
         capital?.snapshotError) && (
         <Alert variant="destructive" className="capital-alert">
@@ -213,7 +222,7 @@ export function CapitalConsole({
           </div>
           <Field orientation="horizontal" className="capital-switch-field">
             <FieldContent>
-              <FieldLabel htmlFor="paper-capital-switch">
+              <FieldLabel>
                 {recoveryOnly
                   ? t("recoveryOnlyAuthorization")
                   : capital?.enabled
@@ -226,23 +235,17 @@ export function CapitalConsole({
                   : t("capitalGateDetail")}
               </FieldDescription>
             </FieldContent>
-            <Switch
-              id="paper-capital-switch"
-              aria-label={
-                capital?.enabled
-                  ? t("revokeAuthorization")
-                  : t("authorizePaper")
-              }
-              checked={capital?.enabled ?? false}
-              disabled={
-                ineffectiveRequest
-                  ? true
-                  : capital?.enabled
-                    ? !canRevoke
-                    : !canRequestEnable
-              }
-              onCheckedChange={requestChange}
-            />
+            {capital?.enabled && (
+              <Button
+                variant="outline"
+                disabled={!canRevoke}
+                onClick={() => {
+                  setConfirming("disable");
+                }}
+              >
+                {t("revokeAuthorization")}
+              </Button>
+            )}
           </Field>
           <div className="capital-gate-state" aria-live="polite">
             <Badge
@@ -375,7 +378,9 @@ export function CapitalConsole({
         </div>
         <Button
           variant="outline"
-          disabled={preview || !online || pending !== null}
+          disabled={
+            preview || !online || pending !== null || !capital?.configured
+          }
           onClick={() => void refresh()}
         >
           <RefreshCw
@@ -615,54 +620,31 @@ export function CapitalConsole({
 
       <AlertDialog
         open={confirming !== null}
-        onOpenChange={(open) => !open && setConfirming(null)}
+        onOpenChange={(open) => !open && !pending && setConfirming(null)}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogMedia>
-              {confirming === "enable" ? <KeyRound /> : <LockKeyhole />}
+              <LockKeyhole />
             </AlertDialogMedia>
-            <AlertDialogTitle>
-              {confirming === "enable"
-                ? t("confirmPaperAuthorization")
-                : t("confirmRevokeTitle")}
-            </AlertDialogTitle>
+            <AlertDialogTitle>{t("confirmRevokeTitle")}</AlertDialogTitle>
             <AlertDialogDescription>
-              {confirming === "enable"
-                ? t("confirmPaperAuthorizationDetail")
-                : t("confirmRevokeDetail")}
+              {t("confirmRevokeDetail")}
             </AlertDialogDescription>
           </AlertDialogHeader>
-          {confirming === "enable" && (
-            <Field>
-              <FieldLabel htmlFor="paper-confirmation">
-                {t("confirmPaperPhrase")}
-              </FieldLabel>
-              <Input
-                id="paper-confirmation"
-                value={confirmation}
-                placeholder={t("confirmPaperPlaceholder")}
-                autoComplete="off"
-                spellCheck={false}
-                onChange={(event) => setConfirmation(event.target.value)}
-              />
-            </Field>
-          )}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={pending !== null}>
               {t("cancel")}
             </AlertDialogCancel>
             <AlertDialogAction
-              variant={confirming === "disable" ? "destructive" : "default"}
-              disabled={
-                pending !== null ||
-                (confirming === "enable" && confirmation !== "TIGER PAPER")
-              }
-              onClick={() => void applyAuthorization(confirming === "enable")}
+              variant="destructive"
+              disabled={pending !== null}
+              onClick={(event) => {
+                event.preventDefault();
+                void revokeAuthorization();
+              }}
             >
-              {confirming === "enable"
-                ? t("confirmEnable")
-                : t("confirmRevoke")}
+              {t("confirmRevoke")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

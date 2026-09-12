@@ -458,6 +458,7 @@ def _handler(
                     },
                 )
             detail_routes = (
+                ("/api/v1/candidates/", database.candidate_detail),
                 ("/api/v1/runs/", database.run_detail),
                 ("/api/v1/opportunities/", database.opportunity_detail),
                 ("/api/v1/expressions/", database.expression_detail),

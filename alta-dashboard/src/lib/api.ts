@@ -1,3 +1,5 @@
+import { validBrokerVerification } from "./broker-connections.ts";
+
 const DEFAULT_TIMEOUT_MS = 12_000;
 
 export class ApiError extends Error {
@@ -136,6 +138,68 @@ export function getJson<T>(
   return requestJson<T>(path, {}, options);
 }
 
+export function saveExecutionMode(
+  body: { mode: "shadow" | "broker_paper"; revision: string },
+  csrfToken: string,
+) {
+  return requestJson<import("@/lib/types").PaperCapitalStatus>(
+    "/control/execution-mode",
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "X-ALTA-CSRF": csrfToken },
+      body: JSON.stringify({
+        ...body,
+        confirmation:
+          body.mode === "shadow" ? "USE SHADOW" : "ENABLE TIGER PAPER",
+      }),
+    },
+    { timeoutMs: 75000 },
+  );
+}
+
+export async function requestBrokerConnection(
+  body: import("@/lib/broker-connections").BrokerConnectionRequest,
+  csrfToken: string,
+) {
+  const { action, ...payload } = body;
+  const result = await requestJson<
+    import("@/lib/broker-connections").BrokerVerification
+  >(
+    action === "save"
+      ? "/control/broker-connections"
+      : "/control/broker-connections/verify",
+    {
+      method: action === "save" ? "PUT" : "POST",
+      headers: { "Content-Type": "application/json", "X-ALTA-CSRF": csrfToken },
+      body: JSON.stringify(payload),
+    },
+    { timeoutMs: 50000 },
+  );
+  if (action === "verify" && !validBrokerVerification(result))
+    throw new ApiError({
+      message: "The broker snapshot is incomplete.",
+      code: "broker_response_invalid",
+      retriable: false,
+    });
+  return result;
+}
+export function saveBrokerCredential(
+  body: {
+    revision: string;
+    credentials: { tigerId: string; account: string; privateKey: string };
+  },
+  csrfToken: string,
+) {
+  return requestJson<import("@/lib/types").PaperCapitalStatus>(
+    "/control/broker-credentials/tiger",
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "X-ALTA-CSRF": csrfToken },
+      body: JSON.stringify(body),
+    },
+  );
+}
+
 export function mutateRuntime(
   action: "start" | "stop" | "restart",
   csrfToken: string,
@@ -168,6 +232,20 @@ export function replaceCredential(
       body: JSON.stringify({ secret }),
     },
     options,
+  );
+}
+
+export function saveAgentModels(
+  request: { revision: string; settings: import("./agent-models").AgentModels },
+  csrfToken: string,
+) {
+  return requestJson<import("./agent-models").AgentModelState>(
+    "/control/agent-models",
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "X-ALTA-CSRF": csrfToken },
+      body: JSON.stringify(request),
+    },
   );
 }
 
@@ -223,6 +301,8 @@ export function setPaperCapitalAuthorization(
 }
 
 export function entityDetailPath(kind: string, id: string) {
+  if (kind === "candidate")
+    return `/proxy/api/v1/candidates/${encodeURIComponent(id)}`;
   if (kind === "opportunity")
     return `/proxy/api/v1/opportunities/${encodeURIComponent(id)}`;
   if (kind === "run") return `/proxy/api/v1/runs/${encodeURIComponent(id)}`;

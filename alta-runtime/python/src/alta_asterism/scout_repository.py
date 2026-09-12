@@ -10,6 +10,7 @@ from .b5_runtime import _append_event, _contract_event
 from .contracts import Environment
 from .cycle_recovery import FrozenCycleSnapshotError, frozen_wake_hash
 from .database import Database
+from .failure_artifact import bounded_failure_artifact
 from .ingest import redact
 from .mind_worker import (
     ModelTurn,
@@ -941,6 +942,7 @@ class ScoutRepository:
                 "retry_feedback": retry_feedback,
                 "usage": turn.usage if turn else {},
             }
+            content = bounded_failure_artifact(content)
             version = row[3]
             artifact_id = (
                 "artifact_" + _canonical_hash([run_id, "failure", version])[:32]

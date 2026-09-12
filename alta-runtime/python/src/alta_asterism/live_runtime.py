@@ -22,6 +22,7 @@ from .massive import (
 )
 from .mind_worker import SdkAppServerMindClient
 from .mind_pool import MindClientPool
+from .scout_model_router import ScoutModelRouter
 from .mvp_fixture import MvpFixture
 from .mvp_orchestrator import MvpOrchestrator
 from .mvp_research_flow import ResearchRuntimeConfig
@@ -36,8 +37,6 @@ from .paper_execution import (
 )
 from .scouts import FrozenScoutInput
 from .trader_mind import PRODUCTION_ACTIVE_RESEARCH_REQUIRED
-
-PRODUCTION_SCOUT_MAX_TOTAL_TOKENS = 88_000
 
 
 class LiveRuntime:
@@ -66,6 +65,35 @@ class LiveRuntime:
             )
         )
         scout_route = (settings.agent_provider, settings.agent_model)
+        scout_clients = {scout_route: self.client}
+        for model_route in settings.scout_model_overrides.values():
+            route = (model_route.provider, model_route.model)
+            if route not in scout_clients:
+                # Minds sharing an override keep their configured parallelism;
+                # one serial client would spend the other minds' deadlines waiting.
+                width = min(
+                    settings.scout_concurrency,
+                    sum(
+                        value == model_route
+                        for value in settings.scout_model_overrides.values()
+                    ),
+                )
+                scout_clients[route] = MindClientPool(
+                    tuple(
+                        SdkAppServerMindClient(
+                            repo_root=repo_root,
+                            provider=route[0],
+                            model_id=route[1],
+                            agent_cwd=workspace,
+                            reasoning_effort=settings.agent_reasoning_effort,
+                        )
+                        for _ in range(width)
+                    )
+                )
+        self._scout_clients = tuple(
+            client for route, client in scout_clients.items() if route != scout_route
+        )
+        self.scout_client = ScoutModelRouter(scout_clients)
         role_clients: dict[tuple[str, str], MindClientPool] = {}
         role_runners: dict[tuple[str, str], StructuredRoleRunner] = {}
 
@@ -111,7 +139,10 @@ class LiveRuntime:
             settings.expression_provider, settings.expression_model
         )
         audit_runner = runner_for(settings.audit_provider, settings.audit_model)
-        position_runner = runner_for(*scout_route)
+        position_runner = runner_for(
+            settings.position_provider or scout_route[0],
+            settings.position_model or scout_route[1],
+        )
         self._role_clients = tuple(role_clients.values())
         deliberator = AgenticDeliberator(
             database,
@@ -281,19 +312,20 @@ class LiveRuntime:
         self.orchestrator = MvpOrchestrator(
             database,
             fixture,
-            self.client,
+            self.scout_client,
             source_flow=source_flow,
             shadow_flow=shadow_flow,
             research_config=ResearchRuntimeConfig(
                 model_provider=settings.agent_provider,
                 model_id=settings.agent_model,
-                max_tool_calls=5,
-                # Five-stage internet research can charge about 80k new
-                # (non-cached) tokens once independent Evidence is folded back
-                # into the Scout context. Keep the bound finite and below the
-                # 100k global contract, but avoid rejecting a completed turn
-                # after it has already paid the retrieval latency and cost.
-                max_total_tokens=PRODUCTION_SCOUT_MAX_TOTAL_TOKENS,
+                model_overrides={
+                    key: (route.provider, route.model)
+                    for key, route in settings.scout_model_overrides.items()
+                },
+                max_tool_calls=settings.scout_max_tool_calls,
+                # Additional capacity is for verification and counterevidence,
+                # not an output quota. The operator's bounded setting wins.
+                max_total_tokens=settings.scout_max_total_tokens,
                 max_output_bytes=8_000,
                 deadline_seconds=settings.agent_deadline_seconds,
                 max_concurrency=settings.scout_concurrency,
@@ -402,7 +434,7 @@ class LiveRuntime:
         try:
             self.client.close()
         finally:
-            for client in self._role_clients:
+            for client in (*self._role_clients, *self._scout_clients):
                 client.close()
 
     def __enter__(self) -> "LiveRuntime":

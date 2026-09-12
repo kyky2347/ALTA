@@ -131,25 +131,6 @@ export function flattenNativeNamespaces(value) {
   return aliases;
 }
 
-export function restoreNativeNamespaceCalls(value, aliases) {
-  if (!value || typeof value !== "object") return;
-  if (value.type === "function_call") {
-    const normalized = String(value.name ?? "").replace(/_+/g, "_");
-    const alias = aliases.has(value.name)
-      ? value.name
-      : [...aliases.keys()].find(
-          (candidate) => candidate.replace(/_+/g, "_") === normalized,
-        );
-    const identity = aliases.get(alias);
-    if (identity) {
-      value.name = identity.name;
-      value.namespace = identity.namespace;
-    }
-  }
-  for (const nested of Object.values(value))
-    restoreNativeNamespaceCalls(nested, aliases);
-}
-
 function deepSeekBody(body) {
   const value = structuredClone(body);
   value.stream = false;

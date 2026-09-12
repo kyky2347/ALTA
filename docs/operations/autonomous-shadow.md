@@ -413,16 +413,68 @@ mode-0600 supervisor state.
 
 `ALTA_AUTONOMOUS_CYCLE_TIMEOUT_SECONDS` is the maximum running-heartbeat age. It
 must cover at least four times the longer of the Scout and judgment-role
-deadlines. Scouts default to 180 seconds; slower heterogeneous PM, debate,
+deadlines. Scouts default to 240 seconds; slower heterogeneous PM, debate,
 expression, and audit roles default to 300 seconds. A Scout deadline, transient
 App Server failure, malformed structured result, or missed active-research
-requirement may receive one fresh attempt against the same frozen input and
-durable Run identity. The first failure remains append-only. Token/tool budget,
-evidence-provenance, territory, and investment-policy failures are not retried.
+requirement may receive up to two fresh attempts against the same frozen input and
+durable Run identity. Each failure remains append-only. Token/tool budget and
+out-of-territory call failures terminate that Scout. Structured-output and
+evidence-contract corrections use the same bounded retry path without relaxing
+their validation; repeated invalid output remains a failed Scout, not a Candidate.
 A cycle that stops making progress eventually makes `/health/ready` fail, which
 activates the supervisor watchdog. The built-in scheduler remains responsible
 for research cadence; no external cron job or Agent should invoke individual
 cycles.
+
+Scout research defaults are 11 tool calls, 98,000 chargeable tokens and a
+300-second per-attempt deadline. `ALTA_SCOUT_MAX_TOOL_CALLS` (1–12),
+`ALTA_SCOUT_MAX_TOTAL_TOKENS` (1,000–100,000) and `ALTA_AGENT_DEADLINE_SECONDS`
+(15–600) are captured by the managed service. Existing explicit settings take
+precedence; edit the local non-secret service settings while stopped. Full
+provider usage remains auditable; cached input is excluded from the Scout token
+charge. Token usage is checked after each model turn, not a provider billing cap.
+Retries are separately recorded attempts, so per-cycle spending can exceed one
+attempt's budget. Additional budget never changes evidence or trading gates.
+Defaults leave one call and 2,000 tokens below the existing ceilings for earned
+research incentives; reviewer budgets and operator overrides are unchanged.
+The operator binds tool admission to the Run ID and its durable attempt deadline;
+transport reconnection preserves the allowance, while an admitted research retry
+receives a fresh one. A gateway permits at most three attempt scopes per Run and
+does not evict recent counters under capacity pressure. These in-memory limits
+are not an account-wide or restart-durable billing ledger; PostgreSQL remains
+authoritative for the three-attempt research lifecycle. Oversized-output retries
+receive explicit UTF-8 length guidance; the 8,000-byte production output ceiling
+and evidence requirements remain unchanged.
+
+Search recency uses documented native filters where supported and explicit query
+hints elsewhere. Returned `freshness.mode` distinguishes these; neither verifies
+the event date. Date-scoped public results still need source-level checking.
+Paced source requests share a bounded FIFO within each gateway (8 waiting,
+15-second maximum admission wait), preserving provider intervals. This is not a
+cross-process or account-wide rate limiter; external quotas remain authoritative.
+
+All four Scouts can use the same 13 read-only research tools while retaining
+distinct mandates and source territories. Feed queries and date windows filter
+up to 500 parsed entries before applying the 50-item output cap. Missing dates
+cannot satisfy a date window; publisher timestamps still need corroboration.
+SEC filing windows use filing dates, with acceptance time and report date kept
+separate. Archives and academic work inform mechanisms, not current catalysts.
+
+Gateway internet bounds are configurable through its environment:
+
+| Setting                          | Default   | Scope                                                                  |
+| -------------------------------- | --------- | ---------------------------------------------------------------------- |
+| `ALTA_SEARCH_BACKEND_TIMEOUT_MS` | 20,000 ms | One search-engine attempt; allows failover                             |
+| `ALTA_WEB_TIMEOUT_MS`            | 45,000 ms | Entire HTTP request, including DNS, queue, redirects, retries and body |
+| `ALTA_WEB_TOOL_TIMEOUT_MS`       | 90,000 ms | Entire tool, including multi-source discovery and preflight            |
+
+These are nested upper bounds, not additional waiting allowances. Parent
+cancellation and service shutdown stop waiting immediately. Source cooldowns
+remain independent, federation labels partial results, and stale cache entries
+retain their stale marker. Cancellation releases capacity; cross-origin redirects
+cannot forward operator headers or request bodies. HTTP error bodies are not
+echoed into Agent output. A healthy API does not imply a source is reachable or
+that a research run succeeded; inspect per-tool and per-attempt outcomes.
 
 Operational commands are:
 

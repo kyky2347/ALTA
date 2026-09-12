@@ -30,6 +30,7 @@ from alta_asterism.scouts import (
     EvidenceSnapshot,
     FrozenScoutInput,
     RunBudget,
+    ToolProvenance,
     build_prompt,
     fit_frozen_input_for_scout,
     make_run_spec,
@@ -254,6 +255,63 @@ class InvalidThenValidClient:
             latency_ms=1,
             completed_at=spec.frozen_input.known_at,
         )
+
+
+def test_oversized_failure_diagnostics_do_not_rollback_terminal_status(
+    empty_b3_database: str,
+) -> None:
+    database = Database(empty_b3_database)
+    database.upgrade()
+    frozen = seed_frozen_input(database)
+    repository = ScoutRepository(database)
+    job_id = repository.start_batch(
+        "batch_large_failure", frozen, {"fixture": "healthy"}
+    )
+    spec = make_run_spec(
+        run_id="run_large_failure",
+        trace_id="trace_large_failure",
+        scout=SCOUTS[0],
+        frozen_input=frozen.for_territories(SCOUTS[0].primary_sources),
+        budget=RunBudget(
+            max_tool_calls=11, max_total_tokens=98_000, max_output_bytes=8192
+        ),
+        deadline_at=datetime.now(UTC) + timedelta(seconds=30),
+        model_provider="fixture",
+        model_id="fixture-model",
+    )
+    assert repository.start_run(job_id, spec)
+    tools = tuple(
+        ToolProvenance(
+            tool_call_id=f"call_{index}",
+            tool_name="alta_web_fetch",
+            status="completed",
+            arguments_hash="a" * 64,
+            source_locators=("https://example.org/" + str(index) + "x" * 900,),
+        )
+        for index in range(11)
+    )
+    turn = ModelTurn(
+        final_response='\\"線索' * 2000,
+        thread_id="thread_large",
+        turn_id="turn_large",
+        total_tokens=100,
+        tools=tools,
+        usage={"total_tokens": 100},
+    )
+    repository.fail(spec.run_id, "invalid_output", turn, ValueError("invalid output"))
+    with database.connect() as connection:
+        row = connection.execute(
+            """SELECT r.status, r.tool_provenance, a.content,
+            octet_length(a.content::text) FROM research.run r
+            JOIN research.run_artifact a ON a.run_id=r.id WHERE r.id=%s""",
+            (spec.run_id,),
+        ).fetchone()
+    assert row[0] == "failed"
+    assert len(row[1]) == 11
+    assert row[2]["tool_provenance"] == row[1]
+    assert row[2]["diagnostics_truncated"] is True
+    assert row[3] <= 16_384
+    database.close()
 
 
 def test_planned_shutdown_cancels_only_running_cycle_work(
@@ -592,8 +650,8 @@ def test_fake_app_server_runs_four_scouts_with_sdk_and_persists_provenance(
     assert all(
         row[5:9]
         == (
-            "alpha-trader-v21",
-            "alta-active-research-v8",
+            "alpha-trader-v28",
+            "alta-active-research-v11",
             "fixture",
             "fixture-model",
         )
@@ -652,6 +710,13 @@ def test_fake_app_server_runs_four_scouts_with_sdk_and_persists_provenance(
             config["mcp_servers.alta_internet.enabled_tools"] == prompt["allowed_tools"]
         )
         assert config["mcp_servers.alta_internet.enabled"] is True
+        attempt_id = config["mcp_servers.alta_internet.http_headers.X-ALTA-Attempt-ID"]
+        assert len(attempt_id) == 64 and all(
+            c in "0123456789abcdef" for c in attempt_id
+        )
+        assert config[
+            "mcp_servers.alta_internet.http_headers.X-ALTA-Run-ID"
+        ].startswith("run_")
         assert config["web_search"] == "disabled"
         assert config["project_doc_max_bytes"] == 0
         assert all(

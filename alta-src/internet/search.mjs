@@ -1,3 +1,12 @@
+import { withDeadline } from "./deadline.mjs";
+import {
+  braveFreshness,
+  freshnessProvenance,
+  freshnessQuery,
+  freshnessWindow,
+  normalizeFreshness,
+} from "./search-freshness.mjs";
+
 function cappedInteger(value, fallback, minimum, maximum) {
   const parsed = Number(value ?? fallback);
   return Number.isFinite(parsed)
@@ -149,7 +158,8 @@ export function normalizeSearch(args, backends) {
     depth: args.depth === "deep" ? "deep" : "quick",
     allowed,
     excluded,
-    freshness: args.freshness ?? "",
+    freshness: normalizeFreshness(args.freshness),
+    freshness_window: freshnessWindow(args.freshness),
     language: args.language ?? "",
     backend: requested,
     available: backends,
@@ -176,7 +186,9 @@ async function braveSearch(context, args, signal) {
         maximum_number_of_tokens_per_url: Math.min(4096, tokens),
         context_threshold_mode: args.depth === "deep" ? "lenient" : "balanced",
         enable_source_metadata: true,
-        ...(args.freshness ? { freshness: args.freshness } : {}),
+        ...(args.freshness
+          ? { freshness: braveFreshness(args.freshness) }
+          : {}),
         ...(args.language ? { search_lang: args.language } : {}),
       }),
       signal,
@@ -203,7 +215,7 @@ async function xaiSearch(context, args, signal) {
       ? { excluded_domains: args.excluded }
       : undefined;
   const value = await context.xaiSearch({
-    query: args.query,
+    query: freshnessQuery(args.query, args, "xai"),
     depth: args.depth,
     maximum: args.maximum,
     filters,
@@ -216,7 +228,7 @@ async function xaiSearch(context, args, signal) {
 async function jinaSearch(context, args, signal) {
   if (!context.jinaKey) return null;
   const url = new URL(
-    `https://s.jina.ai/${encodeURIComponent(filteredQuery(args))}`,
+    `https://s.jina.ai/${encodeURIComponent(freshnessQuery(filteredQuery(args), args, "jina"))}`,
   );
   for (const domain of args.allowed) url.searchParams.append("site", domain);
   const response = await context.request(url.href, {
@@ -248,7 +260,10 @@ async function searxngSearch(context, args, signal) {
       ? context.searxngUrl
       : `${context.searxngUrl}/`,
   );
-  url.searchParams.set("q", filteredQuery(args));
+  url.searchParams.set(
+    "q",
+    freshnessQuery(filteredQuery(args), args, "searxng"),
+  );
   url.searchParams.set("format", "json");
   if (args.language) url.searchParams.set("language", args.language);
   if (["day", "month", "year"].includes(args.freshness))
@@ -271,7 +286,10 @@ async function searxngSearch(context, args, signal) {
 
 async function duckduckgoSearch(context, args, signal) {
   const url = new URL("https://html.duckduckgo.com/html/");
-  url.searchParams.set("q", filteredQuery(args));
+  url.searchParams.set(
+    "q",
+    freshnessQuery(filteredQuery(args), args, "duckduckgo"),
+  );
   const response = await context.request(url.href, { signal });
   const results = duckDuckGoResults(response.body, args.maximum);
   if (!results.length)
@@ -286,7 +304,7 @@ async function duckduckgoSearch(context, args, signal) {
 
 async function bingSearch(context, args, signal) {
   const url = new URL("https://www.bing.com/search");
-  url.searchParams.set("q", filteredQuery(args));
+  url.searchParams.set("q", freshnessQuery(filteredQuery(args), args, "bing"));
   const response = await context.request(url.href, { signal });
   const results = bingResults(response.body, args.maximum);
   if (!results.length)
@@ -362,47 +380,64 @@ function candidateBackends(context, includePublic) {
 }
 
 async function runBackend(context, backend, args, signal, force = false) {
-  if (
-    context.backendHealth &&
-    !context.backendHealth.acquire(backend, { force })
-  )
-    return null;
+  signal?.throwIfAborted();
+  const lease = context.backendHealth?.acquire(backend, { force });
+  if (context.backendHealth && !lease) return null;
   try {
-    const value = enforceResultDomains(
-      await SEARCHERS[backend](context, args, signal),
-      args,
+    const response = await withDeadline(
+      { signal },
+      context.searchBackendTimeoutMs ?? 20_000,
+      ({ signal: backendSignal }) =>
+        SEARCHERS[backend](context, args, backendSignal),
+      { label: `search ${backend}`, code: "alta_search_backend_deadline" },
     );
-    if (!value) return null;
-    if (!value.results?.length && !String(value.answer ?? "").trim())
-      throw Object.assign(new Error(`${backend} returned no search evidence`), {
-        status: 502,
-        code: "alta_web_empty_search",
-      });
-    context.backendHealth?.succeeded(backend);
-    return value;
+    signal?.throwIfAborted();
+    if (!response) {
+      context.backendHealth?.cancelled(backend, lease);
+      return null;
+    }
+    const value = enforceResultDomains(response, args);
+    // A successful query with no in-scope hits is not a provider outage. In
+    // particular, narrow issuer/regulator filters must not open the circuit
+    // for the next unrelated research question. Transport/parser errors still
+    // throw and remain subject to the circuit breaker.
+    context.backendHealth?.succeeded(backend, lease);
+    const freshness = freshnessProvenance(args, value.fallback ?? backend);
+    return { ...value, ...(freshness ? { freshness } : {}) };
   } catch (error) {
-    if (!signal?.aborted) context.backendHealth?.failed(backend, error);
+    if (signal?.aborted) context.backendHealth?.cancelled(backend, lease);
+    else context.backendHealth?.failed(backend, error, lease);
     throw error;
   }
 }
 
 function mergeFederated(values, maximum) {
   const results = new Map();
+  const routes = [];
   const answers = [];
   for (const { backend, value } of values) {
     if (value.answer) answers.push({ backend, answer: value.answer });
+    const urls = new Set();
     for (const item of value.results ?? []) {
       let url;
       try {
         const parsed = new URL(item.url);
+        if (
+          !["http:", "https:"].includes(parsed.protocol) ||
+          parsed.username ||
+          parsed.password
+        )
+          continue;
         parsed.hash = "";
         url = parsed.href;
       } catch {
         continue;
       }
+      urls.add(url);
       const existing = results.get(url);
       if (existing) {
-        existing.backends.push(backend);
+        if (!existing.backends.includes(backend))
+          existing.backends.push(backend);
         existing.snippets = [
           ...new Set([...(existing.snippets ?? []), ...(item.snippets ?? [])]),
         ].slice(0, 4);
@@ -410,12 +445,35 @@ function mergeFederated(values, maximum) {
         results.set(url, { ...item, url, backends: [backend] });
       }
     }
+    routes.push({ urls: [...urls], cursor: 0 });
+  }
+  // Keep each engine's order, but give every successful engine a turn before
+  // taking a second unique hit from one engine. Merge all provenance first so
+  // a duplicate beyond the output limit can still corroborate a selected URL.
+  const selected = new Set();
+  let progressed = true;
+  while (selected.size < maximum && progressed) {
+    progressed = false;
+    for (const route of routes) {
+      while (
+        route.cursor < route.urls.length &&
+        selected.has(route.urls[route.cursor])
+      )
+        route.cursor += 1;
+      if (route.cursor >= route.urls.length) continue;
+      selected.add(route.urls[route.cursor++]);
+      progressed = true;
+      if (selected.size >= maximum) break;
+    }
   }
   return {
     backend: "federated",
     backends: values.map(({ backend }) => backend),
+    freshness: values.flatMap(({ value }) =>
+      value.freshness ? [value.freshness] : [],
+    ),
     answers,
-    results: [...results.values()].slice(0, maximum),
+    results: [...selected].map((url) => results.get(url)),
   };
 }
 
@@ -431,19 +489,50 @@ export async function executeSearch(context, args, signal) {
     const values = settled
       .filter((item) => item.status === "fulfilled" && item.value.value)
       .map((item) => item.value);
-    if (values.length) return mergeFederated(values, args.maximum);
+    signal?.throwIfAborted();
+    if (values.length) {
+      const failures = settled.flatMap((item, index) =>
+        item.status === "rejected" || !item.value.value
+          ? [
+              {
+                backend: candidates[index],
+                code:
+                  item.status === "rejected"
+                    ? typeof item.reason?.code === "string" &&
+                      /^alta_[a-z_]+$/.test(item.reason.code)
+                      ? item.reason.code
+                      : "alta_web_backend_unavailable"
+                    : "alta_web_circuit_open",
+              },
+            ]
+          : [],
+      );
+      return {
+        ...mergeFederated(values, args.maximum),
+        failures,
+        partial: failures.length > 0,
+      };
+    }
   } else if (args.backend === "auto") {
     const attempts = [];
+    let emptyResult = null;
     for (const backend of candidateBackends(context, true)) {
       try {
         const result = await runBackend(context, backend, args, signal);
-        if (result) return { ...result, backend, fallback_chain: attempts };
+        if (result?.results?.length || String(result?.answer ?? "").trim())
+          return { ...result, backend, fallback_chain: attempts };
+        if (result) {
+          emptyResult = { ...result, backend, no_results: true };
+          attempts.push(`${backend}:no-results`);
+          continue;
+        }
         attempts.push(`${backend}:circuit-open`);
       } catch (error) {
         if (signal?.aborted) throw error;
         attempts.push(backend);
       }
     }
+    if (emptyResult) return { ...emptyResult, fallback_chain: attempts };
   } else {
     const result = SEARCHERS[args.backend]
       ? await runBackend(context, args.backend, args, signal, true)

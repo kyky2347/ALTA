@@ -565,6 +565,14 @@ class SdkAppServerMindClient:
                         spec.scout.allowed_tools
                     ),
                     "mcp_servers.alta_internet.http_headers.X-ALTA-Run-ID": spec.run_id,
+                    "mcp_servers.alta_internet.http_headers.X-ALTA-Attempt-ID": (
+                        _canonical_hash(
+                            {
+                                "run_id": spec.run_id,
+                                "deadline_at": spec.deadline_at.isoformat(),
+                            }
+                        )
+                    ),
                     "mcp_servers.alta_internet.http_headers.X-ALTA-Max-Tool-Calls": str(
                         spec.budget.max_tool_calls
                     ),

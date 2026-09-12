@@ -15,7 +15,8 @@ coverage/
 htmlcov/
 *.log
 *.pid
-output/playwright/
+/output/
+/showcase/
 .impeccable/
 .playwright-cli/
 alta-dashboard/dist/

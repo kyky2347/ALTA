@@ -196,7 +196,7 @@ export const socialPlugin = {
     defineTool(
       "alta_social_search",
       "ALTA Public Social Search",
-      "Search public social content without account credentials through eleven direct sources, including YouTube and Stocktwits, plus bounded discovery across 48 global, decentralized, Chinese, and trading-community platforms. Use alta_social_read on a returned public URL for bounded content extraction.",
+      "Search public social content through eleven direct sources and bounded discovery across 48 platforms. Use alta_social_read on returned public URLs. Social content is a lead, not independent confirmation; never bypass access controls.",
       {
         type: "object",
         properties: {

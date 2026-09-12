@@ -83,6 +83,20 @@ automated operation.
 
 ## What each view shows
 
+The sidebar uses **API Trading**. Its current operational adapter is Tiger Paper;
+five additional providers are pre-adapted, not live-account accepted. The two
+autonomous execution modes remain internal Shadow and authorized Tiger Paper.
+
+**Research radar** shows separate Opportunity and Candidate records with a
+seven-day or full-snapshot scope, search, pagination, timestamps and evidence
+inspection. The snapshot is bounded; use Activity & history for earlier events.
+No record is promoted or made fresh by changing a view.
+
+Local builds retain content-hashed frontend assets so open tabs can still load
+their lazy modules after an update. Stop the console and close old tabs before
+manually cleaning build output. Vite and TypeScript configuration changes also
+invalidate the startup build check.
+
 - **Live field** — Candidates, deduplicated Opportunities, active Agent roles,
   committee state, expression, audit, and Shadow observation in one flow.
 - **Decision ledger** — Cursor-ordered durable events with their aggregate,
@@ -128,13 +142,40 @@ Opportunities, Agent Runs, assessments, committee exchanges, expressions,
 Shadow positions, and events.
 
 Use the language button in the global action bar to switch the entire operator
-shell between English and Simplified Chinese. The preference is stored only in
+shell between English, Simplified Chinese and Traditional Chinese
+(**繁體中文**). The preference is stored only in
 local browser storage and survives reloads. Static copy, dates, relative time,
 numbers, status codes, accessibility labels, controls, failures, and empty
 states follow the selected locale. Durable Opportunity titles, Agent summaries,
 committee arguments, recommendations, and artifacts remain in their original
 saved language; the console does not mutate or invent a translated audit
 record.
+
+## Assign Agent models
+
+Open **Agent desk → Agent models**. The seven routes cover the default Scout,
+thesis, independent challenge, moderator, expression, audit and position review.
+Each of the four Scout minds can override the default route independently.
+Select OpenAI, DeepSeek, xAI / Grok or Moonshot / Kimi and enter an exact,
+provider-compatible model ID available to your account. Configure its credentials
+separately in the API view. Saving does not probe model availability or spend tokens.
+
+- Stop research before saving. Running or recovering processes, lifecycle actions,
+  credential verification and capital changes block conflicting model edits.
+- `GET /control/agent-models` returns the safe settings and a revision;
+  `PUT /control/agent-models` requires the session, same origin, CSRF and that revision.
+- The operator stores versioned settings in its owner-only
+  `config/agent-models.json` state file using atomic replacement and a write lease.
+  Concurrent edits return a conflict, not last-writer-wins data loss.
+- The next research-service start loads the selected routes. Each Run retains its
+  provider and model before dispatch. Unconfigured Scout overrides inherit the
+  default; unavailable routes are never silently redirected.
+- Thesis and challenge must differ, as must expression and audit. Broker permissions,
+  capital isolation, research budgets and evidence requirements are unchanged.
+- A corrupt or unsafe settings file blocks startup rather than reverting to defaults.
+  Preserve the file for diagnosis and restore a known-good owner-only copy while
+  research is stopped. A failed save keeps the browser draft; reload and compare
+  before retrying an uncertain result.
 
 ## Data flow, freshness, and recovery
 

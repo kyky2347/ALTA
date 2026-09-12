@@ -9,9 +9,9 @@ import {
   Waypoints,
 } from "lucide-react";
 import { useState } from "react";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { StatusPill } from "@/components/status-pill";
 import { AgentMark } from "@/components/agent-mark";
+import { opportunityCommitteeAgents, agentInputTokens } from "@/lib/agent-desk";
 import { useI18n } from "@/lib/i18n";
 import {
   focusedOpportunity,
@@ -19,6 +19,7 @@ import {
 } from "@/lib/opportunity-selection";
 import type { MvpStatus, RuntimeDetail, SelectedEntity } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { ResearchLibrary } from "./research-library";
 
 export function OpportunityField({
   status,
@@ -84,383 +85,414 @@ export function OpportunityField({
     ? [
         leading,
         ...currentOpportunities.filter((item) => item.id !== leading.id),
-      ].slice(0, 3)
-    : currentOpportunities.slice(0, 3);
-  const agents = status.agents.slice(0, 6);
+      ].slice(0, 6)
+    : currentOpportunities.slice(0, 6);
+  const agents = opportunityCommitteeAgents(status, leading?.id).slice(0, 6);
   const sourceCandidate = currentCandidates[0];
   const activeAgent =
     agents.find((agent) => agent.status === "running") ?? agents[0];
   const activeRuntime = runtime?.config.autonomousStatus === "running";
-  const activeActionAgent = agents.find(
-    (agent) =>
-      agent.status === "running" && /(expression|audit)/i.test(agent.id),
-  );
   const currentRanks = latestRankBookMap(status);
 
   return (
-    <section className="field-shell" aria-labelledby="field-title">
-      <div className="field-heading">
-        <h2 id="field-title">{t("liveOpportunityFlow")}</h2>
-        <div className="field-heading-meta">
-          <StatusPill
-            status={runtime?.config.autonomousStatus ?? status.status}
-            live
-          />
-          <span>{t("openRecordHint")}</span>
+    <>
+      <ResearchLibrary
+        status={status}
+        minds={runtime?.minds ?? []}
+        onSelect={onSelect}
+      />
+      <section className="field-shell" aria-labelledby="field-title">
+        <div className="field-heading">
+          <h2 id="field-title">{t("liveOpportunityFlow")}</h2>
+          <div className="field-heading-meta">
+            <StatusPill
+              status={runtime?.config.autonomousStatus ?? status.status}
+              live
+            />
+            <span>{t("openRecordHint")}</span>
+          </div>
         </div>
-      </div>
 
-      <div
-        className="mobile-stage-selector"
-        aria-label={t("opportunityFlowStage")}
-      >
-        {(["discovery", "foundry", "committee", "action"] as const).map(
-          (stage) => (
-            <button
-              type="button"
-              className={mobileStage === stage ? "is-active" : ""}
-              key={stage}
-              aria-pressed={mobileStage === stage}
-              onClick={() => setMobileStage(stage)}
-            >
-              {stage === "action"
-                ? t("audit")
-                : stage === "discovery"
-                  ? t("discovery")
-                  : stage === "foundry"
-                    ? t("foundry")
-                    : t("committee")}
-            </button>
-          ),
-        )}
-      </div>
-
-      <div className="asterism-grid">
         <div
-          className={cn(
-            "stage-column discovery-column",
-            mobileStage === "discovery" && "is-mobile-active",
-          )}
+          className="mobile-stage-selector"
+          aria-label={t("opportunityFlowStage")}
         >
-          <StageLabel
-            icon={FileSearch2}
-            label={t("discovery")}
-            description={t("discoveryDescription")}
-            count={currentCandidates.length}
+          {(["discovery", "foundry", "committee", "action"] as const).map(
+            (stage) => (
+              <button
+                type="button"
+                className={mobileStage === stage ? "is-active" : ""}
+                key={stage}
+                aria-pressed={mobileStage === stage}
+                onClick={() => setMobileStage(stage)}
+              >
+                {stage === "action"
+                  ? t("audit")
+                  : stage === "discovery"
+                    ? t("discovery")
+                    : stage === "foundry"
+                      ? t("foundry")
+                      : t("committee")}
+              </button>
+            ),
+          )}
+        </div>
+
+        <div className="asterism-grid">
+          <div
+            className={cn(
+              "stage-column discovery-column",
+              mobileStage === "discovery" && "is-mobile-active",
+            )}
+          >
+            <StageLabel
+              icon={FileSearch2}
+              label={t("discovery")}
+              description={t("discoveryDescription")}
+              count={currentCandidates.length}
+            />
+            <div className="stage-scroll">
+              <div className="stage-stack">
+                {currentCandidates.slice(0, 8).map((candidate) => (
+                  <button
+                    type="button"
+                    className="mini-card"
+                    key={candidate.id}
+                    title={candidate.id}
+                    onClick={() =>
+                      onSelect({
+                        kind: "candidate",
+                        id: candidate.id,
+                        label: candidate.title,
+                        summary: candidate as unknown as Record<
+                          string,
+                          unknown
+                        >,
+                      })
+                    }
+                  >
+                    <div>
+                      <strong>{candidate.title}</strong>
+                      <p>
+                        {candidate.alphaArchetype
+                          ? domain(candidate.alphaArchetype)
+                          : t("unclassified")}{" "}
+                        · {domain(candidate.freshnessState ?? "unknown")} ·{" "}
+                        {relative(candidate.freshnessAt ?? candidate.knownAt)}
+                      </p>
+                    </div>
+                  </button>
+                ))}
+                {!currentCandidates.length && (
+                  <EmptyStage label={t("noCandidates")} />
+                )}
+              </div>
+            </div>
+          </div>
+
+          <StageArrow
+            source={sourceCandidate ? t("candidateStream") : "candidate"}
+            target={leading?.id ?? "foundry"}
+            knownAt={leading?.knownAt ?? sourceCandidate?.knownAt}
+            active={activeRuntime && !leading && Boolean(sourceCandidate)}
           />
-          <ScrollArea className="stage-scroll">
+
+          <div
+            className={cn(
+              "stage-column opportunity-column",
+              mobileStage === "foundry" && "is-mobile-active",
+            )}
+          >
+            <StageLabel
+              icon={Sparkles}
+              label={t("foundry")}
+              description={t("foundryDescription")}
+              count={currentOpportunities.length}
+            />
             <div className="stage-stack">
-              {currentCandidates.slice(0, 5).map((candidate) => (
-                <article
-                  className="mini-card"
-                  key={candidate.id}
-                  title={candidate.id}
-                >
-                  <div>
-                    <strong>{candidate.title}</strong>
-                    <p>
-                      {candidate.alphaArchetype
-                        ? domain(candidate.alphaArchetype)
-                        : t("unclassified")}{" "}
-                      · {domain(candidate.freshnessState ?? "unknown")} ·{" "}
-                      {relative(candidate.freshnessAt ?? candidate.knownAt)}
-                    </p>
-                  </div>
-                </article>
-              ))}
-              {!currentCandidates.length && (
-                <EmptyStage label={t("noCandidates")} />
+              {visibleOpportunities.map((opportunity) => {
+                const rank = currentRanks.get(opportunity.id);
+                return (
+                  <button
+                    type="button"
+                    className={cn(
+                      "opportunity-card",
+                      leading?.id === opportunity.id && "is-selected",
+                    )}
+                    key={opportunity.id}
+                    aria-pressed={leading?.id === opportunity.id}
+                    onClick={() =>
+                      onSelect({
+                        kind: "opportunity",
+                        id: opportunity.id,
+                        label: opportunity.title,
+                        summary: opportunity as unknown as Record<
+                          string,
+                          unknown
+                        >,
+                      })
+                    }
+                  >
+                    <div className="opportunity-card-top">
+                      <span title={opportunity.id}>
+                        {rank
+                          ? t("rankedPosition", { rank: rank.position })
+                          : t("researchOpportunity")}
+                      </span>
+                      <StatusPill status={opportunity.status} />
+                    </div>
+                    <h3>{opportunity.title}</h3>
+                    <div className="opportunity-card-bottom">
+                      <span>
+                        {domain(opportunity.freshnessState ?? "unknown")} ·{" "}
+                        {opportunity.foundryState
+                          ? domain(opportunity.foundryState)
+                          : t("building")}
+                      </span>
+                      <span>
+                        {relative(
+                          opportunity.freshnessAt ?? opportunity.knownAt,
+                        )}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+              {!currentOpportunities.length && (
+                <EmptyStage label={t("foundryWaiting")} />
               )}
             </div>
-          </ScrollArea>
-        </div>
+          </div>
 
-        <StageArrow
-          source={sourceCandidate ? t("candidateStream") : "candidate"}
-          target={leading?.id ?? "foundry"}
-          knownAt={leading?.knownAt ?? sourceCandidate?.knownAt}
-          active={activeRuntime && !leading && Boolean(sourceCandidate)}
-        />
-
-        <div
-          className={cn(
-            "stage-column opportunity-column",
-            mobileStage === "foundry" && "is-mobile-active",
-          )}
-        >
-          <StageLabel
-            icon={Sparkles}
-            label={t("foundry")}
-            description={t("foundryDescription")}
-            count={currentOpportunities.length}
+          <StageArrow
+            source={leading?.id ?? "opportunity"}
+            target={activeAgent?.runId ?? "committee"}
+            knownAt={activeAgent?.knownAt ?? leading?.knownAt}
+            active={
+              activeRuntime && activeAgent?.status === "running" && !expression
+            }
           />
-          <div className="stage-stack">
-            {visibleOpportunities.map((opportunity) => {
-              const rank = currentRanks.get(opportunity.id);
-              return (
+
+          <div
+            className={cn(
+              "stage-column committee-column",
+              mobileStage === "committee" && "is-mobile-active",
+            )}
+          >
+            <StageLabel
+              icon={Bot}
+              label={t("committee")}
+              description={t("committeeDescription")}
+              count={agents.length}
+            />
+            <div className="agent-matrix">
+              {!agents.length && (
+                <EmptyStage label={t("noBoundCommitteeRuns")} />
+              )}
+              {agents.map((agent) => (
                 <button
                   type="button"
                   className={cn(
-                    "opportunity-card",
-                    leading?.id === opportunity.id && "is-selected",
+                    "agent-node",
+                    selected?.id === agent.runId && "is-selected",
                   )}
-                  key={opportunity.id}
-                  aria-pressed={leading?.id === opportunity.id}
+                  key={agent.id}
+                  aria-pressed={selected?.id === agent.runId}
                   onClick={() =>
                     onSelect({
-                      kind: "opportunity",
-                      id: opportunity.id,
-                      label: opportunity.title,
-                      summary: opportunity as unknown as Record<
-                        string,
-                        unknown
-                      >,
+                      kind: "run",
+                      id: agent.runId,
+                      label: domain(agent.id),
+                      summary: agent as unknown as Record<string, unknown>,
                     })
                   }
                 >
-                  <div className="opportunity-card-top">
-                    <span title={opportunity.id}>
-                      {rank
-                        ? t("rankedPosition", { rank: rank.position })
-                        : t("researchOpportunity")}
-                    </span>
-                    <StatusPill status={opportunity.status} />
-                  </div>
-                  <h3>{opportunity.title}</h3>
-                  <div className="opportunity-card-bottom">
-                    <span>
-                      {domain(opportunity.freshnessState ?? "unknown")} ·{" "}
-                      {opportunity.foundryState
-                        ? domain(opportunity.foundryState)
-                        : t("building")}
-                    </span>
-                    <span>
-                      {relative(opportunity.freshnessAt ?? opportunity.knownAt)}
-                    </span>
-                  </div>
+                  <span className="agent-glyph">
+                    <AgentMark role={agent.id} />
+                  </span>
+                  <span className="agent-copy">
+                    <strong>{domain(agent.id)}</strong>
+                    <small
+                      title={`${agent.runId} · ${agent.modelId ?? agent.modelProvider ?? ""}`}
+                    >
+                      {agent.modelId ??
+                        agent.modelProvider ??
+                        t("modelPending")}{" "}
+                      · {domain(agent.status)}
+                    </small>
+                  </span>
+                  <span
+                    className={cn(
+                      "agent-state",
+                      agent.status === "running" && "is-running",
+                    )}
+                    aria-label={domain(agent.status)}
+                  />
                 </button>
-              );
-            })}
-            {!currentOpportunities.length && (
-              <EmptyStage label={t("foundryWaiting")} />
+              ))}
+            </div>
+            <div className="handoff-stack">
+              {discussion.slice(0, 2).map((item) => (
+                <button
+                  type="button"
+                  key={item.id}
+                  aria-pressed={selected?.id === item.id}
+                  onClick={() =>
+                    onSelect({
+                      kind: "event",
+                      id: item.id,
+                      label: domain(item.eventType),
+                      summary: item as unknown as Record<string, unknown>,
+                    })
+                  }
+                >
+                  <span>
+                    {domain(String(item.detail.speaker ?? "committee"))}
+                  </span>
+                  <strong>
+                    {String(item.detail.summary ?? domain(item.eventType))}
+                  </strong>
+                  <small>
+                    {item.id} · {relative(item.knownAt)}
+                  </small>
+                </button>
+              ))}
+            </div>
+            <div className="committee-brief">
+              <div>
+                <span>{t("assessments")}</span>
+                <strong>{assessments.length}</strong>
+              </div>
+              <div>
+                <span>{t("arguments")}</span>
+                <strong>{discussion.length}</strong>
+              </div>
+              <div>
+                <span>{t("deskInputTokens")}</span>
+                <strong>
+                  {agents.length &&
+                  agents.every((agent) => agentInputTokens(agent) !== undefined)
+                    ? number(
+                        agents.reduce(
+                          (sum, agent) => sum + (agentInputTokens(agent) ?? 0),
+                          0,
+                        ),
+                        { notation: "compact", maximumFractionDigits: 1 },
+                      )
+                    : "—"}
+                </strong>
+              </div>
+            </div>
+          </div>
+
+          <StageArrow
+            source={expression?.id ?? leading?.id ?? "packet"}
+            target={position?.id ?? "audit"}
+            knownAt={position?.knownAt ?? expression?.knownAt}
+            active={false}
+          />
+
+          <div
+            className={cn(
+              "stage-column action-column",
+              mobileStage === "action" && "is-mobile-active",
+            )}
+          >
+            <StageLabel
+              icon={ShieldCheck}
+              description={t("actionDescription")}
+              label={t("expressionAudit")}
+              count={
+                leading
+                  ? status.expressions.filter(
+                      (item) => item.opportunityId === leading.id,
+                    ).length
+                  : 0
+              }
+            />
+            {expression ? (
+              <button
+                type="button"
+                className={cn(
+                  "action-card",
+                  selected?.id === expression.id && "is-selected",
+                )}
+                aria-pressed={selected?.id === expression.id}
+                onClick={() =>
+                  onSelect({
+                    kind: "expression",
+                    id: expression.id,
+                    label: domain(expression.kind),
+                    summary: expression as unknown as Record<string, unknown>,
+                  })
+                }
+              >
+                <span className="action-icon">
+                  <Waypoints />
+                </span>
+                <div>
+                  <small>{t("selectedCarrier")}</small>
+                  <strong>{domain(expression.kind)}</strong>
+                  <p>{domain(expression.status)}</p>
+                </div>
+              </button>
+            ) : (
+              <EmptyStage label={t("noExpression")} />
+            )}
+            <div className="audit-line">
+              <ShieldCheck />
+              <span>{t("auditBoundary")}</span>
+              <strong>
+                {expression?.status ? domain(expression.status) : t("waiting")}
+              </strong>
+            </div>
+            {position ? (
+              <button
+                type="button"
+                className={cn(
+                  "position-line",
+                  selected?.id === position.id && "is-selected",
+                )}
+                aria-pressed={selected?.id === position.id}
+                onClick={() =>
+                  onSelect({
+                    kind: "position",
+                    id: position.id,
+                    label: t("shadowPosition", { symbol: position.symbol }),
+                    summary: position as unknown as Record<string, unknown>,
+                  })
+                }
+              >
+                <CheckCircle2 />
+                <span>
+                  <small>{t("shadowObservation")}</small>
+                  <strong>{position.symbol}</strong>
+                </span>
+                <StatusPill status={position.status} />
+              </button>
+            ) : (
+              <div className="position-line is-empty">
+                <CircleDot />
+                <span>
+                  <small>{t("shadowObservation")}</small>
+                  <strong>{t("noPosition")}</strong>
+                </span>
+              </div>
             )}
           </div>
         </div>
 
-        <StageArrow
-          source={leading?.id ?? "opportunity"}
-          target={activeAgent?.runId ?? "committee"}
-          knownAt={activeAgent?.knownAt ?? leading?.knownAt}
-          active={
-            activeRuntime && activeAgent?.status === "running" && !expression
-          }
-        />
-
-        <div
-          className={cn(
-            "stage-column committee-column",
-            mobileStage === "committee" && "is-mobile-active",
-          )}
-        >
-          <StageLabel
-            icon={Bot}
-            label={t("committee")}
-            description={t("committeeDescription")}
-            count={agents.length}
-          />
-          <div className="agent-matrix">
-            {agents.map((agent) => (
-              <button
-                type="button"
-                className={cn(
-                  "agent-node",
-                  selected?.id === agent.runId && "is-selected",
-                )}
-                key={agent.id}
-                aria-pressed={selected?.id === agent.runId}
-                onClick={() =>
-                  onSelect({
-                    kind: "run",
-                    id: agent.runId,
-                    label: domain(agent.id),
-                    summary: agent as unknown as Record<string, unknown>,
-                  })
-                }
-              >
-                <span className="agent-glyph">
-                  <AgentMark role={agent.id} />
-                </span>
-                <span className="agent-copy">
-                  <strong>{domain(agent.id)}</strong>
-                  <small
-                    title={`${agent.runId} · ${agent.modelId ?? agent.modelProvider ?? ""}`}
-                  >
-                    {agent.modelId ?? agent.modelProvider ?? t("modelPending")}{" "}
-                    · {domain(agent.status)}
-                  </small>
-                </span>
-                <span
-                  className={cn(
-                    "agent-state",
-                    agent.status === "running" && "is-running",
-                  )}
-                  aria-label={domain(agent.status)}
-                />
-              </button>
-            ))}
-          </div>
-          <div className="handoff-stack">
-            {discussion.slice(0, 2).map((item) => (
-              <button
-                type="button"
-                key={item.id}
-                aria-pressed={selected?.id === item.id}
-                onClick={() =>
-                  onSelect({
-                    kind: "event",
-                    id: item.id,
-                    label: domain(item.eventType),
-                    summary: item as unknown as Record<string, unknown>,
-                  })
-                }
-              >
-                <span>
-                  {domain(String(item.detail.speaker ?? "committee"))}
-                </span>
-                <strong>
-                  {String(item.detail.summary ?? domain(item.eventType))}
-                </strong>
-                <small>
-                  {item.id} · {relative(item.knownAt)}
-                </small>
-              </button>
-            ))}
-          </div>
-          <div className="committee-brief">
-            <div>
-              <span>{t("assessments")}</span>
-              <strong>{assessments.length}</strong>
-            </div>
-            <div>
-              <span>{t("arguments")}</span>
-              <strong>{discussion.length}</strong>
-            </div>
-            <div>
-              <span>{t("context")}</span>
-              <strong>
-                {number(
-                  runtime?.minds.reduce(
-                    (sum, mind) => sum + (mind.contextTokens ?? 0),
-                    0,
-                  ),
-                  { notation: "compact", maximumFractionDigits: 1 },
-                )}
-              </strong>
-            </div>
-          </div>
+        <div className="field-footnote">
+          <span>
+            <span className="legend-dot is-live" /> {t("activeRecentlyUpdated")}
+          </span>
+          <span>
+            <span className="legend-dot" /> {t("waitingHistorical")}
+          </span>
+          <span className="field-truth">{t("savedArtifactsTruth")}</span>
         </div>
-
-        <StageArrow
-          source={expression?.id ?? leading?.id ?? "packet"}
-          target={position?.id ?? activeActionAgent?.runId ?? "audit"}
-          knownAt={position?.knownAt ?? expression?.knownAt}
-          active={activeRuntime && Boolean(activeActionAgent) && !position}
-        />
-
-        <div
-          className={cn(
-            "stage-column action-column",
-            mobileStage === "action" && "is-mobile-active",
-          )}
-        >
-          <StageLabel
-            icon={ShieldCheck}
-            description={t("actionDescription")}
-            label={t("expressionAudit")}
-            count={status.expressions.length}
-          />
-          {expression ? (
-            <button
-              type="button"
-              className={cn(
-                "action-card",
-                selected?.id === expression.id && "is-selected",
-              )}
-              aria-pressed={selected?.id === expression.id}
-              onClick={() =>
-                onSelect({
-                  kind: "expression",
-                  id: expression.id,
-                  label: domain(expression.kind),
-                  summary: expression as unknown as Record<string, unknown>,
-                })
-              }
-            >
-              <span className="action-icon">
-                <Waypoints />
-              </span>
-              <div>
-                <small>{t("selectedCarrier")}</small>
-                <strong>{domain(expression.kind)}</strong>
-                <p>{domain(expression.status)}</p>
-              </div>
-            </button>
-          ) : (
-            <EmptyStage label={t("noExpression")} />
-          )}
-          <div className="audit-line">
-            <ShieldCheck />
-            <span>{t("auditBoundary")}</span>
-            <strong>
-              {expression?.status ? domain(expression.status) : t("waiting")}
-            </strong>
-          </div>
-          {position ? (
-            <button
-              type="button"
-              className={cn(
-                "position-line",
-                selected?.id === position.id && "is-selected",
-              )}
-              aria-pressed={selected?.id === position.id}
-              onClick={() =>
-                onSelect({
-                  kind: "position",
-                  id: position.id,
-                  label: t("shadowPosition", { symbol: position.symbol }),
-                  summary: position as unknown as Record<string, unknown>,
-                })
-              }
-            >
-              <CheckCircle2 />
-              <span>
-                <small>{t("shadowObservation")}</small>
-                <strong>{position.symbol}</strong>
-              </span>
-              <StatusPill status={position.status} />
-            </button>
-          ) : (
-            <div className="position-line is-empty">
-              <CircleDot />
-              <span>
-                <small>{t("shadowObservation")}</small>
-                <strong>{t("noPosition")}</strong>
-              </span>
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="field-footnote">
-        <span>
-          <span className="legend-dot is-live" /> {t("activeRecentlyUpdated")}
-        </span>
-        <span>
-          <span className="legend-dot" /> {t("waitingHistorical")}
-        </span>
-        <span className="field-truth">{t("savedArtifactsTruth")}</span>
-      </div>
-    </section>
+      </section>
+    </>
   );
 }
 
@@ -502,7 +534,7 @@ function StageArrow({
 }) {
   const { locale, relative, t } = useI18n();
   const time = knownAt
-    ? `${locale === "zh-CN" ? "，" : ", "}${relative(knownAt)}`
+    ? `${locale !== "en" ? "，" : ", "}${relative(knownAt)}`
     : "";
   return (
     <div

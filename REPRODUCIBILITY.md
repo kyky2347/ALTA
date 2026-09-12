@@ -20,7 +20,7 @@ A fresh clone can reproduce:
 - secret-free launchd/systemd-user definitions, endpoint-conflict rejection,
   liveness-specific process-group cleanup, and host-service lifecycle state;
 - a project-local Codex App Server binary from the pinned source snapshot; and
-- all Node, Python Opportunity OS, and isolated capital-boundary tests.
+- all Node, dashboard, Python research, Tiger Paper and experimental broker tests.
 
 A fresh clone cannot guarantee identical LLM prose, external API responses,
 market conditions, future returns, or profitable Alpha.
@@ -32,9 +32,10 @@ market conditions, future returns, or profitable Alpha.
 | Node.js              | `package.json` engines and `pnpm-lock.yaml`                                    |
 | Python runtime       | Python 3.12 constraint and `alta-runtime/python/uv.lock`                       |
 | Capital boundary     | `alta-runtime/capital-python/uv.lock`                                          |
+| Broker connectors    | `alta-runtime/broker-python/uv.lock`                                           |
 | Codex Rust substrate | `vendor/openai-codex/UPSTREAM_COMMIT`, `rust-toolchain.toml`, and `Cargo.lock` |
 | PostgreSQL and Redis | image digests in `alta-runtime/compose.yaml`                                   |
-| Schema               | ordered migrations in `alta-runtime/migrations/`                               |
+| Schema               | ordered migrations in `alta-runtime/python/src/alta_asterism/migrations/`      |
 
 ## Fresh-source verification
 
@@ -47,12 +48,26 @@ cd /absolute/path/to/ALTA
 corepack pnpm install --frozen-lockfile
 uv sync --project alta-runtime/python --frozen
 uv sync --project alta-runtime/capital-python --frozen
+uv sync --project alta-runtime/broker-python --frozen --all-extras
 ./alta env setup --dev
 ./alta test
 ./alta env python -m pytest -q alta-runtime/python/tests
 uv run --project alta-runtime/capital-python pytest -q \
   alta-runtime/capital-python/tests
+uv run --all-extras --project alta-runtime/broker-python pytest -q \
+  alta-runtime/broker-python/tests
+node --test alta-dashboard/tests/*.test.mjs
+corepack pnpm check
 ```
+
+`./alta env python` supplies the managed `DATABASE_URL`. Integration tests create
+dedicated test databases; a bare `pytest` without that environment is incomplete.
+Do not start a second research writer or migration while a standalone cycle owns
+the database. Use a separate clean-clone environment for release verification.
+If another ALTA installation already occupies the default database/cache ports,
+set `ALTA_POSTGRES_PORT` and `ALTA_REDIS_PORT` to free ports before its first
+`env setup`. For an already prepared clone, update only those two values in its
+ignored `.alta/services.env`; never repoint it at another installation's data.
 
 To verify services and deterministic fixtures:
 
@@ -109,8 +124,10 @@ When external providers are enabled, the durable record must include:
 The acceptance result may be `Wait` or `MVP_IDLE`. Those are valid research
 outcomes, not test failures. The optional Tiger path may submit only audited,
 risk-sized whole-share Paper orders under the documented quantity, notional,
-liquidity, freshness, account-binding, and authorization boundaries. Live
-orders and real capital are never permitted.
+liquidity, freshness, account-binding, and authorization boundaries. Release
+verification does not authorize live orders. The separate experimental connector
+library is not wired into autonomous research; read-only account checks and mock
+tests are not evidence of real-account order acceptance.
 
 ## Release gate
 
@@ -120,8 +137,9 @@ A release candidate is acceptable only when:
 2. Node, Python, capital-boundary, format, and static checks pass;
 3. migrations, replay, and recovery are deterministic where specified;
 4. the exact tracked tree and complete Git history pass redacted secret scans;
-5. only synthetic fixtures are included;
-6. research-only and no-live-capital boundaries remain accurate; and
+5. test fixtures are synthetic, and any console captures are sanitized, scoped
+   and traceable to real saved records rather than invented performance;
+6. research-only and actual execution boundaries remain accurate; and
 7. the system is stopped with zero live services, zero open Paper positions,
    and no unrecorded broker mutation.
 

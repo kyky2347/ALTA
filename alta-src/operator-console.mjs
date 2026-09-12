@@ -209,6 +209,7 @@ export function createOperatorConsole({
   let runtimeProbe = null;
   let capitalOperation = false;
   let credentialVerification = false;
+  let modelConfiguration = false;
   const staticAssets = new Map();
 
   function writeOperation(value) {
@@ -228,7 +229,9 @@ export function createOperatorConsole({
     if (environmentProbe) return environmentProbe;
     environmentProbe = (async () => {
       try {
-        const { environment: childEnvironment } = service.runtimeEnvironment();
+        const { environment: childEnvironment } = service.runtimeEnvironment({
+          allowUnavailableAuthority: true,
+        });
         const value = await environmentFactory(childEnvironment).status();
         environmentCache = {
           value,
@@ -414,7 +417,9 @@ export function createOperatorConsole({
         return;
       }
       if (action === "stop" && before.host && !before.host.processAlive) {
-        const { environment } = service.runtimeEnvironment();
+        const { environment } = service.runtimeEnvironment({
+          allowUnavailableAuthority: true,
+        });
         writeOperation({ ...operation, phase: "stopping_dependencies" });
         await environmentFactory(environment).down();
         environmentCache = null;
@@ -444,7 +449,9 @@ export function createOperatorConsole({
       } else if (action === "stop") {
         writeOperation({ ...operation, phase: "stopping_service" });
         await service.stop();
-        const { environment } = service.runtimeEnvironment();
+        const { environment } = service.runtimeEnvironment({
+          allowUnavailableAuthority: true,
+        });
         writeOperation({ ...operation, phase: "stopping_dependencies" });
         await environmentFactory(environment).down();
       } else if (action === "restart") {
@@ -672,6 +679,69 @@ export function createOperatorConsole({
         return;
       }
       if (
+        url.pathname === "/control/agent-models" &&
+        ["GET", "PUT"].includes(request.method)
+      ) {
+        if (!service.modelSettings) {
+          json(response, 503, {
+            error: { code: "model_settings_unavailable" },
+          });
+          return;
+        }
+        if (request.method === "GET") {
+          json(response, 200, { data: service.modelSettings.read() });
+          return;
+        }
+        if (!permittedMutation(request)) {
+          json(response, 403, { error: { code: "mutation_forbidden" } });
+          return;
+        }
+        if (
+          modelConfiguration ||
+          operation?.status === "running" ||
+          capitalOperation ||
+          credentialVerification
+        ) {
+          json(response, 409, { error: { code: "operation_in_progress" } });
+          return;
+        }
+        modelConfiguration = true;
+        let runtimeLease;
+        try {
+          const body = await readJsonBody(request, 16384);
+          // Share the host's lifetime lease so CLI or a second console cannot
+          // start a worker between the stopped check and the atomic save.
+          runtimeLease = acquireLease(
+            service.lockFile ??
+              path.join(stateDir, "runtime", "opportunity-host.lock"),
+            { busy: "skip" },
+          );
+          if (!runtimeLease) {
+            json(response, 409, {
+              error: { code: "model_runtime_must_be_stopped" },
+            });
+            return;
+          }
+          const runtime = await runtimeStatus({ fresh: true });
+          if (
+            runtime.ready ||
+            runtime.host?.processAlive ||
+            runtime.supervisor?.childProcessAlive
+          ) {
+            json(response, 409, {
+              error: { code: "model_runtime_must_be_stopped" },
+            });
+            return;
+          }
+          json(response, 200, { data: service.modelSettings.save(body) });
+          runtimeCache = null;
+        } finally {
+          runtimeLease?.release();
+          modelConfiguration = false;
+        }
+        return;
+      }
+      if (
         request.method === "POST" &&
         url.pathname === "/control/credentials/verify"
       ) {
@@ -679,7 +749,7 @@ export function createOperatorConsole({
           json(response, 403, { error: { code: "mutation_forbidden" } });
           return;
         }
-        if (credentialVerification) {
+        if (credentialVerification || modelConfiguration) {
           json(response, 409, {
             error: { code: "credential_verification_in_progress" },
           });
@@ -704,6 +774,106 @@ export function createOperatorConsole({
         }
         return;
       }
+      if (
+        request.method === "GET" &&
+        url.pathname === "/control/broker-connections"
+      ) {
+        json(response, 200, {
+          data: await service.brokerConnection({ action: "catalog" }),
+        });
+        return;
+      }
+      if (
+        request.method === "POST" &&
+        url.pathname === "/control/broker-connections/verify"
+      ) {
+        if (!permittedMutation(request)) {
+          json(response, 403, { error: { code: "mutation_forbidden" } });
+          return;
+        }
+        if (
+          capitalOperation ||
+          modelConfiguration ||
+          credentialVerification ||
+          operation?.status === "running"
+        ) {
+          json(response, 409, { error: { code: "operation_in_progress" } });
+          return;
+        }
+        capitalOperation = true;
+        try {
+          const body = await readJsonBody(request, 1024);
+          if (Object.keys(body).join() !== "provider") {
+            json(response, 400, { error: { code: "broker_request_invalid" } });
+            return;
+          }
+          json(response, 200, {
+            data: await service.brokerConnection({
+              action: "verify",
+              provider: body.provider,
+            }),
+          });
+        } finally {
+          capitalOperation = false;
+        }
+        return;
+      }
+      if (
+        request.method === "PUT" &&
+        [
+          "/control/execution-mode",
+          "/control/broker-credentials/tiger",
+          "/control/broker-connections",
+        ].includes(url.pathname)
+      ) {
+        if (!permittedMutation(request)) {
+          json(response, 403, { error: { code: "mutation_forbidden" } });
+          return;
+        }
+        if (
+          operation?.status === "running" ||
+          capitalOperation ||
+          modelConfiguration ||
+          credentialVerification
+        ) {
+          json(response, 409, { error: { code: "operation_in_progress" } });
+          return;
+        }
+        capitalOperation = true;
+        let lease;
+        try {
+          const body = await readJsonBody(request, 16384);
+          lease = acquireLease(
+            service.lockFile ??
+              path.join(stateDir, "runtime", "opportunity-host.lock"),
+            { busy: "skip" },
+          );
+          const runtime = await runtimeStatus({ fresh: true });
+          if (
+            !lease ||
+            runtime.ready ||
+            runtime.host?.processAlive ||
+            runtime.supervisor?.childProcessAlive
+          ) {
+            json(response, 409, {
+              error: { code: "execution_runtime_must_be_stopped" },
+            });
+            return;
+          }
+          const data =
+            url.pathname === "/control/broker-connections"
+              ? await service.brokerConnection({ ...body, action: "save" })
+              : url.pathname === "/control/execution-mode"
+                ? await service.setExecutionMode(body)
+                : service.replaceBrokerCredential(body);
+          runtimeCache = null;
+          json(response, 200, { data });
+        } finally {
+          lease?.release();
+          capitalOperation = false;
+        }
+        return;
+      }
       if (request.method === "GET" && url.pathname === "/control/capital") {
         json(response, 200, { data: publicCapitalStatus() });
         return;
@@ -719,6 +889,7 @@ export function createOperatorConsole({
         if (
           operation?.status === "running" ||
           capitalOperation ||
+          modelConfiguration ||
           credentialVerification
         ) {
           json(response, 409, { error: { code: "operation_in_progress" } });
@@ -744,6 +915,7 @@ export function createOperatorConsole({
         if (
           operation?.status === "running" ||
           capitalOperation ||
+          modelConfiguration ||
           credentialVerification
         ) {
           json(response, 409, { error: { code: "operation_in_progress" } });
@@ -816,6 +988,7 @@ export function createOperatorConsole({
         if (
           operation?.status === "running" ||
           capitalOperation ||
+          modelConfiguration ||
           credentialVerification
         ) {
           json(response, 409, { error: { code: "operation_in_progress" } });
@@ -882,6 +1055,7 @@ export function createOperatorConsole({
         if (
           operation?.status === "running" ||
           capitalOperation ||
+          modelConfiguration ||
           !acceptOperation(action)
         ) {
           json(response, 409, { error: { code: "operation_in_progress" } });

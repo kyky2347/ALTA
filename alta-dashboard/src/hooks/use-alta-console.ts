@@ -3,10 +3,14 @@ import { SnapshotFence } from "@/lib/snapshot-fence";
 import {
   ApiError,
   getJson,
+  saveExecutionMode,
+  saveBrokerCredential,
+  requestBrokerConnection,
   mutateRuntime,
   refreshPaperCapital,
   replaceCredential,
   setPaperCapitalAuthorization,
+  saveAgentModels,
   verifyCredentialHealth,
 } from "@/lib/api";
 import {
@@ -533,6 +537,18 @@ export function useAltaConsole() {
     [runSecureMutation, queueRefresh],
   );
 
+  const updateAgentModels = useCallback(
+    (request: Parameters<typeof saveAgentModels>[0]) =>
+      runSecureMutation((token) => saveAgentModels(request, token)),
+    [runSecureMutation],
+  );
+
+  const brokerConnection = useCallback(
+    (request: Parameters<typeof requestBrokerConnection>[0]) =>
+      runSecureMutation((token) => requestBrokerConnection(request, token)),
+    [runSecureMutation],
+  );
+
   const refreshCredentials = useCallback(async () => {
     if (preview) return;
     const revision = credentialFence.current.begin();
@@ -561,6 +577,27 @@ export function useAltaConsole() {
     const next = await runSecureMutation((token) => refreshPaperCapital(token));
     publishCapital(next);
   }, [runSecureMutation, publishCapital]);
+
+  const setExecutionMode = useCallback(
+    async (mode: "shadow" | "broker_paper", revision: string) => {
+      const next = await runSecureMutation((token) =>
+        saveExecutionMode({ mode, revision }, token),
+      );
+      publishCapital(next);
+      queueRefresh();
+    },
+    [runSecureMutation, publishCapital, queueRefresh],
+  );
+  const setBrokerCredential = useCallback(
+    async (body: Parameters<typeof saveBrokerCredential>[0]) => {
+      const next = await runSecureMutation((token) =>
+        saveBrokerCredential(body, token),
+      );
+      publishCapital(next);
+      queueRefresh();
+    },
+    [runSecureMutation, publishCapital, queueRefresh],
+  );
 
   const setCapitalAuthorization = useCallback(
     async (enabled: boolean) => {
@@ -622,11 +659,15 @@ export function useAltaConsole() {
     refreshData,
     retryNow,
     controlRuntime,
+    updateAgentModels,
     refreshCredentials,
     verifyCredentials,
     setProviderCredential,
     loadCapital,
     refreshCapital,
+    setExecutionMode,
+    setBrokerCredential,
+    brokerConnection,
     setCapitalAuthorization,
     loadOlderEvents,
     loadingOlder,

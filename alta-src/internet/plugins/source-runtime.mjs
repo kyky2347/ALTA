@@ -1,22 +1,21 @@
 import { errorMessage } from "./support.mjs";
+import { SourcePacer } from "../source-pacer.mjs";
+import { withDeadline } from "../deadline.mjs";
 
 const PACING = new WeakMap();
 
-function claimPacedSlot(service, name, intervalMs) {
-  if (!intervalMs) return;
+function sourcePacer(service, name) {
   let sources = PACING.get(service);
   if (!sources) {
     sources = new Map();
     PACING.set(service, sources);
   }
-  const now = Date.now();
-  const availableAt = sources.get(name) ?? 0;
-  if (availableAt > now)
-    throw Object.assign(
-      new Error(`${name} is locally paced for ${availableAt - now} ms`),
-      { status: 429, code: "alta_source_paced" },
-    );
-  sources.set(name, now + intervalMs);
+  let pacer = sources.get(name);
+  if (!pacer) {
+    pacer = new SourcePacer();
+    sources.set(name, pacer);
+  }
+  return pacer;
 }
 
 export async function runSource(
@@ -27,21 +26,49 @@ export async function runSource(
   operation,
   { intervalMs = 0, deadlineMs = 0 } = {},
 ) {
+  const lifecycleSignal = service.lifecycleSignal;
+  const signal = lifecycleSignal
+    ? options?.signal
+      ? AbortSignal.any([options.signal, lifecycleSignal])
+      : lifecycleSignal
+    : options?.signal;
+  const sourceOptions = signal ? { ...options, signal } : options;
+  signal?.throwIfAborted();
   const name = `${namespace}:${source}`;
-  claimPacedSlot(service, name, intervalMs);
-  if (service.backendHealth && !service.backendHealth.acquire(name))
-    throw Object.assign(new Error(`${source} is cooling down after failures`), {
-      status: 503,
-      code: "alta_source_circuit_open",
-    });
-  try {
-    const value = await withDeadline(options, deadlineMs, operation);
-    service.backendHealth?.succeeded(name);
-    return value;
-  } catch (error) {
-    if (!options?.signal?.aborted) service.backendHealth?.failed(name, error);
-    throw error;
-  }
+  const admit = () => {
+    signal?.throwIfAborted();
+    const lease = service.backendHealth?.acquire(name);
+    if (service.backendHealth && !lease)
+      throw Object.assign(
+        new Error(`${source} is cooling down after failures`),
+        {
+          status: 503,
+          code: "alta_source_circuit_open",
+        },
+      );
+    return lease;
+  };
+  const execute = async (lease) => {
+    try {
+      const value = await withDeadline(sourceOptions, deadlineMs, operation);
+      signal?.throwIfAborted();
+      service.backendHealth?.succeeded(name, lease);
+      return value;
+    } catch (error) {
+      if (signal?.aborted) service.backendHealth?.cancelled(name, lease);
+      else service.backendHealth?.failed(name, error, lease);
+      throw error;
+    }
+  };
+  return intervalMs
+    ? sourcePacer(service, name).schedule({
+        name,
+        intervalMs,
+        signal,
+        admit,
+        execute,
+      })
+    : execute(admit());
 }
 
 export async function settleSources(
@@ -75,36 +102,4 @@ export async function settleSources(
     else failures.push({ source, error: errorMessage(item.reason) });
   });
   return { values, failures };
-}
-
-async function withDeadline(options, deadlineMs, operation) {
-  if (!deadlineMs) return operation(options);
-  const controller = new AbortController();
-  const parent = options?.signal;
-  const cancel = () =>
-    controller.abort(parent.reason ?? new Error("source request cancelled"));
-  if (parent?.aborted) cancel();
-  else parent?.addEventListener("abort", cancel, { once: true });
-  let rejectTimeout;
-  const timeout = new Promise((_, reject) => {
-    rejectTimeout = reject;
-  });
-  const timer = setTimeout(() => {
-    const error = Object.assign(
-      new Error(`source exceeded its ${deadlineMs} ms deadline`),
-      { status: 504, code: "alta_source_deadline" },
-    );
-    controller.abort(error);
-    rejectTimeout(error);
-  }, deadlineMs);
-  timer.unref?.();
-  try {
-    return await Promise.race([
-      operation({ ...options, signal: controller.signal }),
-      timeout,
-    ]);
-  } finally {
-    clearTimeout(timer);
-    parent?.removeEventListener("abort", cancel);
-  }
 }

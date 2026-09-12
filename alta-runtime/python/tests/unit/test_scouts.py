@@ -36,6 +36,7 @@ from alta_asterism.scouts import (
 )
 from alta_asterism.scout_batch import (
     active_research_attempted,
+    build_scout_retry_feedback,
     tools_within_scout_territory,
 )
 from alta_asterism.research_agenda import (
@@ -52,7 +53,11 @@ from alta_asterism.research_attention import (
     build_research_attention_portfolio,
 )
 from alta_asterism.portfolio_intelligence import build_portfolio_research_mandate
-from alta_asterism.trader_mind import TraderMindMemory, experience_summary
+from alta_asterism.trader_mind import (
+    OPEN_WEB_RESEARCH_TOOLS,
+    TraderMindMemory,
+    experience_summary,
+)
 
 
 def frozen_input(posture: str = "available") -> FrozenScoutInput:
@@ -124,6 +129,32 @@ def spec_for(index: int = 0, posture: str = "available"):
         model_provider="fixture",
         model_id="fixture-model",
     )
+
+
+def test_oversize_retry_has_actionable_bounded_feedback_without_relaxing_cap():
+    spec = spec_for()
+    response = json.dumps({"kind": "no_op", "reason": "x" * 9_000})
+    with pytest.raises(ValueError, match="exceeds max_output_bytes") as failure:
+        parse_output(response, spec)
+    feedback = build_scout_retry_feedback("invalid_output", failure.value)
+    assert feedback["category"] == "output_budget"
+    assert feedback["issues"] == [{"path": "$", "code": "output_bytes_exceeded"}]
+    assert "UTF-8" in feedback["correction"]
+    assert "independent evidence roles" in feedback["correction"]
+    assert len(json.dumps(feedback).encode()) < SCOUT_RETRY_PROMPT_RESERVE_BYTES
+    prompt = json.loads(build_prompt(spec, feedback))
+    assert prompt["budget"]["max_output_bytes"] == spec.budget.max_output_bytes
+    assert prompt["retry_feedback"] == feedback
+    assert any("75%" in rule and "UTF-8" in rule for rule in prompt["rules"])
+
+
+def test_unknown_semantic_failure_does_not_echo_untrusted_exception_text():
+    feedback = build_scout_retry_feedback(
+        "invalid_output", ValueError("untrusted-provider-text-should-not-be-replayed")
+    )
+    assert feedback["category"] == "semantic_contract"
+    assert "untrusted-provider" not in json.dumps(feedback)
+    assert "correction" not in feedback
 
 
 def candidate(evidence_id: str = "evidence_change") -> dict:
@@ -223,7 +254,41 @@ def test_four_scouts_have_pairwise_disjoint_source_and_search_territories() -> N
     assert len({item.alpha_archetypes for item in SCOUTS}) == len(SCOUTS)
     for scout in SCOUTS:
         assert set(CORE_ACTIVE_RESEARCH_TOOLS).issubset(scout.allowed_tools)
+        assert set(OPEN_WEB_RESEARCH_TOOLS).issubset(scout.allowed_tools)
+        assert len(scout.allowed_tools) == len(set(scout.allowed_tools)) == 13
+        assert all(tool.startswith("alta_") for tool in scout.allowed_tools)
         assert len(scout.research_sequence) >= 3
+
+
+def test_generated_prose_limits_reserve_space_without_truncating_citations() -> None:
+    properties = output_schema()["properties"]
+    for key in (
+        "why_now",
+        "expectation",
+        "variant_wedge",
+        "falsifier",
+        "observed_change",
+        "mechanism",
+        "first_rejection",
+        "prediction",
+        "beneficiary_path",
+        "disconfirming_evidence",
+        "next_test",
+    ):
+        assert properties[key]["maxLength"] == 320
+    pillar = properties["thesis_pillars"]["items"]["properties"]
+    for key in (
+        "statement",
+        "observable",
+        "confirmation_condition",
+        "invalidation_condition",
+    ):
+        assert pillar[key]["maxLength"] == 160
+    reference = properties["tool_evidence_refs"]["items"]["properties"]
+    assert reference["source_locator"]["maxLength"] == 2_048
+    assert "[] when empty" in properties["evidence_ids"]["description"]
+    assert set(output_schema()["required"]) == set(properties)
+    assert spec_for().budget.max_output_bytes == 8_192
 
 
 def test_tool_evidence_allocation_preserves_later_research_steps() -> None:
@@ -838,7 +903,7 @@ def test_prompt_freezes_contract_budget_and_marks_evidence_untrusted() -> None:
     assert prompt["alpha_archetypes"] == list(base.scout.alpha_archetypes)
     assert prompt["research_sequence"] == list(base.scout.research_sequence)
     assert prompt["frozen_input"]["trader_mind_memories"][0]["turn_count"] == 3
-    assert spec.prompt_version == "alpha-trader-v21"
+    assert spec.prompt_version == "alpha-trader-v28"
     assert any("exact follow_up assignment" in rule for rule in prompt["rules"])
     assert prompt["contract"] == "alta.scout-output.v5"
     assert (
@@ -862,6 +927,10 @@ def test_prompt_freezes_contract_budget_and_marks_evidence_untrusted() -> None:
     ]
     assert locator["maxLength"] == 2_048
     assert "pattern" not in locator
+    call_id = schema["properties"]["tool_evidence_refs"]["items"]["properties"][
+        "tool_call_id"
+    ]
+    assert call_id["enum"] == [""]
     evidence_role = schema["properties"]["tool_evidence_refs"]["items"]["properties"][
         "evidence_role"
     ]
@@ -1446,6 +1515,13 @@ def test_agent_launcher_keeps_only_gateway_credentials_and_safe_runtime() -> Non
             "ALTA_XAI_WEB_SEARCH_ENABLED": "1",
             "DEEPSEEK_API_KEY": "gateway-fixture-secret",
             "BRAVE_SEARCH_API_KEY": "gateway-tool-fixture-secret",
+            "FINNHUB_API_KEY": "gateway-finance-fixture-secret",
+            "ALTA_WEB_TIMEOUT_MS": "20000",
+            "ALTA_WEB_TOOL_TIMEOUT_MS": "60000",
+            "ALTA_SEARCH_BACKEND_TIMEOUT_MS": "10000",
+            "ALTA_SEARXNG_URL": "https://search.example.test",
+            "ALTA_SEC_USER_AGENT": "Research Operator contact@example.test",
+            "CROSSREF_MAILTO": "contact@example.test",
             "DATABASE_URL": "postgresql://fixture-secret",
             "REDIS_URL": "redis://fixture-secret",
             "MASSIVE_API_KEY": "fixture-secret",
@@ -1464,6 +1540,13 @@ def test_agent_launcher_keeps_only_gateway_credentials_and_safe_runtime() -> Non
         "ALTA_GATEWAY_TOKEN": "fixture-local-token",
         "DEEPSEEK_API_KEY": "gateway-fixture-secret",
         "BRAVE_SEARCH_API_KEY": "gateway-tool-fixture-secret",
+        "FINNHUB_API_KEY": "gateway-finance-fixture-secret",
+        "ALTA_WEB_TIMEOUT_MS": "20000",
+        "ALTA_WEB_TOOL_TIMEOUT_MS": "60000",
+        "ALTA_SEARCH_BACKEND_TIMEOUT_MS": "10000",
+        "ALTA_SEARXNG_URL": "https://search.example.test",
+        "ALTA_SEC_USER_AGENT": "Research Operator contact@example.test",
+        "CROSSREF_MAILTO": "contact@example.test",
         "ALTA_AGENT_SAFE_APP_SERVER": "1",
         "ALTA_XAI_WEB_SEARCH_ENABLED": "0",
         "NO_PROXY": "127.0.0.1,localhost",

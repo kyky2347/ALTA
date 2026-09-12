@@ -563,7 +563,7 @@ class Database:
             ).fetchall()
             assessment_rows = connection.execute(
                 """SELECT id, opportunity_id, assessor, verdict, score,
-                recommendation, confidence, known_at, underwriting
+                recommendation, confidence, known_at, underwriting, run_id
                 FROM research.assessment
                 WHERE environment = %s ORDER BY created_at DESC, id LIMIT %s""",
                 (environment, bounded_limit),
@@ -743,6 +743,7 @@ class Database:
                     "confidence": row[6],
                     "knownAt": row[7],
                     "underwriting": row[8],
+                    "runId": row[9],
                 }
                 for row in assessment_rows
             ],
@@ -1001,6 +1002,11 @@ class Database:
             ranks=ranks,
             expressions=expressions,
         )
+
+    def candidate_detail(self, candidate_id: str, environment: str):
+        from .research_record_details import candidate_detail
+
+        return candidate_detail(self, candidate_id, environment)
 
     def expression_detail(
         self, expression_id: str, environment: str

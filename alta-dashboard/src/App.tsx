@@ -37,8 +37,10 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EventTimeline } from "@/components/event-timeline";
 import { OperatingBrief } from "@/components/operating-brief";
-import { AgentMark } from "@/components/agent-mark";
+import { AgentDesk } from "@/components/agent-desk";
 import { LanguageToggle } from "@/components/language-toggle";
+import { BrandLockup } from "@/components/brand-lockup";
+import { AgentModelSettings } from "@/components/agent-model-settings";
 import { RuntimeControl } from "@/components/runtime-control";
 import { StatusPill } from "@/components/status-pill";
 import { useAltaConsole } from "@/hooks/use-alta-console";
@@ -49,7 +51,7 @@ import {
   refreshSelectedEntity,
 } from "@/lib/opportunity-selection";
 import type { ControlState, SelectedEntity } from "@/lib/types";
-import { cn, readableMindSummary } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 type View =
   | "field"
@@ -152,6 +154,9 @@ export default function App() {
     setProviderCredential,
     refreshCapital,
     setCapitalAuthorization,
+    setExecutionMode,
+    setBrokerCredential,
+    brokerConnection,
     loadOlderEvents,
     loadingOlder,
     historyError,
@@ -306,13 +311,7 @@ export default function App() {
         {t("skipToContent")}
       </a>
       <header className="topbar">
-        <div className="brand-lockup">
-          <img src="/alta-brand-logo.png" alt="" className="brand-logo" />
-          <div>
-            <strong>ALTA</strong>
-            <small>{t("productSubtitle")}</small>
-          </div>
-        </div>
+        <BrandLockup />
         <div className="topbar-center">
           {preview && (
             <Badge variant="outline" className="preview-badge">
@@ -497,6 +496,19 @@ export default function App() {
           </div>
         </div>
 
+        {view === "agents" && (
+          <AgentModelSettings
+            preview={preview}
+            online={connection.status === "online"}
+            runtimeActive={Boolean(
+              control?.runtime.ready ||
+                control?.runtime.host?.processAlive ||
+                control?.runtime.supervisor?.childProcessAlive ||
+                control?.operation?.status === "running",
+            )}
+            onSave={consoleState.updateAgentModels}
+          />
+        )}
         <Suspense fallback={<ViewLoading />}>
           {view === "credentials" ? (
             <CredentialsCenter
@@ -521,6 +533,9 @@ export default function App() {
               online={connection.status === "online"}
               onRefresh={refreshCapital}
               onAuthorization={setCapitalAuthorization}
+              onMode={setExecutionMode}
+              onCredentials={setBrokerCredential}
+              onBrokerConnection={brokerConnection}
             />
           ) : !status ? (
             <StoppedState
@@ -581,6 +596,7 @@ export default function App() {
                 <AgentDesk
                   status={status}
                   runtime={runtime}
+                  events={events}
                   onSelect={handleSelect}
                 />
               )}
@@ -649,10 +665,7 @@ function LoadingScreen() {
       <div className="state-language-toggle">
         <LanguageToggle />
       </div>
-      <div className="loading-brand">
-        <img src="/alta-brand-logo.png" alt="" />
-        <strong>ALTA</strong>
-      </div>
+      <BrandLockup />
       <div className="loading-skeletons" aria-hidden="true">
         <Skeleton />
         <Skeleton />
@@ -775,65 +788,6 @@ function StoppedState({
       <Button size="lg" disabled={active || disabled} onClick={onStart}>
         {active ? t("restoringReadiness") : t("startResearchRuntime")}
       </Button>
-    </section>
-  );
-}
-
-function AgentDesk({
-  status,
-  runtime,
-  onSelect,
-}: {
-  status: NonNullable<ReturnType<typeof useAltaConsole>["status"]>;
-  runtime: ReturnType<typeof useAltaConsole>["runtime"];
-  onSelect: (entity: SelectedEntity) => void;
-}) {
-  const { domain, number, t } = useI18n();
-  return (
-    <section className="desk-grid">
-      {status.agents.map((agent) => {
-        const mind = runtime?.minds.find((item) => item.id === agent.id);
-        return (
-          <button
-            className="desk-card"
-            key={agent.runId}
-            onClick={() =>
-              onSelect({
-                kind: "run",
-                id: agent.runId,
-                label: domain(agent.id),
-                summary: agent as unknown as Record<string, unknown>,
-              })
-            }
-          >
-            <div className="desk-card-top">
-              <span>
-                <AgentMark role={agent.id} />
-              </span>
-              <StatusPill status={agent.status} live />
-            </div>
-            <h2>{domain(agent.id)}</h2>
-            <p>
-              {readableMindSummary(mind?.rollingSummary) ??
-                t("noRollingSummary")}
-            </p>
-            <div className="desk-facts">
-              <span>
-                {t("model")}
-                <strong>{agent.modelId ?? agent.modelProvider ?? "—"}</strong>
-              </span>
-              <span>
-                {t("turns")}
-                <strong>{mind?.turnCount ?? "—"}</strong>
-              </span>
-              <span>
-                {t("context")}
-                <strong>{number(mind?.contextTokens)}</strong>
-              </span>
-            </div>
-          </button>
-        );
-      })}
     </section>
   );
 }

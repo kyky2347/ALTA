@@ -16,6 +16,10 @@ import {
   mergeCredentialHealth,
 } from "./credential-health.mjs";
 import { PaperCapitalControl } from "./capital-control.mjs";
+import { executionMode, validateModeRequest } from "./execution-mode.mjs";
+import { brokerConnectionRequest } from "./broker-connections.mjs";
+import { replaceTigerCredentials } from "./tiger-credential-settings.mjs";
+import { AgentModelSettings } from "./agent-model-settings.mjs";
 import {
   HostServicePlatform,
   launchdDefinition,
@@ -52,8 +56,13 @@ const CAPTURED_SETTINGS = Object.freeze([
   "ALTA_EXPRESSION_MODEL",
   "ALTA_AUDIT_PROVIDER",
   "ALTA_AUDIT_MODEL",
+  "ALTA_POSITION_PROVIDER",
+  "ALTA_POSITION_MODEL",
+  "ALTA_SCOUT_MODEL_OVERRIDES",
   "ALTA_AGENT_DEADLINE_SECONDS",
   "ALTA_SCOUT_CONCURRENCY",
+  "ALTA_SCOUT_MAX_TOOL_CALLS",
+  "ALTA_SCOUT_MAX_TOTAL_TOKENS",
   "ALTA_UNIVERSE",
   "ALTA_MASSIVE_ENABLED",
   "ALTA_MASSIVE_DISCOVERY_ENABLED",
@@ -72,6 +81,9 @@ const CAPTURED_SETTINGS = Object.freeze([
   "ALTA_SHADOW_MIN_NET_ALPHA_BPS",
   "ALTA_WEB_XAI_MODEL",
   "ALTA_XAI_WEB_SEARCH_ENABLED",
+  "ALTA_SEARCH_BACKEND_TIMEOUT_MS",
+  "ALTA_WEB_TIMEOUT_MS",
+  "ALTA_WEB_TOOL_TIMEOUT_MS",
   "ALTA_SEARXNG_URL",
   "ALTA_SEC_USER_AGENT",
   "CROSSREF_MAILTO",
@@ -166,6 +178,10 @@ export class OpportunityService {
     this.cliFile = cliFile;
     this.node = node;
     this.sourceEnv = sourceEnv;
+    this.modelSettings = new AgentModelSettings(stateDir, () => ({
+      ...this.sourceEnv,
+      ...this.ensureConfiguration(),
+    }));
     this.platform = platform;
     this.environmentFactory = environmentFactory;
     const layout = managedServiceLayout({
@@ -230,7 +246,7 @@ export class OpportunityService {
     return parseSettings(this.configFile);
   }
 
-  runtimeEnvironment() {
+  runtimeEnvironment({ allowUnavailableAuthority = false } = {}) {
     const configured = this.ensureConfiguration();
     const credentials = credentialInventory({
       ...this.sourceEnv,
@@ -252,7 +268,15 @@ export class OpportunityService {
       if (key.startsWith("TIGER_") || PAPER_SERVICE_SETTINGS.includes(key))
         delete environment[key];
     }
+    const capitalStatus = this.paperCapital.status();
+    if (
+      !allowUnavailableAuthority &&
+      (capitalStatus.authorizationError ||
+        (capitalStatus.requestedEnabled && !capitalStatus.enabled))
+    )
+      throw new Error("execution_authority_unavailable");
     Object.assign(environment, this.paperCapital.runtimeEnvironment());
+    Object.assign(environment, this.modelSettings.runtimeEnvironment());
     environment.PATH = [path.dirname(this.node), environment.PATH ?? ""]
       .filter(Boolean)
       .join(path.delimiter);
@@ -302,15 +326,34 @@ export class OpportunityService {
   }
 
   capitalStatus() {
-    return this.paperCapital.status();
+    const status = this.paperCapital.status();
+    return { ...status, execution: executionMode(status) };
   }
 
-  refreshCapital() {
-    return this.paperCapital.refresh();
+  brokerConnection(request) {
+    return brokerConnectionRequest(this.rootDir, this.sourceEnv, request);
   }
 
-  setCapitalAuthorization(enabled) {
-    return this.paperCapital.setEnabled(enabled);
+  async setExecutionMode(body) {
+    const mode = validateModeRequest(body, this.paperCapital.status());
+    if (mode === "broker_paper" || this.paperCapital.status().requestedEnabled)
+      await this.paperCapital.setEnabled(mode === "broker_paper");
+    return this.capitalStatus();
+  }
+
+  replaceBrokerCredential(body) {
+    replaceTigerCredentials(this.paperCapital, body, this.rootDir);
+    return this.capitalStatus();
+  }
+
+  async refreshCapital() {
+    await this.paperCapital.refresh();
+    return this.capitalStatus();
+  }
+
+  async setCapitalAuthorization(enabled) {
+    await this.paperCapital.setEnabled(enabled);
+    return this.capitalStatus();
   }
 
   replaceCredential(slot, secret) {

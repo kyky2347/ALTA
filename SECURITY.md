@@ -1,7 +1,10 @@
 # Security policy
 
-ALTA is experimental, research-only software. It is not designed or authorized
-to control live brokerage accounts or real capital.
+ALTA is experimental, research-only software. Its autonomous research runtime
+does not support live brokerage execution. A separate experimental connector
+package includes execution code, but is not wired into the autonomous runtime
+and has not passed real-account order acceptance. See the
+[provider matrix](docs/broker-expansion.md) for that boundary.
 
 ## Reporting a vulnerability
 
@@ -25,7 +28,7 @@ Real provider or broker credentials may exist only outside the project tree: in
 a process environment controlled by the operator, an operating-system/external
 secret manager, or the owner-only external directory
 `~/.config/alta/credentials/`. Project-local `.alta/secrets/` contains only
-locally generated PostgreSQL and Redis passwords and remains ignored.
+locally generated database/cache credentials and API/session secrets, and remains ignored.
 
 Never put a real secret in:
 
@@ -51,12 +54,13 @@ kind, editability, and a truncated one-way fingerprint. Exact-origin CSRF and
 the local HttpOnly session protect replacement; requests are size-bounded,
 provider-validated, atomically written, and refused whenever the research
 runtime is active. Environment-supplied values cannot be shadowed from the UI.
-Broker credentials are not accepted by this surface.
+Broker profiles use separate write-only forms and external owner-only storage.
+Saving a profile does not enable order submission or verify account permissions.
 
 ## Enforced capability boundaries
 
-- Supported environments are `replay`, `shadow`, and `paper`; there is no live
-  mode.
+- Autonomous research environments are `replay`, `shadow`, and `paper`.
+  Experimental broker profiles do not add an autonomous live mode.
 - Research-agent child environments use an allowlist and exclude database,
   Redis, market-data, and broker secrets.
 - Tiger is Paper-only. The system does not enumerate accounts, fall back to
@@ -98,9 +102,12 @@ Before publishing a commit or release:
 
 ```shell
 ./alta test
-uv run --project alta-runtime/python pytest -q alta-runtime/python/tests
+./alta env setup --dev
+./alta env python -m pytest -q alta-runtime/python/tests
 uv run --project alta-runtime/capital-python pytest -q \
   alta-runtime/capital-python/tests
+uv run --all-extras --project alta-runtime/broker-python pytest -q \
+  alta-runtime/broker-python/tests
 uvx --from detect-secrets==1.5.0 detect-secrets scan \
   --all-files --no-verify /absolute/path/to/clean-clone
 ```

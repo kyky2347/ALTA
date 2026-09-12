@@ -1,0 +1,184 @@
+.language-menu {
+  min-width: 178px;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 12px 32px rgb(29 41 56 / 12%);
+}
+.language-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  min-height: 44px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  outline: none;
+  cursor: pointer;
+}
+.language-option[data-highlighted] {
+  background: var(--surface-muted);
+}
+.language-option[data-state="checked"] {
+  color: var(--accent-blue-ink);
+}
+.language-option svg {
+  width: 16px;
+  height: 16px;
+}
+.agent-settings-action {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 20px;
+}
+.execution-mode-panel {
+  padding: 24px;
+  border-radius: var(--radius-xl);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.execution-mode-panel h3 {
+  margin: 0 0 8px;
+  font-size: 19px;
+}
+.execution-mode-panel p {
+  margin: 0;
+}
+.execution-explainer,
+.execution-mode-panel header p {
+  color: var(--muted-ink);
+  line-height: 1.6;
+}
+.execution-mode-options {
+  display: flex;
+  width: 100%;
+  height: auto;
+  flex-wrap: wrap;
+}
+.execution-mode-options button {
+  min-height: 44px;
+  white-space: normal;
+  flex: 1;
+}
+.execution-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.broker-credential-dialog {
+  width: min(440px, calc(100vw - 32px));
+  max-width: none;
+  padding: 20px;
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+}
+.broker-credential-dialog form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.broker-credential-dialog select {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px;
+}
+.broker-verification-result {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-wrap: anywhere;
+}
+.model-settings-dialog {
+  width: min(720px, calc(100vw - 32px));
+  max-width: min(720px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  display: flex;
+  flex-direction: column;
+}
+.model-settings-scroll {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px 8px 4px 0;
+}
+.model-row {
+  min-width: 0;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 16px;
+}
+.model-row legend {
+  font-size: 14px;
+}
+.model-row .model-route-fields {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) minmax(0, 2fr);
+  gap: 14px;
+}
+.model-route-fields select {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 4px 10px;
+  background: var(--surface);
+  font-size: 14px;
+}
+.model-route-fields select:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+.model-route-fields select:disabled {
+  opacity: 0.55;
+}
+.model-settings-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.model-availability-note {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted-ink);
+}
+@media (max-width: 560px) {
+  .model-row .model-route-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .model-route-fields input,
+  .model-route-fields select {
+    font-size: 16px;
+    min-height: 44px;
+  }
+  .language-button > span,
+  .language-button > svg:last-child {
+    display: none;
+  }
+  .language-button {
+    width: 38px;
+    min-width: 38px;
+    padding-inline: 0;
+  }
+}
+.desk-time-scope {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  color: var(--muted-foreground);
+  margin: 0 0 20px;
+  font-size: 12px;
+}

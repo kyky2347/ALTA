@@ -4,6 +4,7 @@ import {
   internetToolDefinitions,
   internetToolNames,
 } from "./plugins/registry.mjs";
+import { boundedToolPreview } from "./result-preview.mjs";
 
 const MODERN_PROTOCOL = "2026-07-28";
 const LEGACY_PROTOCOL = "2025-06-18";
@@ -30,24 +31,19 @@ function error(id, code, message, data) {
 }
 
 function toolResult(value, researchBudget) {
-  const serialized = JSON.stringify(value, null, 2);
-  const originalBytes = Buffer.byteLength(serialized);
   const budgetNotice = researchBudget
     ? `[ALTA research budget: ${researchBudget.remaining} of ${researchBudget.limit} tool calls remain after this call${researchBudget.remaining === 0 ? "; finalize now without another tool call" : ""}]\n`
     : "";
   const contentBudget = MAX_TOOL_RESULT_BYTES - Buffer.byteLength(budgetNotice);
-  const truncated = originalBytes > contentBudget;
-  const text = `${budgetNotice}${
-    truncated
-      ? `${utf8Prefix(serialized, contentBudget - Buffer.byteLength(TRUNCATION_NOTICE))}${TRUNCATION_NOTICE}`
-      : serialized
-  }`;
+  const preview = boundedToolPreview(
+    value,
+    contentBudget - Buffer.byteLength(TRUNCATION_NOTICE),
+  );
+  const text = `${budgetNotice}${preview.text}${preview.truncated ? TRUNCATION_NOTICE : ""}`;
   return {
     resultType: "complete",
     content: [{ type: "text", text }],
-    structuredContent: truncated
-      ? { truncated: true, original_bytes: originalBytes }
-      : value,
+    structuredContent: preview.value,
   };
 }
 
@@ -79,17 +75,6 @@ function toolError(cause) {
     } else high = middle - 1;
   }
   return low === 0 ? value : build(rawMessage.slice(0, low));
-}
-
-function utf8Prefix(value, maximumBytes) {
-  let low = 0;
-  let high = value.length;
-  while (low < high) {
-    const middle = Math.ceil((low + high) / 2);
-    if (Buffer.byteLength(value.slice(0, middle)) <= maximumBytes) low = middle;
-    else high = middle - 1;
-  }
-  return value.slice(0, low);
 }
 
 export async function handleMcpMessage(service, message, options = {}) {
@@ -132,7 +117,7 @@ export async function handleMcpMessage(service, message, options = {}) {
   if (message.method === "tools/list") {
     return response(message.id, {
       resultType: "complete",
-      tools: internetToolDefinitions(),
+      tools: internetToolDefinitions(service),
       _meta: { "alta/pluginIds": internetPluginIds() },
     });
   }

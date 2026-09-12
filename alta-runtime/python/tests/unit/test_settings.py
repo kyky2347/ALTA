@@ -43,6 +43,8 @@ def test_settings_redact_runtime_urls_and_default_to_replay() -> None:
         "credential_revision": "unmanaged",
         "credential_slots": (),
         "autonomous_enabled": False,
+        "scout_max_tool_calls": 11,
+        "scout_max_total_tokens": 98_000,
         "autonomous_interval_seconds": 1_800,
         "autonomous_follow_up_interval_seconds": 900,
         "autonomous_position_interval_seconds": 300,
@@ -80,7 +82,9 @@ def test_settings_redact_runtime_urls_and_default_to_replay() -> None:
         "agent_provider": "deepseek",
         "agent_model": "deepseek-v4-flash",
         "agent_reasoning_effort": "high",
+        "scout_model_overrides": {},
         "role_models": {
+            "position_reviewer": {"provider": "deepseek", "model": "deepseek-v4-flash"},
             "thesis_assessor": {
                 "provider": "deepseek",
                 "model": "deepseek-v4-pro",
@@ -96,7 +100,7 @@ def test_settings_redact_runtime_urls_and_default_to_replay() -> None:
             },
             "expression_auditor": {"provider": "grok", "model": "grok-4.6"},
         },
-        "agent_deadline_seconds": 180,
+        "agent_deadline_seconds": 300,
         "reasoning_agent_deadline_seconds": 300,
         "scout_concurrency": 4,
         "agent_workspace": ".alta/agent-workspace",

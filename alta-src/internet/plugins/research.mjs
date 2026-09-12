@@ -4,12 +4,15 @@ import {
   errorMessage,
   uniqueStrings,
 } from "./support.mjs";
+import { retrievalStatus } from "../retrieval-status.mjs";
 
 function compactSearch(query, value) {
   return {
     query,
     backend: value.backend,
     backends: value.backends,
+    freshness: value.freshness,
+    ...retrievalStatus(value),
     answer: String(value.answer ?? "").slice(0, 6_000),
     answers: (value.answers ?? []).map((item) => ({
       backend: item.backend,
@@ -22,6 +25,23 @@ function compactSearch(query, value) {
       backends: item.backends,
     })),
   };
+}
+
+function pageSources(sources, maximum) {
+  // Spend the bounded fetch slots on distinct origins first. This is only
+  // retrieval allocation: different domains do not prove independent claims.
+  const selected = [];
+  const deferred = [];
+  const origins = new Set();
+  for (const source of sources) {
+    const origin = new URL(source.url).hostname;
+    if (origins.has(origin)) deferred.push(source);
+    else {
+      origins.add(origin);
+      selected.push(source);
+    }
+  }
+  return [...selected, ...deferred].slice(0, maximum);
 }
 
 const SEARCH_STOP_WORDS = new Set([
@@ -41,6 +61,18 @@ const SEARCH_STOP_WORDS = new Set([
   "this",
   "versus",
   "with",
+  "january",
+  "february",
+  "march",
+  "april",
+  "may",
+  "june",
+  "july",
+  "august",
+  "september",
+  "october",
+  "november",
+  "december",
 ]);
 
 function researchTerms(queries) {
@@ -50,7 +82,9 @@ function researchTerms(queries) {
         .join(" ")
         .toLowerCase()
         .match(/[a-z0-9][a-z0-9.-]{2,}/g)
-        ?.filter((term) => !SEARCH_STOP_WORDS.has(term)) ?? [],
+        ?.filter(
+          (term) => /[a-z]/.test(term) && !SEARCH_STOP_WORDS.has(term),
+        ) ?? [],
     ),
   ].slice(0, 40);
 }
@@ -235,8 +269,9 @@ async function research(service, args, options) {
     queries,
     allowedDomains,
   ).slice(0, 30);
+  const selectedSources = pageSources(sourceList, maxPages);
   const pageSettled = await Promise.allSettled(
-    sourceList.slice(0, maxPages).map((source) =>
+    selectedSources.map((source) =>
       service.fetchPage(
         {
           url: source.url,
@@ -260,16 +295,28 @@ async function research(service, args, options) {
   );
   pageSettled.forEach((item, index) => {
     if (item.status === "fulfilled") {
+      const page = item.value;
+      const fullText = String(page.text ?? "");
+      const text = fullText.slice(0, pageTextBudget);
       pages.push({
-        url: item.value.url,
-        title: item.value.title,
-        text: String(item.value.text ?? "").slice(0, pageTextBudget),
-        metadata: item.value.metadata,
-        reader_used: item.value.reader_used,
+        url: page.url,
+        title: page.title,
+        text,
+        metadata: page.metadata,
+        reader_used: page.reader_used,
+        ...retrievalStatus(page),
+        ...(text.length < fullText.length
+          ? {
+              truncated: true,
+              ...(Number.isInteger(page.text_start)
+                ? { text_end: page.text_start + text.length }
+                : {}),
+            }
+          : {}),
       });
     } else {
       failures.push({
-        url: sourceList[index].url,
+        url: selectedSources[index].url,
         error: errorMessage(item.reason),
       });
     }
@@ -284,6 +331,9 @@ async function research(service, args, options) {
     searches,
     failures,
     partial: failures.length > 0,
+    ...(searches.some((item) => item.stale) || pages.some((item) => item.stale)
+      ? { stale: true }
+      : {}),
   };
 }
 

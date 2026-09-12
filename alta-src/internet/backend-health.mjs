@@ -20,38 +20,46 @@ export class BackendHealth {
     this.now = now;
   }
 
+  /** Return a request-owned lease, or null; settle with that same lease. */
   acquire(name, { force = false } = {}) {
     const state = this.#states.get(name);
-    if (force || !state?.cooldownUntil) return true;
-    if (state.cooldownUntil > this.now()) {
+    if (!state?.cooldownUntil)
+      return Object.freeze({ name, generation: state?.generation ?? 0 });
+    if (!force && state.cooldownUntil > this.now()) {
       state.suppressed += 1;
-      return false;
+      return null;
     }
     if (state.probeInFlight) {
       state.suppressed += 1;
-      return false;
+      return null;
     }
     state.probeInFlight = true;
-    return true;
+    state.generation += 1;
+    return Object.freeze({ name, generation: state.generation });
   }
 
-  succeeded(name) {
+  succeeded(name, lease) {
+    if (!this.#owns(name, lease)) return;
     const state = this.#states.get(name);
     if (!state) return;
+    if (state.probeInFlight) state.generation += 1;
     state.consecutiveFailures = 0;
     state.cooldownUntil = 0;
     state.probeInFlight = false;
     state.lastError = "";
   }
 
-  failed(name, error) {
+  failed(name, error, lease) {
+    if (!this.#owns(name, lease)) return;
     const state = this.#state(name);
+    if (state.probeInFlight) state.generation += 1;
     state.probeInFlight = false;
     if (!transient(error)) return;
     state.consecutiveFailures += 1;
     state.lastError = String(error?.message ?? error).slice(0, 300);
     if (state.consecutiveFailures < this.failureThreshold) return;
     state.opens += 1;
+    state.generation += 1;
     state.consecutiveFailures = 0;
     state.cooldownUntil =
       this.now() +
@@ -59,6 +67,17 @@ export class BackendHealth {
         this.baseCooldownMs * 2 ** Math.min(state.opens - 1, 8),
         this.maxCooldownMs,
       );
+  }
+
+  cancelled(name, lease) {
+    if (!this.#owns(name, lease)) return;
+    const state = this.#states.get(name);
+    if (!state?.probeInFlight) return;
+    // Cancellation is not a provider failure. Release only this request's
+    // recovery probe; late completions from an older generation cannot reset
+    // or release a probe that another request has since acquired.
+    state.probeInFlight = false;
+    state.generation += 1;
   }
 
   snapshot() {
@@ -94,9 +113,18 @@ export class BackendHealth {
         opens: 0,
         suppressed: 0,
         lastError: "",
+        generation: 0,
       };
       this.#states.set(name, state);
     }
     return state;
+  }
+
+  #owns(name, lease) {
+    return (
+      !lease ||
+      (lease.name === name &&
+        lease.generation === (this.#states.get(name)?.generation ?? 0))
+    );
   }
 }

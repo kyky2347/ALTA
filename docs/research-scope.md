@@ -11,6 +11,7 @@ opportunities under point-in-time evidence constraints.
 - replayable Shadow positions and cost-aware performance measurement;
 - bounded, read-only public information and market-data adapters;
 - a local authenticated observability and control dashboard;
+- isolated six-provider connection profiles and read-only account verification;
 - an operator-authorized, risk-sized Tiger Paper engineering mirror with
   explicit account/configuration binding and fail-closed startup.
 
@@ -30,8 +31,10 @@ the autonomous service can mirror only already-audited stock expressions
 through the agent-requested, deterministically bounded whole-share DAY-limit
 regular-hours boundary; Agents never receive a
 broker tool or credential. The console exposes sanitized holdings and order
-state but no manual order entry. Do not connect live brokerage credentials or
-use ALTA as an OMS. A successful Paper entry/exit is engineering evidence, not
+state but no manual order entry. Additional connector profiles may explicitly
+target live accounts for read-only verification; that does not change the
+autonomous research route or grant trading authority. Do not use ALTA as an OMS.
+A successful Paper entry/exit is engineering evidence, not
 investment or Alpha evidence.
 
 Model output is untrusted research material. A Candidate or Opportunity is a

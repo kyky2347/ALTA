@@ -58,6 +58,9 @@ test("managed configuration is autonomous, owner-only, and secret-free", (t) => 
     ALTA_SHADOW_MAX_EXIT_DAYS: "3",
     ALTA_SHADOW_ADV_PARTICIPATION_BPS: "250",
     ALTA_SHADOW_MIN_NET_ALPHA_BPS: "80",
+    ALTA_SCOUT_MAX_TOOL_CALLS: "10",
+    ALTA_SCOUT_MAX_TOTAL_TOKENS: "96000",
+    ALTA_AGENT_DEADLINE_SECONDS: "240",
   });
 
   const { environment, credentialSources } = service.runtimeEnvironment();
@@ -79,6 +82,10 @@ test("managed configuration is autonomous, owner-only, and secret-free", (t) => 
   assert.equal(environment.ALTA_SHADOW_MAX_EXIT_DAYS, "3");
   assert.equal(environment.ALTA_SHADOW_ADV_PARTICIPATION_BPS, "250");
   assert.equal(environment.ALTA_SHADOW_MIN_NET_ALPHA_BPS, "80");
+  assert.equal(environment.ALTA_SCOUT_MAX_TOOL_CALLS, "10");
+  assert.equal(environment.ALTA_SCOUT_MAX_TOTAL_TOKENS, "96000");
+  assert.equal(environment.ALTA_AGENT_DEADLINE_SECONDS, "240");
+  assert.match(persisted, /ALTA_SCOUT_MAX_TOTAL_TOKENS="96000"/);
   assert.match(environment.ALTA_CREDENTIAL_REVISION, /^[a-f0-9]{16}$/);
   assert.equal(environment.ALTA_CREDENTIAL_SLOTS, "massive");
   assert.equal(persisted.includes(environment.MASSIVE_API_KEY), false);
@@ -90,6 +97,70 @@ test("managed configuration is autonomous, owner-only, and secret-free", (t) => 
   assert.equal(fs.statSync(service.configFile).mode & 0o777, 0o600);
   assert.equal(fs.statSync(service.tokenFile).mode & 0o777, 0o600);
   assert.match(credentialSources.MASSIVE_API_KEY, /environment/);
+});
+
+test("saved console model settings reach the actual managed runtime environment", (t) => {
+  const { service } = fixture(t);
+  const { revision, settings } = service.modelSettings.read();
+  settings.roles.thesis = { provider: "kimi", model: "kimi-k3" };
+  settings.roles.position = { provider: "deepseek", model: "deepseek-v4-pro" };
+  settings.scouts.expectation_gap_scout = {
+    provider: "grok",
+    model: "grok-4.6",
+  };
+  service.modelSettings.save({ revision, settings });
+  const { environment } = service.runtimeEnvironment();
+  assert.equal(environment.ALTA_THESIS_PROVIDER, "kimi");
+  assert.equal(environment.ALTA_THESIS_MODEL, "kimi-k3");
+  assert.equal(environment.ALTA_POSITION_MODEL, "deepseek-v4-pro");
+  assert.deepEqual(
+    JSON.parse(environment.ALTA_SCOUT_MODEL_OVERRIDES),
+    settings.scouts,
+  );
+  assert.equal(environment.ALTA_TIGER_PAPER_ENABLED, "0");
+});
+
+test("invalid broker authority cannot silently start internal Shadow execution", (t) => {
+  const { service } = fixture(t);
+  service.paperCapital.status = () => ({
+    requestedEnabled: true,
+    enabled: false,
+  });
+  assert.throws(
+    () => service.runtimeEnvironment(),
+    /execution_authority_unavailable/,
+  );
+  assert.equal(
+    service.runtimeEnvironment({ allowUnavailableAuthority: true }).environment
+      .ALTA_TIGER_PAPER_ENABLED,
+    "0",
+  );
+});
+
+test("all capital mutation responses retain execution mode and revision", async (t) => {
+  const { service } = fixture(t);
+  let enabled = false;
+  service.paperCapital.status = () => ({ requestedEnabled: enabled, enabled });
+  service.paperCapital.setEnabled = async (value) => {
+    enabled = value;
+  };
+  service.paperCapital.refresh = async () => {};
+  assert.equal(
+    (await service.setCapitalAuthorization(true)).execution.effective,
+    "broker_paper",
+  );
+  assert.equal(
+    (await service.refreshCapital()).execution.effective,
+    "broker_paper",
+  );
+  const status = service.capitalStatus();
+  const changed = await service.setExecutionMode({
+    mode: "shadow",
+    confirmation: "USE SHADOW",
+    revision: status.execution.revision,
+  });
+  assert.equal(changed.execution.effective, "shadow");
+  assert.notEqual(changed.execution.revision, status.execution.revision);
 });
 
 test("foreground service bootstraps dependencies, migrates, and supervises", async (t) => {

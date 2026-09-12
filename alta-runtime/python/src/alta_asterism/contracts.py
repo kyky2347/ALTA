@@ -19,6 +19,24 @@ AgentProvider = Literal["openai", "deepseek", "grok", "kimi"]
 MODEL_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._-]{1,127}$"
 
 
+class AgentModelRoute(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    provider: AgentProvider
+    model: str = Field(pattern=MODEL_ID_PATTERN)
+
+    @model_validator(mode="after")
+    def matching_provider(self) -> "AgentModelRoute":
+        prefix = {
+            "openai": "gpt-",
+            "deepseek": "deepseek-",
+            "grok": "grok-",
+            "kimi": "kimi-",
+        }
+        if not self.model.lower().startswith(prefix[self.provider]):
+            raise ValueError("model does not belong to provider")
+        return self
+
+
 class Environment(StrEnum):
     REPLAY = "replay"
     SHADOW = "shadow"
@@ -233,6 +251,21 @@ class Settings(BaseSettings):
     agent_reasoning_effort: Literal["low", "medium", "high"] = Field(
         default="high", validation_alias="ALTA_AGENT_REASONING_EFFORT"
     )
+    scout_model_overrides: dict[
+        Literal[
+            "change_event_scout",
+            "market_dislocation_scout",
+            "causal_policy_scout",
+            "expectation_gap_scout",
+        ],
+        AgentModelRoute,
+    ] = Field(default_factory=dict, validation_alias="ALTA_SCOUT_MODEL_OVERRIDES")
+    position_provider: AgentProvider | None = Field(
+        default=None, validation_alias="ALTA_POSITION_PROVIDER"
+    )
+    position_model: str | None = Field(
+        default=None, pattern=MODEL_ID_PATTERN, validation_alias="ALTA_POSITION_MODEL"
+    )
     thesis_provider: AgentProvider = Field(
         default="deepseek", validation_alias="ALTA_THESIS_PROVIDER"
     )
@@ -274,7 +307,7 @@ class Settings(BaseSettings):
         validation_alias="ALTA_AUDIT_MODEL",
     )
     agent_deadline_seconds: int = Field(
-        default=180,
+        default=300,
         ge=15,
         le=600,
         validation_alias="ALTA_AGENT_DEADLINE_SECONDS",
@@ -294,6 +327,15 @@ class Settings(BaseSettings):
     agent_workspace: Path = Field(
         default=Path(".alta/agent-workspace"),
         validation_alias="ALTA_AGENT_WORKSPACE",
+    )
+    scout_max_tool_calls: int = Field(
+        default=11, ge=1, le=12, validation_alias="ALTA_SCOUT_MAX_TOOL_CALLS"
+    )
+    scout_max_total_tokens: int = Field(
+        default=98_000,
+        ge=1_000,
+        le=100_000,
+        validation_alias="ALTA_SCOUT_MAX_TOTAL_TOKENS",
     )
     universe_csv: str = Field(
         default="SPY,QQQ,IWM,DIA,AAPL,MSFT,NVDA,AMZN,GOOGL,META,TSLA,AVGO,JPM,XOM,LLY,UNH",
@@ -401,6 +443,10 @@ class Settings(BaseSettings):
             raise ValueError("private debate requires two different models")
         if routes["expression"] == routes["audit"]:
             raise ValueError("expression and audit require two different models")
+        if (self.position_provider is None) != (self.position_model is None):
+            raise ValueError("position provider and model must be configured together")
+        if self.position_model is not None:
+            AgentModelRoute(provider=self.position_provider, model=self.position_model)
         if self.shadow_max_position_nav_bps > self.shadow_max_gross_nav_bps:
             raise ValueError("Shadow position NAV limit cannot exceed gross NAV limit")
         if self.shadow_max_underlying_nav_bps < self.shadow_max_position_nav_bps:
@@ -562,7 +608,15 @@ class Settings(BaseSettings):
             "agent_provider": self.agent_provider,
             "agent_model": self.agent_model,
             "agent_reasoning_effort": self.agent_reasoning_effort,
+            "scout_model_overrides": {
+                key: value.model_dump()
+                for key, value in self.scout_model_overrides.items()
+            },
             "role_models": {
+                "position_reviewer": {
+                    "provider": self.position_provider or self.agent_provider,
+                    "model": self.position_model or self.agent_model,
+                },
                 "thesis_assessor": {
                     "provider": self.thesis_provider,
                     "model": self.thesis_model,
@@ -589,6 +643,8 @@ class Settings(BaseSettings):
             "scout_concurrency": self.scout_concurrency,
             "agent_workspace": str(self.agent_workspace),
             "universe": self.universe,
+            "scout_max_tool_calls": self.scout_max_tool_calls,
+            "scout_max_total_tokens": self.scout_max_total_tokens,
             "tiger_paper_enabled": self.tiger_paper_enabled,
             "tiger_paper_configured": (
                 self.tiger_config_path is not None

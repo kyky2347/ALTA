@@ -168,6 +168,10 @@ export function refreshSelectedEntity(
   if (!entity || !status || entity.kind === "event") return entity;
 
   let current: Record<string, unknown> | undefined;
+  if (entity.kind === "candidate")
+    current = status.candidates.find((item) => item.id === entity.id) as
+      | (Record<string, unknown> & { id: string })
+      | undefined;
   if (entity.kind === "opportunity")
     current = status.opportunities.find((item) => item.id === entity.id) as
       | (Record<string, unknown> & { id: string })

@@ -206,7 +206,7 @@ test("same-origin crawl fetches each breadth wave concurrently and isolates fail
     ],
   );
   assert.deepEqual(result.failures, [
-    { url: "https://example.test/bad", error: "Web HTTP 404: missing" },
+    { url: "https://example.test/bad", error: "Web HTTP 404" },
   ]);
   assert.equal(result.partial, true);
   service.close();
@@ -315,7 +315,7 @@ test("search backend circuit breaker suppresses outages and admits one recovery 
   });
 });
 
-test("public source pacing rejects bursts without growing a wait queue", async () => {
+test("public source pacing admits a bounded burst without bypassing intervals", async () => {
   let calls = 0;
   const service = { backendHealth: new BackendHealth() };
   const operation = () => {
@@ -325,17 +325,17 @@ test("public source pacing rejects bursts without growing a wait queue", async (
 
   assert.equal(
     await runSource(service, "news", "paced", {}, operation, {
-      intervalMs: 10_000,
+      intervalMs: 10,
     }),
     "ok",
   );
-  await assert.rejects(
-    runSource(service, "news", "paced", {}, operation, {
-      intervalMs: 10_000,
+  assert.equal(
+    await runSource(service, "news", "paced", {}, operation, {
+      intervalMs: 10,
     }),
-    /locally paced/,
+    "ok",
   );
-  assert.equal(calls, 1);
+  assert.equal(calls, 2);
   assert.deepEqual(service.backendHealth.snapshot(), {});
 });
 

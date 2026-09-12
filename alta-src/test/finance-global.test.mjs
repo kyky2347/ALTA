@@ -329,7 +329,7 @@ test("finance adapters propagate cancellation, pacing, and circuit recovery", as
   assert.equal(marketHealth.snapshot()["finance:kraken"].state, "open");
   await assert.rejects(
     () => executeInternetTool(marketService, "alta_finance_data", request, {}),
-    { code: "alta_source_paced" },
+    { code: "alta_source_circuit_open" },
   );
   await delay(260);
   await assert.rejects(

@@ -8,10 +8,84 @@ semantic versioning while the project remains experimental.
 
 ### Added
 
+- All four Scouts can use 13 bounded research tools, including sitemaps,
+  date-filtered feeds, scholarly metadata and historical archives. Defaults are
+  11 calls, 98k chargeable tokens and 300 seconds, leaving earned-incentive
+  headroom under unchanged hard caps. Prompt v28 uses shorter generated prose
+  limits to reserve citation space; historical parsing and evidence gates remain.
+- Failure diagnostics are bounded using PostgreSQL-compatible JSON byte sizing
+  before persistence. Oversized model previews no longer roll back a Scout's
+  terminal failure; evidence references are retained where they fit, with explicit
+  count/hash metadata on exceptional truncation. A database regression covers it.
+- Generated tool references leave call IDs empty for exact-URL binding to completed
+  runtime calls. Invented IDs cannot approve evidence; historical parsing remains
+  compatible and incomplete evidence still leads to `Wait`.
+- Nested search-engine, HTTP-request and whole-tool deadlines cover stalled DNS,
+  body streams and retry delays. Cancellation releases capacity, including
+  synchronous self-cancellation. Cross-origin redirects strip operator headers
+  and reject request bodies; provider HTTP errors never echo response bodies.
+  Feed filters precede output limits; SEC acceptance and report dates stay separate.
+- Research retries now bind their gateway tool allowance to a stable Run/deadline
+  attempt identity. Transport retries cannot reset it, a fourth attempt is
+  rejected, and recent budget counters cannot be evicted by capacity pressure.
+  Scout prompt v24 requests compact UTF-8 output; oversized-response feedback
+  identifies the byte limit without replaying source text or relaxing evidence.
+- Request-scoped MCP tool identity repair handles split namespaces, literal
+  `namespace::name` calls and unambiguous short names only for advertised
+  functions. Foreign, unknown and ambiguous calls remain rejected; arguments
+  and nested content are not rewritten. Real provider-to-tool verification
+  covered page reading, same-origin crawling and Finnhub company context.
+- Date-aware search normalizes relative windows and explicit date ranges, maps
+  Brave's provider codes and distinguishes native filtering from query hints.
+  Bounded per-source FIFO queues absorb small bursts without bypassing provider
+  pacing, cancellation or circuit breakers. Scout defaults now allow 10 calls,
+  96k chargeable tokens and 240 seconds; explicit operator settings and safety
+  gates remain authoritative.
+- Query-directed same-origin crawling reaches issuer disclosures within the
+  existing page budget. Federated search shares result slots across engines and
+  deep research shares fetch slots across origins without claiming independence.
+  Finnhub now exposes issuer identity/site locators and historical earnings
+  actuals versus estimates; neither supplies a current catalyst by itself.
+  Request-owned recovery leases prevent cancelled probes from disabling search
+  indefinitely. Compact research results retain stale and truncation diagnostics.
+- Source-preserving bounded tool previews and focused/offset page excerpts.
+  Current Finnhub metrics no longer stream unsolicited historical series.
+  Search catalogs exclude unconfigured authenticated backends, empty scoped
+  results no longer trigger outage circuits, and date-only matches do not qualify
+  deep-research sources. Scout starting lanes rotate deterministically; the
+  configurable call budget remains hard-capped without changing trading gates.
+- A stopped-runtime execution selector for internal Shadow and existing Tiger
+  Paper authority, with requested/effective state and revision fencing. Tiger
+  credentials can be entered through a write-only form and saved atomically
+  outside source control. Saving credentials does not authorize orders.
+- Startup blocks unavailable requested broker authority instead of silently
+  falling back to Shadow; read-only diagnostics and shutdown remain available.
+- Explicit recent/all-history Agent views and opportunity-bound committee
+  records prevent stale, unrelated reviewers from appearing as current approvals.
+- An independently locked six-provider connector package: Tiger, Alpaca,
+  Interactive Brokers, Futu/moomoo, Longport and Schwab. The three-language
+  console can save private profiles and perform real read-only connection
+  checks. SDK/HTTP adapters and a durable execution-engine library are present;
+  autonomous integration and real-account order acceptance are not complete.
+  Longport identity and Schwab permission/history gaps remain fail-closed.
+- A responsive Silment · ALTA brand lockup and a three-option language menu,
+  including Traditional Chinese operator copy and a matching README.
+- An auditable research radar with recent Scout work, searchable opportunity
+  and candidate records, explicit time scope and a protected candidate-detail API.
+  The sidebar reads API Trading; language choices are English, 简体中文 and 繁體中文.
+- All six connector methods reject an expired dispatch before SDK work; offline
+  wiring tests preserve nontrivial quantities, exact accounts and order identities.
+  Futu explicitly sets RTH and an IBKR connection alone no longer proves permission.
+- Production builds retain content-hashed assets needed by already-open tabs;
+  launcher build freshness also checks Vite and TypeScript configuration.
+- Operator-owned model assignment for seven roles and four individual Scouts.
+  Atomic, revision-fenced saves share the runtime's host lease, take effect on
+  the next start, preserve independent review models and reach durable Run routing.
+- Language-matched console screenshots from the September 12 local running
+  service and its saved research history. Successful backend Runs now count
+  correctly in the Agent desk's completed total.
 - A focused bilingual operator brief, stable Agent identity markers, clearer
-  opportunity cards and searchable, inspectable decision history. README
-  galleries now use language-matched captures of the current build's labeled
-  synthetic preview.
+  opportunity cards and searchable, inspectable decision history.
 - Explicit signal freshness states shared by discovery, ranking and the
   console. New ingestion can enter the current frozen research snapshot;
   expired evidence is kept for history rather than promoted as current work.
