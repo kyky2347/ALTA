@@ -8,6 +8,13 @@ semantic versioning while the project remains experimental.
 
 ### Added
 
+- A clearer three-language introduction with role responsibilities, a linked
+  research-record lifecycle, system boundaries and a first-session guide.
+- Console hardening for narrow and short windows: a single scrollable model
+  editor body, reachable actions, unsaved-change confirmation, transport-shape
+  validation, and an opportunity inspector that resets on record changes and
+  keeps long titles inside the scrollable content.
+
 - Scout prompt v30 freezes exploration/follow-up lineage in its generation
   schema, preserves intraday timestamps, and reports actionable contract errors.
   One in-context finalization repair selects exact retrieved citations and shares

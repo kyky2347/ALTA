@@ -117,6 +117,10 @@ tick-real-time signals or independently proven profitable opportunities.
 
 ## Screenshot provenance
 
+The hashes in this section describe the images at this release. The subsequent
+[console-readability update](console-readability-2026-09-12.md) recaptures these
+views and records their replacement hashes without changing the research history.
+
 Each README adds broker-connection and model-settings views in its own UI language.
 Publication captures use the current production UI and actual local records.
 Agent-authored titles remain research hypotheses, not verified investment facts.

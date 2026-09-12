@@ -4,6 +4,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Field,
   FieldLabel,
   FieldGroup,
@@ -23,6 +33,7 @@ import {
   MODEL_ROLES,
   modelProblem,
   validModelRoute,
+  validAgentModelState,
   type AgentModels,
   type AgentModelState,
   type ModelRoute,
@@ -51,16 +62,21 @@ export function AgentModelSettings({
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  const [discardAction, setDiscardAction] = useState<"close" | "reload" | null>(
+    null,
+  );
   const saving = useRef(false);
   const request = useRef<AbortController | null>(null);
   useEffect(() => {
     if (!open || preview) return;
     const controller = new AbortController();
     request.current = controller;
-    getJson<AgentModelState>("/control/agent-models", {
+    getJson<unknown>("/control/agent-models", {
       signal: controller.signal,
     })
       .then((value) => {
+        if (!validAgentModelState(value))
+          throw new Error("invalid_model_settings");
         if (!controller.signal.aborted) {
           setState(value);
           setDraft(structuredClone(value.settings));
@@ -81,6 +97,20 @@ export function AgentModelSettings({
   const problem = draft ? modelProblem(draft) : null;
   const dirty =
     state && draft && JSON.stringify(state.settings) !== JSON.stringify(draft);
+  const finishDiscard = (action: "close" | "reload") => {
+    setDiscardAction(null);
+    if (action === "close") setOpen(false);
+    else {
+      setBusy(true);
+      setError(null);
+      setSaved(false);
+      setAttempt((value) => value + 1);
+    }
+  };
+  const requestDiscard = (action: "close" | "reload") => {
+    if (dirty) setDiscardAction(action);
+    else finishDiscard(action);
+  };
   const change = (
     group: "roles" | "scouts",
     id: string,
@@ -104,6 +134,8 @@ export function AgentModelSettings({
     setSaved(false);
     try {
       const value = await onSave({ revision: state.revision, settings: draft });
+      if (!validAgentModelState(value))
+        throw new Error("invalid_model_settings");
       if (current && !current.signal.aborted) {
         setState(value);
         setDraft(structuredClone(value.settings));
@@ -207,8 +239,14 @@ export function AgentModelSettings({
       <Dialog
         open={open}
         onOpenChange={(value) => {
-          if (!saving.current) {
+          if (!saving.current && !discardAction) {
+            if (!value) {
+              requestDiscard("close");
+              return;
+            }
             if (value && !preview) {
+              setState(null);
+              setDraft(null);
               setBusy(true);
               setError(null);
               setSaved(false);
@@ -231,22 +269,22 @@ export function AgentModelSettings({
             <DialogTitle>{t("modelSettings")}</DialogTitle>
             <DialogDescription>{t("modelSettingsDetail")}</DialogDescription>
           </DialogHeader>
-          {(preview || runtimeActive || !online) && (
-            <Alert>
-              <AlertDescription>
-                {t(
-                  preview
-                    ? "modelPreviewLocked"
-                    : runtimeActive
-                      ? "modelStopFirst"
-                      : "modelOffline",
-                )}
-              </AlertDescription>
-            </Alert>
-          )}
-          {busy && !draft && <p role="status">{t("loading")}</p>}
-          {draft && (
-            <div className="model-settings-scroll">
+          <div className="model-settings-scroll">
+            {(preview || runtimeActive || !online) && (
+              <Alert>
+                <AlertDescription>
+                  {t(
+                    preview
+                      ? "modelPreviewLocked"
+                      : runtimeActive
+                        ? "modelStopFirst"
+                        : "modelOffline",
+                  )}
+                </AlertDescription>
+              </Alert>
+            )}
+            {busy && !draft && <p role="status">{t("loading")}</p>}
+            {draft && (
               <FieldGroup>
                 {MODEL_ROLES.map((id) =>
                   row(
@@ -270,27 +308,20 @@ export function AgentModelSettings({
                 <h3>{t("modelScoutOverrides")}</h3>
                 {state?.scoutIds.map((id) => row("scouts", id, domain(id)))}
               </FieldGroup>
-            </div>
-          )}
+            )}
+            <p className="model-availability-note">{t("modelAvailability")}</p>
+          </div>
           {(error || problem) && (
             <Alert variant="destructive">
               <AlertDescription>{feedback(error ?? problem!)}</AlertDescription>
             </Alert>
           )}
           {saved && <p role="status">{t("modelSaved")}</p>}
-          <p className="model-availability-note">{t("modelAvailability")}</p>
           <div className="model-settings-footer">
             <Button
               variant="outline"
               disabled={busy || preview}
-              onClick={() => {
-                if (!dirty || window.confirm(t("modelDiscard"))) {
-                  setBusy(true);
-                  setError(null);
-                  setSaved(false);
-                  setAttempt((value) => value + 1);
-                }
-              }}
+              onClick={() => requestDiscard("reload")}
             >
               {t("modelReload")}
             </Button>
@@ -304,9 +335,38 @@ export function AgentModelSettings({
                   className="animate-spin"
                 />
               )}
-              {t(busy ? "modelSaving" : "modelSave")}
+              {t(busy ? "loading" : "modelSave")}
             </Button>
           </div>
+          <AlertDialog
+            open={discardAction !== null}
+            onOpenChange={(value) => {
+              if (!value) setDiscardAction(null);
+            }}
+          >
+            <AlertDialogContent className="model-discard-dialog">
+              <AlertDialogHeader>
+                <AlertDialogTitle>{t("modelUnsavedTitle")}</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {t(
+                    discardAction === "reload"
+                      ? "modelDiscard"
+                      : "modelCloseDiscard",
+                  )}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>{t("modelKeepEditing")}</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => {
+                    if (discardAction) finishDiscard(discardAction);
+                  }}
+                >
+                  {t("modelDiscardChanges")}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </DialogContent>
       </Dialog>
     </div>

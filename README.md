@@ -10,14 +10,14 @@ _A virtual trading platform operated by specialized LLM agents._
 
 [简体中文](README.zh-CN.md) · [繁體中文](README.zh-HK.md) ·
 [Quick start](#run-locally) · [Architecture](docs/architecture/overview.md) ·
-[Verification](docs/audits/operator-scout-reliability-2026-09-12.md) · [Website](https://alta.silment.com)
+[Verification](docs/audits/console-readability-2026-09-12.md) · [Website](https://alta.silment.com)
 
 **Trade the opportunity. The stock, ETF, or option is only its carrier.**
 
-ALTA turns autonomous market research into a durable, inspectable process.
-Four specialist Scouts look for changes, dislocations, causal links and expectation
-gaps. Independent reviewers challenge the thesis. A separate desk compares ways
-to express it, while deterministic controls govern risk, authority and execution.
+ALTA is a local, multi-agent market-research system with an operator console and
+separate simulation and brokerage boundaries. Four specialist Scouts investigate
+the world; independent reviewers challenge their findings; a strategy desk
+compares possible trades. Every handoff leaves a record you can inspect.
 
 The ambition is a virtual research firm—not another chatbot that recommends a
 ticker. The test is whether an idea survives evidence, disagreement, costs and time.
@@ -47,21 +47,19 @@ Open an image for the full view. Research hypotheses are not approved trades.
 
 September 12, 2026 · English interface · original Agent artifacts retain their
 authored language. Capture scope, record IDs and image hashes are in the
-[release review](docs/audits/operator-scout-reliability-2026-09-12.md).
+[release review](docs/audits/console-readability-2026-09-12.md).
 No credentials or account details are included.
 
 ## How the firm works
 
 ```mermaid
 flowchart LR
-    S["Sense<br/>4 independent Scouts"] --> F["Foundry<br/>normalize · deduplicate"]
-    F --> D["Debate<br/>case · countercase"]
-    D --> R["Rank<br/>urgency · portfolio fit"]
-    R --> X["Express<br/>stock · ETF · option · Wait"]
-    X --> A["Audit<br/>evidence · risk · authority"]
-    A --> E["Execute<br/>Shadow / Tiger Paper"]
-    E --> M["Monitor<br/>revalidate · exit · attribute"]
-    M -. "evolve Trader Minds" .-> S
+    R["Investigate<br/>Scouts → evidence → thesis"] --> J["Challenge<br/>debate → rank → trade plan"]
+    J --> G{"Independent audit<br/>and execution gates"}
+    G -->|Ready| E["Act & observe<br/>execute → monitor → exit"]
+    G -->|Not ready| W["Wait<br/>record the missing evidence"]
+    W -. "focused follow-up" .-> R
+    E -. "outcomes & Trader Mind updates" .-> R
 ```
 
 **LLMs decide what deserves investigation. Code decides what may change durable
@@ -84,6 +82,83 @@ stay visible. [Retrieval design and measured limits →](docs/audits/research-re
 Structured drafts get one budget-bound correction in the same research context,
 with exact retrieved citations and an audit trail. Insufficient or stale evidence
 still leads to `Wait`—more retries are not a substitute for a current signal.
+
+### Four minds, different questions
+
+The Scouts share tools, not a single research agenda. Each starts with a Trader
+Mind: a research style, areas to explore and lessons from earlier work. They can
+initiate searches and follow leads rather than only summarize an incoming feed.
+
+| Scout              | The question it pursues                                                             |
+| ------------------ | ----------------------------------------------------------------------------------- |
+| Change / event     | What actually changed in a filing, business or catalyst—and when?                   |
+| Market dislocation | Where have prices or related securities diverged, and is the gap explainable?       |
+| Causal / policy    | Which second-order effects connect a policy or industry change to another business? |
+| Expectation gap    | What does the market appear to expect, and what evidence could overturn that view?  |
+
+News is a starting point, not the whole research process. Agents can consult
+issuer pages, filings, public datasets, market observations and web sources. A
+newly fetched page is not automatically a new event: source time and retrieval
+time remain distinct. Social or secondary claims need corroboration, not just
+a persuasive summary.
+
+### An idea is not a ticker
+
+ALTA keeps the **thesis** separate from the **trade that might express it**.
+An opportunity describes what changed, why expectations might be wrong, what
+would invalidate the thesis and when the effect could matter. Only then does
+the expression stage compare eligible instruments, direction, costs and sizing.
+The preferred result can be a stock, ETF, supported option expression—or no trade.
+
+```text
+Candidate       Opportunity          Decision             Outcome
+source + time → thesis + falsifier → reviews + trade plan → monitor + exit
+     └────────── linked IDs, citations and recorded events ──────────┘
+```
+
+This separation matters when the obvious instrument is too illiquid, the price
+has already moved or several ideas depend on the same risk. A convincing story
+does not bypass a fresh quote, a portfolio check or an independent audit. When
+the evidence falls short, the system retains a reason and a follow-up question
+instead of treating an empty order book as a failure.
+
+### A console for questions, not just counters
+
+| What you need to know               | Where to look                                            |
+| ----------------------------------- | -------------------------------------------------------- |
+| Why is this idea here?              | Opportunity detail: brief, evidence and the saved record |
+| Who investigated or disagreed?      | Agent desk, model routes and linked reviews              |
+| What happened before this snapshot? | Activity history and the durable event timeline          |
+| Is it ready to act?                 | Decision status, execution mode and authorization checks |
+| What needs operator attention?      | System health, connection status and API verification    |
+
+English, Simplified Chinese and Traditional Chinese share the same controls and
+record IDs. Agent-written artifacts stay in their authored language. Snapshot
+counts, completed work and currently running Agents are distinct; more cards on
+screen do not establish more independent ideas or better returns.
+
+## Under the hood
+
+```mermaid
+flowchart TB
+    UI["React console · three languages"] <-->|"authenticated control & reads"| N["Node gateway<br/>launch · credentials · bounded tools"]
+    N <--> P["Python research service<br/>scheduler · research lifecycle · API/SSE"]
+    P <--> C["Codex App Server<br/>specialized LLM sessions"]
+    P <--> DB[("PostgreSQL<br/>records · events · checkpoints")]
+    P --> X["Isolated execution boundary<br/>Shadow / authorized Tiger Paper"]
+```
+
+The console does not orchestrate research in a browser tab. A managed backend
+owns scheduling and recovery; PostgreSQL preserves the work after a tab closes
+or a process restarts. The modified Codex harness supplies Agent sessions and
+tool calls, while ALTA owns the research lifecycle and execution policy. Redis
+supports coordination; it is not a substitute for the durable ledger.
+
+This is useful for researchers studying multi-agent judgment, developers building
+auditable financial workflows and operators evaluating a thesis over time. It
+is not a low-latency trading engine or a turnkey institutional trading stack.
+The strongest claim today is an inspectable research-to-simulation workflow;
+whether it produces an investment edge requires forward evidence.
 
 ## Run locally
 
@@ -108,6 +183,14 @@ console and opens an authenticated loopback page. In the console:
 Brokerage authorization is separate and off by default. A saved key does not
 grant trading permission. Follow the [setup guide](docs/operations/getting-started.md)
 for the Agent harness, provider requirements and troubleshooting.
+
+**What should the first session look like?** A healthy service can be idle while
+waiting for its next cycle. Once research runs, inspect the Scout records, follow
+their citations and compare reviewer verdicts. A candidate is not yet an approved
+opportunity, and an approved thesis is not yet an executable order. Begin in
+Shadow Paper; use the record trail to understand a decision before granting any
+broker authority. Model access, data entitlements and available cash are separate
+requirements, not things the launcher can infer from an API key.
 
 Prefer explicit installation? Run `corepack pnpm install --frozen-lockfile`
 before `./alta dashboard`.
@@ -149,8 +232,10 @@ fenced owner, broker intent precedes submission, and uncertain orders require
 reconciliation—not blind retries. The console retains its last valid snapshot
 through connection loss and rejects stale control-plane edits.
 
-September 12 verification covers **816 tests**, production frontend build,
-real no-order research, authenticated API checks and clean-source installation.
+The [latest UI acceptance](docs/audits/console-readability-2026-09-12.md) covers
+the frontend fixes, complete first-party checks and clean-source installation.
+The [research acceptance](docs/audits/operator-scout-reliability-2026-09-12.md)
+separately records the real, no-order research run and authenticated API checks.
 The release review records failures found, repairs, final outcomes and shutdown
 evidence. It is not a 24×7 uptime certification or a guarantee of profitability.
 

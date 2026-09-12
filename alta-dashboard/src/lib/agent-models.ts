@@ -19,6 +19,33 @@ export type AgentModelState = {
   scoutIds: string[];
   providers: string[];
 };
+
+// Validate the transport shape before rendering. Semantic route errors remain
+// editable through modelProblem; a malformed response must never unlock Save.
+export function validAgentModelState(value: unknown): value is AgentModelState {
+  const record = (item: unknown): item is Record<string, unknown> =>
+    typeof item === "object" && item !== null && !Array.isArray(item);
+  const route = (item: unknown) =>
+    record(item) &&
+    typeof item.provider === "string" &&
+    typeof item.model === "string";
+  if (!record(value) || !record(value.settings)) return false;
+  const { roles, scouts } = value.settings;
+  return (
+    typeof value.revision === "string" &&
+    value.revision.length > 0 &&
+    Array.isArray(value.providers) &&
+    value.providers.length > 0 &&
+    value.providers.every((provider) => typeof provider === "string") &&
+    Array.isArray(value.scoutIds) &&
+    value.scoutIds.every((id) => typeof id === "string") &&
+    record(roles) &&
+    MODEL_ROLES.every((id) => route(roles[id])) &&
+    Object.values(roles).every(route) &&
+    record(scouts) &&
+    Object.values(scouts).every(route)
+  );
+}
 export function validModelRoute(route: ModelRoute): boolean {
   const prefixes: Record<string, string> = {
     openai: "gpt-",

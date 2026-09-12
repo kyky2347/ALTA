@@ -1414,6 +1414,12 @@ html[lang^="zh"] .status-pill {
 .inspector-head .inspector-id {
   min-width: 0;
   margin-left: auto;
+  flex-shrink: 1;
+}
+.inspector-id > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .ledger-results {
   display: flex;
@@ -4819,6 +4825,9 @@ html[lang^="zh"] .status-pill {
   }
 }
 @media (max-width: 360px) {
+  .inspector {
+    scroll-margin-top: calc(174px + env(safe-area-inset-top));
+  }
   /* Keep the wordmark and 44px controls distinct on very narrow phones. */
   .app-shell,
   .app-shell.rail-collapsed {

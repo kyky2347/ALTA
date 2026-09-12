@@ -86,7 +86,7 @@ export function DetailInspector({
     if (window.matchMedia("(max-width: 1220px)").matches) {
       panel.current?.scrollIntoView({ block: "start", behavior: "instant" });
     }
-  }, [selected?.id]);
+  }, [selected?.id, selected?.kind]);
   const path = selected ? entityDetailPath(selected.kind, selected.id) : null;
   const cachedEntry = path ? (detailCache.get(path) ?? null) : null;
 
@@ -260,7 +260,7 @@ export function DetailInspector({
         </div>
         {selected ? (
           <Badge variant="outline" className="inspector-id" title={selected.id}>
-            {selected.id}
+            <span>{selected.id}</span>
           </Badge>
         ) : null}
         <Button
@@ -288,11 +288,7 @@ export function DetailInspector({
         </div>
       ) : (
         <>
-          <div className="inspector-title">
-            <h2>{selected.label}</h2>
-            <p>{t("savedSystemRecord")}</p>
-          </div>
-          <Tabs defaultValue="brief" className="inspector-tabs">
+          <Tabs key={path} defaultValue="brief" className="inspector-tabs">
             <TabsList>
               <TabsTrigger value="brief">{t("brief")}</TabsTrigger>
               <TabsTrigger value="evidence">{t("evidence")}</TabsTrigger>
@@ -306,6 +302,10 @@ export function DetailInspector({
               onRetry={retryDetail}
             />
             <ScrollArea className="inspector-scroll">
+              <div className="inspector-title">
+                <h2>{selected.label}</h2>
+                <p>{t("savedSystemRecord")}</p>
+              </div>
               <TabsContent value="brief">
                 {loading && !detail ? (
                   <InspectorLoading />
