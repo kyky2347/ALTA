@@ -45,6 +45,16 @@ overflow was found in the inspected sections. This is not a Safari or Firefox
 compatibility claim. The final model-discard check used a temporary local draft
 and did not save or change the operator's model assignments.
 
+A clean local clone of the application commit was installed with frozen pnpm
+and all three Python lockfiles, without copying runtime state or credentials.
+It passed the production UI build, 41 dashboard tests, 303 Node tests and both
+isolated execution suites (38 + 51). The 423 research tests above were run in
+the working checkout against managed PostgreSQL, not counted again in the clone.
+The documented npm dashboard command was also launched from the clean clone on
+an explicit loopback port: the page returned HTTP 200, unauthenticated control
+returned HTTP 401, and interruption released the port. No research backend was
+started by that smoke test.
+
 ## README and screenshot scope
 
 All three introductions now explain the four research specialisms, how a thesis
@@ -100,6 +110,13 @@ images are in scope. The sole first-party HTML is the dashboard entry point.
 No unrelated website HTML, hosting configuration, local runtime state or
 credentials belong in this release. Third-party source and license notices
 are unchanged. Secret scanners reduce risk; they cannot prove absolute absence.
+
+Gitleaks 8.30.1 reported no leaks in the complete source export or Git history.
+An independent exact-value check against locally configured credentials also
+found no matches in source files or historical blobs. OCR of all fifteen images
+found no configured secret or tested account/private-key pattern; the views
+were additionally reviewed for their displayed content. Private scanner output
+and local verification state are excluded from source control.
 
 The research service and dashboard were stopped, with their host and scheduler
 processes gone and no listeners on ports 8876 or 8877. Managed PostgreSQL and
