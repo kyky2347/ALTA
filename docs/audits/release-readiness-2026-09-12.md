@@ -181,5 +181,38 @@ format, private remote reference, external account or future change is safe.
    acceptance. This review exercised the existing local harness; it did not
    rebuild the unchanged vendor tree from scratch.
 
-Final clean-clone, post-commit scan and shutdown evidence is recorded below before
-publication is completed.
+## Final release-candidate and shutdown checks
+
+Release candidate `7cbe3ae` was cloned locally with `--no-hardlinks`. Frozen pnpm
+and all three frozen Python installations passed; the clean clone's full
+format/lint/TypeScript/production-build gate also passed. All 419 non-documentation
+application files matched the separately tested source export byte for byte.
+A second fresh clone, with no copied dependencies or runtime state and an empty
+external credential directory, launched successfully with `npm run dashboard`.
+The command prepared its dependencies and production build, served an authenticated
+loopback console and exposed first-run controls. It did not start research or
+connect a broker on its own. Both clone worktrees remained clean.
+
+The exact staged source export passed Gitleaks before the candidate commit.
+The post-candidate full-history scan covered 25 commits with zero findings.
+Exact local-secret comparison covered 6,299 working files and 7,098 history blobs
+with zero matches. Commit identities were public no-reply identities, including
+GitHub's platform committer. Final publication adds verification documentation,
+not an untested application change, and receives another full-history scan.
+
+The operator's actual **Stop safely** action reported **Stop complete**. Independent
+checks confirmed the host and scheduler stopped, port 8876 closed, and managed
+PostgreSQL/Redis stopped. The dashboard retained a clearly labeled last snapshot
+instead of presenting it as live. Its foreground process was then terminated,
+closing port 8877. The isolated test Compose project was also stopped.
+The temporary cold-start dashboard was terminated after verification.
+
+No ALTA research, App Server, supervisor or dashboard process was intentionally
+left running. Browser verification tabs were closed and viewport overrides reset.
+Unrelated applications and containers were left alone. Durable research data and
+external credentials were retained. Trading authorization remains **disabled**;
+the temporary research/market-data test overrides were restored for the next
+operator-initiated start. No broker order or new position was created by this review.
+
+The model dialog remained inside 390×844, 768×1024 and 1440×1000 viewports after
+layout settled. This is bounded Chromium coverage, not every browser/device test.
