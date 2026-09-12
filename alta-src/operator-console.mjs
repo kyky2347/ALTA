@@ -784,6 +784,24 @@ export function createOperatorConsole({
         return;
       }
       if (
+        request.method === "GET" &&
+        url.pathname === "/control/broker-connections/state"
+      ) {
+        const provider = url.searchParams.get("provider");
+        if (
+          !["tiger", "alpaca", "ibkr", "futu", "longport", "schwab"].includes(
+            provider,
+          )
+        ) {
+          json(response, 400, { error: { code: "broker_request_invalid" } });
+          return;
+        }
+        json(response, 200, {
+          data: await service.brokerConnection({ action: "state", provider }),
+        });
+        return;
+      }
+      if (
         request.method === "POST" &&
         url.pathname === "/control/broker-connections/verify"
       ) {

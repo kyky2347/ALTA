@@ -15,6 +15,7 @@ from ..contracts import (
     require,
 )
 from ..transport import Transport
+from ..contracts import acknowledge_order
 
 
 class Schwab:
@@ -135,7 +136,7 @@ class Schwab:
             trading_permitted=False,
         )
 
-    def submit(self, intent: Intent):
+    def submit(self, intent: Intent, *, acknowledge=None):
         dispatch_guard(intent)
         _, headers = self.http.request(
             "POST",
@@ -159,10 +160,18 @@ class Schwab:
         require(
             location.scheme == "https"
             and location.hostname == "api.schwabapi.com"
+            and location.port in (None, 443)
+            and not location.username
+            and not location.password
+            and not location.query
+            and not location.fragment
             and location.path.startswith(f"{self.path}/orders/"),
             "submission_outcome_unknown",
         )
-        result = self.lookup(intent.client_id, location.path.rsplit("/", 1)[-1])
+        order_id = location.path.rsplit("/", 1)[-1]
+        require(order_id.isdigit(), "submission_outcome_unknown")
+        acknowledge_order(intent, order_id, acknowledge)
+        result = self.lookup(intent.client_id, order_id)
         require(result is not None, "submission_outcome_unknown")
         return result
 

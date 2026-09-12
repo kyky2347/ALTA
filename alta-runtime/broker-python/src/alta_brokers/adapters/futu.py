@@ -1,6 +1,9 @@
 """Futu/moomoo OpenD: explicit security firm, account and trade environment."""
 
+from datetime import timedelta
+
 from ..contracts import Order, Position, Snapshot, dispatch_guard, now, require
+from ..contracts import acknowledge_order
 
 
 class Futu:
@@ -118,10 +121,14 @@ class Futu:
             orders=tuple(o for o in orders if o.state in ("working", "unknown")),
             account_verified=True,
             environment_verified=True,
-            trading_permitted="US" in selected[0]["trdmarket_auth"],
+            trading_permitted=(
+                selected[0].get("acc_status") == "ACTIVE"
+                and isinstance(selected[0].get("trdmarket_auth"), list)
+                and "US" in selected[0]["trdmarket_auth"]
+            ),
         )
 
-    def submit(self, intent):
+    def submit(self, intent, *, acknowledge=None):
         dispatch_guard(intent)
         if self.env == "REAL":
             code, _ = self.client.unlock_trade(
@@ -145,6 +152,7 @@ class Futu:
             )
         )
         require(len(rows) == 1, "submission_outcome_unknown")
+        acknowledge_order(intent, rows[0].get("order_id"), acknowledge)
         return self.order(rows[0])
 
     def lookup(self, client_id, order_id):
@@ -157,12 +165,35 @@ class Futu:
             )
         )
         results = [self.order(row) for row in rows if row.get("remark") == client_id]
+        if not results:
+            # The current-order endpoint does not cover earlier sessions. Use a
+            # bounded history lookup after restart, keeping both identifiers.
+            end = now()
+            history = self.rows(
+                self.client.history_order_list_query(
+                    start=(end - timedelta(days=89)).strftime("%Y-%m-%d"),
+                    end=end.strftime("%Y-%m-%d"),
+                    trd_env=self.env,
+                    acc_id=self.account,
+                )
+            )
+            require(len(history) < 2000, "order_history_incomplete")
+            results = [
+                self.order(row) for row in history if row.get("remark") == client_id
+            ]
         require(len(results) <= 1, "duplicate_client_order")
         if order_id and rows:
             require(len(results) == 1, "order_identity_mismatch")
+        if order_id and results:
+            require(results[0].order_id == order_id, "order_identity_mismatch")
         return results[0] if results else None
 
     def cancel(self, order_id):
+        if self.env == "REAL":
+            code, _ = self.client.unlock_trade(
+                password=self.profile.secret("trade_password")
+            )
+            require(code == 0, "opend_unlock_failed")
         code, _ = self.client.modify_order(
             "CANCEL", order_id, 0, 0, trd_env=self.env, acc_id=self.account
         )

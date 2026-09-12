@@ -4,6 +4,7 @@ import re
 from decimal import Decimal
 
 from ..contracts import Order, Position, Snapshot, dispatch_guard, now, require
+from ..contracts import acknowledge_order
 
 
 class InteractiveBrokers:
@@ -116,7 +117,7 @@ class InteractiveBrokers:
             trading_permitted=False,
         )
 
-    def submit(self, intent):
+    def submit(self, intent, *, acknowledge=None):
         dispatch_guard(intent)
         from ib_async import Stock, LimitOrder
 
@@ -143,6 +144,7 @@ class InteractiveBrokers:
         trade = self.client.placeOrder(contracts[0], order)
         for _ in range(30):
             if trade.order.permId > 0:
+                acknowledge_order(intent, trade.order.permId, acknowledge)
                 return self.order(trade)
             self.client.sleep(0.1)
         require(False, "submission_outcome_unknown")

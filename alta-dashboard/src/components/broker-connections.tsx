@@ -23,6 +23,7 @@ import {
   brokerConnectionError,
 } from "@/lib/broker-connections";
 import { useI18n } from "@/lib/i18n";
+import { BrokerAccountPanel } from "./broker-account-panel";
 import "./operator-settings.css";
 
 const FIRMS = [
@@ -43,7 +44,7 @@ export function BrokerConnections({
   runtimeActive: boolean;
   onRequest: (request: BrokerConnectionRequest) => Promise<BrokerVerification>;
 }) {
-  const { t, clock } = useI18n();
+  const { t } = useI18n();
   const [brokers, setBrokers] = useState<BrokerConnection[]>([]);
   const [provider, setProvider] = useState("alpaca");
   const [draftEnvironment, setEnvironment] = useState<"PAPER" | "LIVE" | null>(
@@ -425,26 +426,12 @@ export function BrokerConnections({
                   {t("brokerWriteOnlyHelp")}
                 </p>
               </form>
-              {verification?.snapshot && (
-                <div role="status" className="broker-verification-result">
-                  <strong>
-                    {t(
-                      verification.snapshot.account_verified &&
-                        verification.snapshot.environment_verified
-                        ? "brokerIdentityConfirmed"
-                        : "brokerIdentityUnconfirmed",
-                    )}
-                  </strong>
-                  <span>{clock(verification.snapshot.verified_at)}</span>
-                  <p>
-                    {t("brokerVerificationCounts", {
-                      positions: verification.snapshot.positions.length,
-                      orders: verification.snapshot.orders.length,
-                    })}
-                  </p>
-                  <p>{t("brokerVerificationNotTrading")}</p>
-                </div>
-              )}
+              <BrokerAccountPanel
+                key={`${provider}:${selected.revision}:${attempt}`}
+                broker={selected}
+                offline={offline}
+                refresh={`${busy}:${verification?.snapshot?.verified_at ?? ""}`}
+              />
               <a
                 className="broker-docs-link"
                 href={selected.docs}

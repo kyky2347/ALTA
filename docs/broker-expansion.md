@@ -7,6 +7,17 @@ it does not mean that an account has passed end-to-end acceptance. Tiger's
 existing Paper executor is the verified adaptation. Its new live connector is
 also pending acceptance; none of these counts implies verified live trading.
 
+The local account-review flow now retains revision-bound broker evidence across
+page reloads and exposes balances, holdings, orders, and individual authorization
+prerequisites. It performs no SDK request when reading cached state. A failed
+connection check clears its previous success; a 30-second age limit prevents old
+evidence from appearing current. Reviewing prerequisites does not grant authority.
+
+All six execution adapters support durable broker-ID acknowledgments before
+fallible detail reads. Futu and Longport also support bounded prior-session order
+lookup. These recovery contracts are tested offline; they are not evidence of
+real-account order acceptance, automatic OAuth renewal, or runner integration.
+
 The current runnable execution routes are internal Shadow and the existing
 Tiger Paper boundary. The dashboard mode selector controls that real authority;
 it is not a switch that converts Paper into live trading. No live order was
@@ -65,6 +76,14 @@ kernel ownership locks, durable pre-submit intents, partial-fill accounting,
 close-only revocation and restart reconciliation. It never retries an unknown
 submission merely because a history query returns no matching order. The new
 operator process cannot call these mutation methods.
+
+The maintainer has authorized publication of default-off live execution code,
+conditional on account verification and explicit operator authority. That policy
+change does not itself enable an account. The new lifecycle kernel persists an
+audited plan and its exit intent, survives restart without duplicate submission,
+and requires broker reconciliation before reporting closure. Production audit and
+quote ports, the supervised worker and dashboard enablement are still pending;
+the read-only operator RPC has not been replaced with an unverified trading route.
 
 An API-key form cannot replace OpenD, an IBKR login session, an OAuth callback,
 exchange permission or a broker's account eligibility checks. A missing Paper

@@ -35,9 +35,14 @@ These instructions apply to automated contributors and human maintainers.
 - `alta-runtime/python/` owns Opportunity OS application logic and API/SSE.
 - `alta-runtime/capital-python/` is an isolated Paper-only package.
 - `alta-runtime/broker-python/` owns the separate experimental multi-broker
-  connectors and execution contracts. Its operator RPC remains read-only for
-  brokerage operations; do not expose mutation until account acceptance and
-  research-runner integration are independently verified.
+  connectors and execution contracts. Broker mutations may be implemented and
+  published, but are disabled by default. Enabling requires current provider
+  authentication, explicit account/environment verification and account-bound
+  operator authorization. Saving credentials must never grant authority.
+  Preserve independent risk admission, audited decision handoff, durable order
+  ownership and restart reconciliation. An unverified account or incomplete
+  execution path remains blocked; document contract tests separately from real
+  account acceptance. This does not authorize live orders during development.
 - `vendor/openai-codex/` is attributed third-party source. Change it only when
   ALTA cannot meet a harness requirement through an adapter.
 - New application behavior belongs outside the vendored Codex tree whenever

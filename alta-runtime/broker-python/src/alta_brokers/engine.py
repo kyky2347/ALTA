@@ -1,11 +1,11 @@
 """Durable execution admission. Provider adapters do not own risk or retries."""
 
-import hashlib
 from datetime import timedelta
 from decimal import Decimal
 
 from .contracts import BrokerError, Intent, Order, now, require
 from .storage import Ledger, atomic_private, owner, read_private
+from .verification import Verification, authorization_review
 
 
 class BrokerEngine:
@@ -53,9 +53,10 @@ class BrokerEngine:
             require(
                 not snapshot.positions
                 and not snapshot.orders
-                and not self.ledger.rows(),
+                and self.ledger.flat_and_settled(),
                 "broker_initial_account_must_be_empty",
             )
+            Verification(self.profile, self.directory).save(snapshot)
             atomic_private(
                 self.authority_path,
                 {
@@ -71,7 +72,7 @@ class BrokerEngine:
         with owner(self.directory / "mutation.lock"):
             # No network is needed to stop opening risk. Keep reconciliation and
             # owned exits available until a fresh flat snapshot proves closure.
-            mode = "close_only" if self.ledger.rows() else "off"
+            mode = "off" if self.ledger.flat_and_settled() else "close_only"
             atomic_private(
                 self.authority_path,
                 {
@@ -85,12 +86,20 @@ class BrokerEngine:
 
     def state(self):
         rows = self.ledger.rows()
+        verification = Verification(self.profile, self.directory).state()
         return {
             "provider": self.profile.provider,
             "environment": self.profile.environment,
             "binding": self.profile.binding,
             "revision": self.profile.revision,
             "authority": self._authority()["mode"],
+            "verification": verification,
+            "authorization_review": authorization_review(
+                self.profile,
+                verification,
+                rows,
+                flat_and_settled=self.ledger.flat_and_settled(),
+            ),
             "intent_count": len(rows),
             "pending_count": sum(
                 r["state"] in ("prepared", "unknown", "working") for r in rows
@@ -108,14 +117,14 @@ class BrokerEngine:
 
     def verify(self):
         # An unverified identity remains observable, but cannot be authorized.
-        snapshot = self.adapter.snapshot()
-        public = snapshot.model_dump(mode="json")
-        for order in public["orders"]:
-            order["order_id"] = hashlib.sha256(order["order_id"].encode()).hexdigest()[
-                :16
-            ]
-        atomic_private(self.directory / "snapshot.json", public)
-        return {**self.state(), "snapshot": public}
+        verification = Verification(self.profile, self.directory)
+        try:
+            verification.save(self.adapter.snapshot())
+        except Exception:
+            verification.failed()
+            raise
+        state = self.state()
+        return {**state, "snapshot": state["verification"]["snapshot"]}
 
     def _position_book(self):
         positions = {}
@@ -182,8 +191,10 @@ class BrokerEngine:
             )
             require(now() < intent.expires_at, "intent_expired")
             notional = intent.quantity * intent.limit_price
-            require(notional <= self.profile.max_order_notional, "order_notional_limit")
             if intent.side == "BUY":
+                require(
+                    notional <= self.profile.max_order_notional, "order_notional_limit"
+                )
                 require(
                     intent.limit_price >= quote.ask
                     and intent.limit_price <= quote.ask * Decimal("1.005"),
@@ -206,6 +217,9 @@ class BrokerEngine:
                     "gross_exposure_limit",
                 )
             else:
+                # A profitable holding may now exceed its original entry cap.
+                # Exits remain bounded by exact owned quantity and fresh prices,
+                # not a cap that would strand a risk-reducing sale.
                 require(
                     actual.get(intent.symbol, Decimal(0)) >= intent.quantity,
                     "sell_exceeds_owned_position",
@@ -227,8 +241,39 @@ class BrokerEngine:
                         )
                     }
                 )
-                result = self.adapter.submit(dispatched)
+
+                def acknowledge(order_id):
+                    receipt = Order(
+                        order_id=order_id,
+                        client_id=intent.client_id,
+                        symbol=intent.symbol,
+                        side=intent.side,
+                        quantity=intent.quantity,
+                        filled=0,
+                        limit_price=intent.limit_price,
+                        state="unknown",
+                    )
+                    current = self.ledger.get(intent.client_id)
+                    if current["result"]:
+                        previous = Order.model_validate_json(current["result"])
+                        require(
+                            previous.order_id == receipt.order_id,
+                            "broker_order_mismatch",
+                        )
+                        return
+                    self.ledger.record(
+                        intent.client_id, "unknown", receipt, "order_detail_pending"
+                    )
+
+                result = self.adapter.submit(dispatched, acknowledge=acknowledge)
                 self._match(intent, result)
+                acknowledged = self.ledger.get(intent.client_id)["result"]
+                if acknowledged:
+                    require(
+                        Order.model_validate_json(acknowledged).order_id
+                        == result.order_id,
+                        "broker_order_mismatch",
+                    )
                 self.ledger.record(intent.client_id, result.state, result)
                 return result
             except Exception:
@@ -264,6 +309,13 @@ class BrokerEngine:
             )
             raise BrokerError("reconciliation_unconfirmed") from None
 
+    def reconcile_order(self, client_id):
+        """Read one owned order without requiring the entire account to be flat."""
+        with owner(self.directory / "mutation.lock"):
+            row = self.ledger.get(client_id)
+            require(row is not None, "order_not_owned")
+            return self._reconcile(row)
+
     def reconcile(self):
         with owner(self.directory / "mutation.lock"):
             for row in self.ledger.rows():
@@ -275,6 +327,7 @@ class BrokerEngine:
                 "broker_position_drift",
             )
             require(not snapshot.orders, "broker_orders_still_working")
+            Verification(self.profile, self.directory).save(snapshot)
             if self._authority()["mode"] == "close_only" and not snapshot.positions:
                 atomic_private(
                     self.authority_path,
@@ -302,6 +355,7 @@ class BrokerEngine:
 
     def close(self):
         try:
-            self.adapter.close()
+            if self.adapter is not None:
+                self.adapter.close()
         finally:
             self.ledger.close()

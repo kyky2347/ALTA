@@ -3,7 +3,7 @@
 import hashlib
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Annotated, Literal, Protocol
+from typing import Annotated, Callable, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
@@ -11,6 +11,7 @@ Provider = Literal["tiger", "alpaca", "ibkr", "longport", "futu", "schwab"]
 Environment = Literal["PAPER", "LIVE"]
 Number = Annotated[Decimal, Field(allow_inf_nan=False)]
 Positive = Annotated[Decimal, Field(gt=0, allow_inf_nan=False)]
+Acknowledgment = Callable[[str], None]
 
 
 class BrokerError(RuntimeError):
@@ -122,6 +123,8 @@ class Snapshot(Contract):
             raise ValueError("snapshot_limit_exceeded")
         if len({p.symbol for p in self.positions}) != len(self.positions):
             raise ValueError("duplicate_position")
+        if len({o.order_id for o in self.orders}) != len(self.orders):
+            raise ValueError("duplicate_broker_order")
         return self
 
 
@@ -159,7 +162,9 @@ class Quote(Contract):
 
 class Adapter(Protocol):
     def snapshot(self) -> Snapshot: ...
-    def submit(self, intent: Intent) -> Order: ...
+    def submit(
+        self, intent: Intent, *, acknowledge: Acknowledgment | None = None
+    ) -> Order: ...
     def lookup(self, client_id: str, order_id: str | None) -> Order | None: ...
     def cancel(self, order_id: str) -> None: ...
     def close(self) -> None: ...
@@ -177,3 +182,27 @@ def require(condition: bool, code: str):
 def dispatch_guard(intent: Intent):
     """The engine shortens this deadline to the dispatch quote's expiry."""
     require(now() < intent.expires_at, "dispatch_deadline_expired")
+
+
+def acknowledge_order(intent: Intent, order_id, acknowledge: Acknowledgment | None):
+    """Persist a broker-issued identity before any fallible follow-up request.
+
+    This proves receipt, not a fill. Do not synthesize an ID after a timeout.
+    The callback must finish durably before the adapter can continue.
+    """
+    require(
+        order_id is not None and str(order_id) not in ("", "0", "None"),
+        "order_identity_pending",
+    )
+    receipt = Order(
+        order_id=str(order_id),
+        client_id=intent.client_id,
+        symbol=intent.symbol,
+        side=intent.side,
+        quantity=intent.quantity,
+        filled=0,
+        limit_price=intent.limit_price,
+        state="unknown",
+    )
+    if acknowledge is not None:
+        acknowledge(receipt.order_id)

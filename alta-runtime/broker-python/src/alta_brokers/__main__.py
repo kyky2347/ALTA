@@ -17,6 +17,7 @@ from .catalog import CATALOG, validate_credentials
 from .contracts import BrokerError, Profile, require
 from .engine import BrokerEngine
 from .storage import Profiles, owner
+from .verification import Verification
 
 
 def handle(request, profiles):
@@ -75,7 +76,13 @@ def handle(request, profiles):
     # Isolated process plus per-account lock bounds all SDK sessions. No raw
     # provider log, account response, or credential is returned on failure.
     with owner(profiles.account_dir(profile) / "connection.lock"):
-        adapter = connect(profile)
+        adapter = None
+        if action == "verify":
+            try:
+                adapter = connect(profile)
+            except Exception:
+                Verification(profile, profiles.account_dir(profile)).failed()
+                raise
         engine = BrokerEngine(profile, adapter, profiles.account_dir(profile))
         try:
             return engine.verify() if action == "verify" else engine.state()

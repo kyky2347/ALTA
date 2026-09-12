@@ -50,16 +50,136 @@ export type BrokerConnectionRequest =
     };
 export type BrokerVerification = {
   provider: string;
-  snapshot?: {
-    verified_at: string;
-    account_verified: boolean;
-    environment_verified: boolean;
-    trading_permitted: boolean;
+  snapshot?: BrokerAccountSnapshot;
+};
+export type BrokerAccountSnapshot = {
+  verified_at: string;
+  account_verified: boolean;
+  environment_verified: boolean;
+  trading_permitted: boolean;
+  currency: string;
+  equity: string;
+  cash: string;
+  buying_power: string;
+  positions: Array<{
+    symbol: string;
+    quantity: string;
+    market_value: string | null;
     currency: string;
-    positions: unknown[];
-    orders: unknown[];
+  }>;
+  orders: Array<{
+    order_id: string;
+    symbol: string;
+    side: "BUY" | "SELL";
+    quantity: string;
+    filled: string;
+    state: "working" | "unknown" | "filled" | "cancelled" | "rejected";
+  }>;
+};
+
+export const BROKER_CHECKS = [
+  "fresh_account",
+  "account_identity",
+  "environment_identity",
+  "trade_permission",
+  "empty_account",
+  "clear_ledger",
+  "runner_integration",
+  "account_acceptance",
+] as const;
+export type BrokerAccountState = BrokerVerification & {
+  environment: "PAPER" | "LIVE";
+  revision: string;
+  binding: string;
+  authority: "off" | "entries" | "close_only";
+  verification: {
+    status:
+      | "not_checked"
+      | "configuration_changed"
+      | "failed"
+      | "verified"
+      | "stale"
+      | "unavailable";
+    fresh: boolean;
+    snapshot: BrokerAccountSnapshot | null;
+  };
+  authorization_review: {
+    eligible: false;
+    checks: Record<(typeof BROKER_CHECKS)[number], boolean>;
+    provider: string;
+    environment: "PAPER" | "LIVE";
+    binding: string;
+    revision: string;
+    limits: {
+      max_order_notional: string;
+      max_gross_notional: string;
+      max_quote_age_seconds: number;
+    };
   };
 };
+
+const decimal = (value: unknown) =>
+  typeof value === "string" &&
+  /^-?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(value) &&
+  Number.isFinite(Number(value));
+const object = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === "object" && !Array.isArray(value);
+
+export function validBrokerAccountState(
+  value: unknown,
+): value is BrokerAccountState {
+  if (
+    !object(value) ||
+    !object(value.verification) ||
+    !object(value.authorization_review)
+  )
+    return false;
+  const v = value.verification;
+  const r = value.authorization_review;
+  return (
+    typeof value.provider === "string" &&
+    ["tiger", "alpaca", "ibkr", "futu", "longport", "schwab"].includes(
+      value.provider,
+    ) &&
+    ["PAPER", "LIVE"].includes(String(value.environment)) &&
+    /^[a-f0-9]{64}$/.test(String(value.revision)) &&
+    /^[a-f0-9]{64}$/.test(String(value.binding)) &&
+    ["off", "entries", "close_only"].includes(String(value.authority)) &&
+    [
+      "not_checked",
+      "configuration_changed",
+      "failed",
+      "verified",
+      "stale",
+      "unavailable",
+    ].includes(String(v.status)) &&
+    typeof v.fresh === "boolean" &&
+    (v.snapshot === null ||
+      validBrokerVerification({
+        provider: value.provider,
+        snapshot: v.snapshot,
+      })) &&
+    (!v.fresh || (v.status === "verified" && v.snapshot !== null)) &&
+    r.eligible === false &&
+    r.provider === value.provider &&
+    r.environment === value.environment &&
+    r.binding === value.binding &&
+    r.revision === value.revision &&
+    object(r.checks) &&
+    BROKER_CHECKS.every(
+      (k) => typeof (r.checks as Record<string, unknown>)[k] === "boolean",
+    ) &&
+    r.checks.runner_integration === false &&
+    r.checks.account_acceptance === false &&
+    object(r.limits) &&
+    decimal(r.limits.max_order_notional) &&
+    decimal(r.limits.max_gross_notional) &&
+    typeof r.limits.max_quote_age_seconds === "number" &&
+    Number.isInteger(r.limits.max_quote_age_seconds) &&
+    r.limits.max_quote_age_seconds >= 1 &&
+    r.limits.max_quote_age_seconds <= 30
+  );
+}
 
 export function brokerCredentialFields(
   broker: BrokerConnection | undefined,
@@ -91,6 +211,8 @@ export function brokerConnectionError(code: string) {
     return "brokerConnectionConflict";
   if (/invalid|mismatch/.test(code)) return "brokerFieldsInvalid";
   if (/timed_out|timeout/.test(code)) return "brokerConnectionTimeout";
+  if (/authentication/.test(code)) return "brokerAuthenticationRequired";
+  if (/rate_limited/.test(code)) return "brokerRateLimited";
   return "brokerConnectionUnavailable";
 }
 
@@ -115,8 +237,38 @@ export function validBrokerVerification(
     typeof s.environment_verified === "boolean" &&
     typeof s.trading_permitted === "boolean" &&
     typeof s.currency === "string" &&
+    decimal(s.equity) &&
+    decimal(s.cash) &&
+    decimal(s.buying_power) &&
     Array.isArray(s.positions) &&
-    Array.isArray(s.orders)
+    s.positions.length <= 1000 &&
+    s.positions.every(
+      (p) =>
+        object(p) &&
+        typeof p.symbol === "string" &&
+        p.symbol.length <= 40 &&
+        decimal(p.quantity) &&
+        (p.market_value === null || decimal(p.market_value)) &&
+        typeof p.currency === "string" &&
+        /^[A-Z]{3}$/.test(p.currency),
+    ) &&
+    Array.isArray(s.orders) &&
+    s.orders.length <= 2000 &&
+    s.orders.every(
+      (o) =>
+        object(o) &&
+        typeof o.order_id === "string" &&
+        /^[a-f0-9]{16}$/.test(o.order_id) &&
+        typeof o.symbol === "string" &&
+        o.symbol.length <= 40 &&
+        (o.side === "BUY" || o.side === "SELL") &&
+        decimal(o.quantity) &&
+        decimal(o.filled) &&
+        typeof o.state === "string" &&
+        ["working", "unknown", "filled", "cancelled", "rejected"].includes(
+          o.state,
+        ),
+    )
   );
 }
 

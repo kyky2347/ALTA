@@ -221,8 +221,10 @@ See [Reproducibility](REPRODUCIBILITY.md) for deterministic demo/replay and clea
 | Five pre-adapted connectors | Alpaca, IBKR, Futu/moomoo, Longbridge/Longport and Schwab: private profiles, provider-specific code and read-only checks; end-to-end account acceptance pending |
 
 The new Tiger live connector is also unaccepted. The independent six-provider
-package contains execution-engine code but is **not wired into autonomous
-research**. Broker gateways, OAuth, account permissions and verification cannot
+package now includes a durable entry–monitor–exit kernel, but is **not wired into
+autonomous research**. Its offline tests cover recovery without duplicate orders,
+revoked entries and broker-confirmed closure; they do not prove live trading.
+Broker gateways, OAuth, account permissions and verification cannot
 be replaced by a generic API-key field. [Provider matrix and remaining work →](docs/broker-expansion.md)
 
 ## Built for interruption

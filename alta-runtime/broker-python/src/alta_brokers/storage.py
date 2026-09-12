@@ -28,7 +28,7 @@ def private_directory(path: Path):
     return path
 
 
-def read_private(path: Path):
+def read_private(path: Path, *, max_bytes=65536):
     descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     try:
         metadata = os.fstat(descriptor)
@@ -37,10 +37,10 @@ def read_private(path: Path):
             and metadata.st_uid == os.getuid()
             and not metadata.st_mode & 0o077
             and metadata.st_nlink == 1
-            and metadata.st_size <= 65536,
+            and metadata.st_size <= max_bytes,
             "private_file_permissions",
         )
-        return json.loads(os.read(descriptor, 65537))
+        return json.loads(os.read(descriptor, max_bytes + 1))
     finally:
         os.close(descriptor)
 
@@ -128,6 +128,24 @@ class Ledger:
 
     def rows(self):
         return self.db.execute("SELECT * FROM intents ORDER BY rowid").fetchall()
+
+    def flat_and_settled(self):
+        """History may remain; unresolved orders or exposure may not."""
+        from decimal import Decimal
+
+        from .contracts import Order
+
+        book = {}
+        for row in self.rows():
+            if row["state"] not in ("filled", "cancelled", "rejected"):
+                return False
+            if not row["result"]:
+                return False
+            result = Order.model_validate_json(row["result"])
+            book[result.symbol] = book.get(result.symbol, Decimal(0)) + (
+                result.filled * (1 if result.side == "BUY" else -1)
+            )
+        return not any(book.values())
 
     def prepare(self, profile, intent):
         request = intent.model_dump_json()

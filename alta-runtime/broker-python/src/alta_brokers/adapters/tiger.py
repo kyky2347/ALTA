@@ -4,6 +4,7 @@ import tempfile
 from decimal import Decimal
 
 from ..contracts import Order, Position, Snapshot, dispatch_guard, now, require
+from ..contracts import acknowledge_order
 
 
 def private_key_pem(value):
@@ -123,7 +124,7 @@ class Tiger:
             trading_permitted=True,
         )
 
-    def submit(self, intent):
+    def submit(self, intent, *, acknowledge=None):
         dispatch_guard(intent)
         from tigeropen.common.util.contract_utils import stock_contract
         from tigeropen.common.util.order_utils import limit_order
@@ -164,6 +165,7 @@ class Tiger:
         require(passed is True and not warning, "broker_preview_not_passed")
         dispatch_guard(intent)
         self.client.place_order(order)
+        acknowledge_order(intent, order.id, acknowledge)
         result = self.lookup(intent.client_id, str(order.id))
         require(result is not None, "submission_outcome_unknown")
         return result

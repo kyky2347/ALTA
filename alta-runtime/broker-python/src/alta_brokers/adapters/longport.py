@@ -1,6 +1,9 @@
 """Longport/Longbridge SDK. Account/environment proof must not be guessed."""
 
+from datetime import timedelta
+
 from ..contracts import Order, Position, Snapshot, dispatch_guard, now, require
+from ..contracts import acknowledge_order
 
 
 class Longport:
@@ -95,7 +98,7 @@ class Longport:
             trading_permitted=False,
         )
 
-    def submit(self, intent):
+    def submit(self, intent, *, acknowledge=None):
         dispatch_guard(intent)
         from longport.openapi import OrderType, OrderSide, TimeInForceType, OutsideRTH
 
@@ -110,6 +113,7 @@ class Longport:
             outside_rth=OutsideRTH.RTHOnly,
             remark=intent.client_id,
         )
+        acknowledge_order(intent, result.order_id, acknowledge)
         return self.lookup(intent.client_id, result.order_id)
 
     def lookup(self, client_id, order_id):
@@ -119,9 +123,17 @@ class Longport:
             else self.client.today_orders()
         )
         results = [self.order(row) for row in rows if row.remark == client_id]
+        if not results and not order_id:
+            end = now()
+            history = self.client.history_orders(
+                start_at=end - timedelta(days=89), end_at=end
+            )
+            require(len(history) < 1000, "order_history_incomplete")
+            results = [self.order(row) for row in history if row.remark == client_id]
         require(len(results) <= 1, "duplicate_client_order")
         if order_id:
             require(len(results) == 1, "order_identity_mismatch")
+            require(results[0].order_id == order_id, "order_identity_mismatch")
         return results[0] if results else None
 
     def cancel(self, order_id):

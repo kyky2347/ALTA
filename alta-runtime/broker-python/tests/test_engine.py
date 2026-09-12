@@ -76,7 +76,7 @@ class Broker:
             trading_permitted=True,
         )
 
-    def submit(self, request):
+    def submit(self, request, *, acknowledge=None):
         self.calls += 1
         self.result = Order(
             order_id="test-order",

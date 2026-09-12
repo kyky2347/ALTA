@@ -95,13 +95,93 @@
   font: inherit;
   font-size: 16px;
 }
-.broker-verification-result {
+.broker-account-panel {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 16px;
+  min-width: 0;
+  border-block-start: 1px solid var(--line);
+  padding-block-start: 24px;
+}
+.broker-account-panel > button {
+  align-self: flex-start;
+  min-height: 44px;
+  white-space: normal;
+}
+.broker-account-balances {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr));
+  gap: 16px;
+  margin: 0;
+}
+.broker-account-balances dt {
+  color: var(--muted-ink);
+  font-size: 13px;
+}
+.broker-account-balances dd {
+  margin: 6px 0 0;
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
-  padding: 16px 0;
-  border-block: 1px solid var(--line);
+}
+.broker-authorization-dialog {
+  width: min(560px, calc(100vw - 32px));
+  max-width: none;
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+}
+.broker-authorization-dialog [data-slot="dialog-header"] {
+  padding-inline-end: 32px;
+}
+.broker-authorization-dialog [data-slot="dialog-footer"] button {
+  min-height: 44px;
+}
+.broker-authorization-dialog > button {
+  min-width: 44px;
+  min-height: 44px;
+}
+.broker-authorization-dialog p {
+  overflow-wrap: anywhere;
+  line-height: 1.6;
+}
+.broker-authorization-checks {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.broker-authorization-checks li {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+}
+.broker-authorization-checks svg {
+  width: 18px;
+  height: 18px;
+}
+.broker-authorization-checks span {
+  overflow-wrap: anywhere;
+}
+.broker-account-holdings {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.broker-account-holdings details {
+  min-width: 0;
+}
+.broker-account-holdings summary {
+  padding-block: 12px;
+  cursor: pointer;
+  min-height: 44px;
+}
+.broker-account-holdings [data-slot="table-container"] {
+  max-height: 320px;
+  overflow: auto;
 }
 .capital-workspace {
   gap: 20px;

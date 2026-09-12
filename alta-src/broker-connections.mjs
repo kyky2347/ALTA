@@ -106,7 +106,7 @@ export function runBrokerProcess(
     child.stdin.on("error", () => fail("broker_process_unavailable"));
     child.stdout.on("data", (chunk) => {
       output = Buffer.concat([output, chunk]);
-      if (output.length > 1024 * 1024) fail("broker_response_too_large");
+      if (output.length > 4 * 1024 * 1024) fail("broker_response_too_large");
     });
     child.on("close", (code) => {
       exited = true;

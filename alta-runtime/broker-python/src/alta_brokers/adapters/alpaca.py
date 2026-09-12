@@ -4,6 +4,7 @@ from urllib.parse import quote
 
 from ..contracts import Intent, Order, Position, Snapshot, dispatch_guard, now, require
 from ..transport import Transport
+from ..contracts import acknowledge_order
 
 
 class Alpaca:
@@ -96,7 +97,7 @@ class Alpaca:
             orders=tuple(self.order(o) for o in orders),
         )
 
-    def submit(self, intent: Intent):
+    def submit(self, intent: Intent, *, acknowledge=None):
         dispatch_guard(intent)
         asset, _ = self.http.request(
             "GET", f"/v2/assets/{quote(intent.symbol, safe='')}"
@@ -121,6 +122,9 @@ class Alpaca:
                 "extended_hours": False,
                 "client_order_id": intent.client_id,
             },
+        )
+        acknowledge_order(
+            intent, row.get("id") if isinstance(row, dict) else None, acknowledge
         )
         return self.order(row)
 

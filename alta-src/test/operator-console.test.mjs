@@ -6,6 +6,51 @@ import test from "node:test";
 import http from "node:http";
 import { createOperatorConsole } from "../operator-console.mjs";
 
+test("broker account state is authenticated and uses a local-state RPC only", async (context) => {
+  const temporary = fs.mkdtempSync(
+    path.join(os.tmpdir(), "alta-broker-state-"),
+  );
+  context.after(() => fs.rmSync(temporary, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(temporary, "index.html"), "<h1>Test</h1>");
+  const tokenFile = path.join(temporary, "token");
+  fs.writeFileSync(tokenFile, "test-only-session", { mode: 0o600 });
+  const calls = [];
+  const operator = createOperatorConsole({
+    port: 0,
+    staticDir: temporary,
+    service: {
+      tokenFile,
+      status: async () => ({ ready: false }),
+      brokerConnection: async (request) => {
+        calls.push(request);
+        return { provider: request.provider };
+      },
+    },
+  });
+  const location = await operator.listen();
+  context.after(() => operator.close());
+  const endpoint = `${location.origin}/control/broker-connections/state?provider=alpaca`;
+  assert.equal((await fetch(endpoint)).status, 401);
+  assert.deepEqual(calls, []);
+  const open = await fetch(location.openUrl, { redirect: "manual" });
+  const cookie = open.headers.get("set-cookie").split(";", 1)[0];
+  assert.equal(
+    (await fetch(endpoint, { headers: { Cookie: cookie } })).status,
+    200,
+  );
+  assert.deepEqual(calls, [{ action: "state", provider: "alpaca" }]);
+  assert.equal(
+    (
+      await fetch(
+        `${location.origin}/control/broker-connections/state?provider=unknown`,
+        { headers: { Cookie: cookie } },
+      )
+    ).status,
+    400,
+  );
+  assert.equal(calls.length, 1);
+});
+
 test("closing a completed GET request cancels its pending upstream read", async (context) => {
   const temporary = fs.mkdtempSync(
     path.join(os.tmpdir(), "alta-console-abort-"),

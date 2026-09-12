@@ -6,6 +6,8 @@ import {
   brokerCredentialFields,
   brokerFieldKind,
   brokerConnectionError,
+  validBrokerAccountState,
+  BROKER_CHECKS,
 } from "../src/lib/broker-connections.ts";
 
 test("broker inputs distinguish gateways, key material and secrets", () => {
@@ -71,6 +73,9 @@ test("broker verification requires typed account proof and complete collection s
       environment_verified: true,
       trading_permitted: false,
       currency: "USD",
+      equity: "1000.00",
+      cash: "500.00",
+      buying_power: "500.00",
       positions: [],
       orders: [],
     },
@@ -79,7 +84,78 @@ test("broker verification requires typed account proof and complete collection s
   assert.equal(
     validBrokerVerification({
       ...response,
+      snapshot: { ...response.snapshot, cash: "0E-8" },
+    }),
+    true,
+  );
+  assert.equal(
+    validBrokerVerification({
+      ...response,
+      snapshot: { ...response.snapshot, cash: "NaN" },
+    }),
+    false,
+  );
+  assert.equal(
+    validBrokerVerification({
+      ...response,
+      snapshot: { ...response.snapshot, orders: [null] },
+    }),
+    false,
+  );
+  assert.equal(
+    validBrokerVerification({
+      ...response,
       snapshot: { ...response.snapshot, positions: null },
+    }),
+    false,
+  );
+});
+
+test("authorization review is account-bound and cannot claim unreleased execution", () => {
+  const binding = "a".repeat(64);
+  const revision = "b".repeat(64);
+  const review = {
+    eligible: false,
+    provider: "alpaca",
+    environment: "PAPER",
+    binding,
+    revision,
+    checks: Object.fromEntries(BROKER_CHECKS.map((k) => [k, false])),
+    limits: {
+      max_order_notional: "10000",
+      max_gross_notional: "25000",
+      max_quote_age_seconds: 10,
+    },
+  };
+  const value = {
+    provider: "alpaca",
+    environment: "PAPER",
+    binding,
+    revision,
+    authority: "off",
+    verification: { status: "not_checked", fresh: false, snapshot: null },
+    authorization_review: review,
+  };
+  assert.equal(validBrokerAccountState(value), true);
+  for (const change of [
+    { eligible: true },
+    { binding: "c".repeat(64) },
+    { revision: "c".repeat(64) },
+    { environment: "LIVE" },
+    { checks: { ...review.checks, account_acceptance: true } },
+    { limits: { ...review.limits, max_order_notional: "Infinity" } },
+  ])
+    assert.equal(
+      validBrokerAccountState({
+        ...value,
+        authorization_review: { ...review, ...change },
+      }),
+      false,
+    );
+  assert.equal(
+    validBrokerAccountState({
+      ...value,
+      verification: { ...value.verification, fresh: true },
     }),
     false,
   );
