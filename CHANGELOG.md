@@ -8,6 +8,10 @@ semantic versioning while the project remains experimental.
 
 ### Added
 
+- A full-graph Node dependency advisory gate in CI, including development tools.
+  Reviewed patch overrides update Hono to 4.13.5, js-yaml 4.x to 4.3.2 and
+  smol-toml to 1.7.1, resolving five known advisories without relaxing the general
+  seven-day release quarantine or publisher-trust policy.
 - All four Scouts can use 13 bounded research tools, including sitemaps,
   date-filtered feeds, scholarly metadata and historical archives. Defaults are
   11 calls, 98k chargeable tokens and 300 seconds, leaving earned-incentive

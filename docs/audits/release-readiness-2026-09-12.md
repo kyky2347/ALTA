@@ -26,18 +26,18 @@ Two additional defects were addressed during real research verification:
 
 ## Verification matrix
 
-| Gate                                                               | Result                            |
-| ------------------------------------------------------------------ | --------------------------------- |
-| Node gateway, tools, supervisor and operator controls              | 302 passed                        |
-| Research application with isolated PostgreSQL test databases       | 399 passed                        |
-| Isolated Tiger Paper package                                       | 38 passed                         |
-| Experimental broker contracts, all optional dependencies installed | 44 passed                         |
-| Dashboard contracts and three-language catalog parity              | 33 passed                         |
-| Total                                                              | **816 passed**                    |
-| Research Ruff lint/format                                          | Passed; 163 files                 |
-| Broker Ruff lint/format                                            | Passed; 18 files                  |
-| Prettier, Markdown, Oxlint, TypeScript, production frontend build  | Passed                            |
-| pnpm production dependency advisory check                          | No known vulnerabilities returned |
+| Gate                                                               | Result                                                      |
+| ------------------------------------------------------------------ | ----------------------------------------------------------- |
+| Node gateway, tools, supervisor and operator controls              | 302 passed                                                  |
+| Research application with isolated PostgreSQL test databases       | 399 passed                                                  |
+| Isolated Tiger Paper package                                       | 38 passed                                                   |
+| Experimental broker contracts, all optional dependencies installed | 44 passed                                                   |
+| Dashboard contracts and three-language catalog parity              | 33 passed                                                   |
+| Total                                                              | **816 passed**                                              |
+| Research Ruff lint/format                                          | Passed; 163 files                                           |
+| Broker Ruff lint/format                                            | Passed; 18 files                                            |
+| Prettier, Markdown, Oxlint, TypeScript, production frontend build  | Passed                                                      |
+| pnpm complete dependency advisory check                            | No known vulnerabilities returned after the follow-up below |
 
 The 816 tests also passed from an isolated source export containing no development
 runtime state or provider credentials. Locked pnpm installation, managed Python
@@ -216,3 +216,33 @@ operator-initiated start. No broker order or new position was created by this re
 
 The model dialog remained inside 390×844, 768×1024 and 1440×1000 viewports after
 layout settled. This is bounded Chromium coverage, not every browser/device test.
+
+## Post-publication dependency follow-up
+
+Both CI jobs passed for `147655a`. GitHub then reported five dependency alerts:
+the initial production-only pnpm audit had missed packages introduced by the
+shadcn and Markdown development tools. The gap was confirmed with a complete
+dependency audit, not dismissed as irrelevant because the packages were indirect.
+
+| Package     | Resolved patch  | Advisory                                                                                                                                                                                                  |
+| ----------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Hono        | 4.13.3 → 4.13.5 | [SSG traversal](https://github.com/advisories/GHSA-gqvv-2mrq-wpjv), [body parsing](https://github.com/advisories/GHSA-g6gw-c38x-mqfc), [query parsing](https://github.com/advisories/GHSA-crvj-82cr-hjcx) |
+| js-yaml 4.x | 4.3.1 → 4.3.2   | [merge-source CPU exhaustion](https://github.com/advisories/GHSA-2883-xcg3-v3hh)                                                                                                                          |
+| smol-toml   | 1.7.0 → 1.7.1   | [malformed-document denial of service](https://github.com/advisories/GHSA-7w5x-hrqm-74c2)                                                                                                                 |
+
+The unaffected js-yaml 5.2.2 route was preserved. Narrow major-version overrides
+and exact patch release-age exceptions leave the general seven-day quarantine,
+integrity locks and publisher-trust policy enabled. The complete
+`pnpm audit --audit-level=moderate` now returns no known vulnerabilities. CI and
+the release contract run that full-graph gate; neither production-only filtering
+nor audit-service error suppression is used.
+
+The 302 Node and 33 dashboard tests passed again after patching, along with frozen
+installation and the full format/lint/TypeScript/production-build gate. Research,
+capital and broker application code and their lockfiles are unchanged from the
+816-test verification. A fresh export of the exact staged source repeated the
+frozen install, full advisory audit, 335 Node/dashboard tests and frontend build
+successfully. Its 27 production output files match the screenshot build byte for
+byte; these development-tool patches do not introduce an uncaptured UI version.
+These are dated advisory results, not a guarantee that future vulnerability
+reports or other ecosystems are clear.

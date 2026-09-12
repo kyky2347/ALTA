@@ -46,6 +46,7 @@ Start from a fresh clone of the canonical repository.
 ```shell
 cd /absolute/path/to/ALTA
 corepack pnpm install --frozen-lockfile
+corepack pnpm audit --audit-level=moderate
 uv sync --project alta-runtime/python --frozen
 uv sync --project alta-runtime/capital-python --frozen
 uv sync --project alta-runtime/broker-python --frozen --all-extras
@@ -103,8 +104,9 @@ Install the Rust toolchain declared by the vendored workspace and run:
 The V8 sandbox dependency may be built from source with
 `V8_FROM_SOURCE=1 ./alta build`. Maintainers may instead pre-provision the
 checksum manifest, archive, and binding in `ALTA_RUSTY_V8_CACHE_DIR`, or provide
-the two absolute local-file overrides documented in the README. Build output and
-runtime state remain under local `.alta/`. ALTA does not replace a global
+both `RUSTY_V8_ARCHIVE` and `RUSTY_V8_SRC_BINDING_PATH` as existing absolute
+local files. See the [harness setup guide](docs/operations/getting-started.md#build-the-project-local-codex-harness).
+Build output and runtime state remain under local `.alta/`. ALTA does not replace a global
 `codex` installation or write credentials into source.
 
 ## External acceptance
@@ -135,6 +137,8 @@ A release candidate is acceptable only when:
 
 1. locked installs succeed from a clean clone;
 2. Node, Python, capital-boundary, format, and static checks pass;
+   the complete Node dependency graph also passes the advisory gate, including
+   development tools rather than production dependencies alone;
 3. migrations, replay, and recovery are deterministic where specified;
 4. the exact tracked tree and complete Git history pass redacted secret scans;
 5. test fixtures are synthetic, and any console captures are sanitized, scoped

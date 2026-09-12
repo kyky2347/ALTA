@@ -101,6 +101,8 @@ Saving a profile does not enable order submission or verify account permissions.
 Before publishing a commit or release:
 
 ```shell
+corepack pnpm install --frozen-lockfile
+corepack pnpm audit --audit-level=moderate
 ./alta test
 ./alta env setup --dev
 ./alta env python -m pytest -q alta-runtime/python/tests
@@ -123,6 +125,13 @@ snapshot, run `cargo audit --file Cargo.lock` from
 the dependency path and exposure, and state a concrete removal condition in
 both `.cargo/audit.toml` and `deny.toml`; a broad severity or vendor exemption
 is not acceptable.
+
+The Node advisory gate includes development dependencies: build and documentation
+tools also process repository input. A production-only audit is insufficient.
+CI fails on moderate-or-higher advisories or an unavailable audit service; do not
+silence the gate with `--prod` or `--ignore-registry-errors`. Reviewed security
+patches may receive exact-version release-age exceptions while the general
+quarantine, integrity checks and publisher-trust policy remain enabled.
 
 The optional `.gitleaks.toml` contains only exact-path exceptions for reviewed
 public test fixtures in the pinned Codex snapshot. Do not replace them with a

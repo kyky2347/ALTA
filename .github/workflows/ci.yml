@@ -30,6 +30,8 @@ jobs:
           cache: pnpm
       - name: Install locked dependencies
         run: corepack pnpm install --frozen-lockfile
+      - name: Audit the complete dependency graph
+        run: corepack pnpm audit --audit-level=moderate
       - name: Run Node tests
         run: ./alta test
       - name: Run dashboard contract tests
