@@ -57,6 +57,7 @@ export type BrokerAccountSnapshot = {
   account_verified: boolean;
   environment_verified: boolean;
   trading_permitted: boolean;
+  order_preview_required?: boolean;
   currency: string;
   equity: string;
   cash: string;
@@ -92,6 +93,20 @@ export type BrokerAccountState = BrokerVerification & {
   revision: string;
   binding: string;
   authority: "off" | "entries" | "close_only";
+  orders?: Array<{
+    client_id: string;
+    symbol: string;
+    side: "BUY" | "SELL";
+    quantity: string;
+    filled: string;
+    state:
+      | "prepared"
+      | "working"
+      | "unknown"
+      | "filled"
+      | "cancelled"
+      | "rejected";
+  }>;
   verification: {
     status:
       | "not_checked"
@@ -104,7 +119,7 @@ export type BrokerAccountState = BrokerVerification & {
     snapshot: BrokerAccountSnapshot | null;
   };
   authorization_review: {
-    eligible: false;
+    eligible: boolean;
     checks: Record<(typeof BROKER_CHECKS)[number], boolean>;
     provider: string;
     environment: "PAPER" | "LIVE";
@@ -145,6 +160,27 @@ export function validBrokerAccountState(
     /^[a-f0-9]{64}$/.test(String(value.revision)) &&
     /^[a-f0-9]{64}$/.test(String(value.binding)) &&
     ["off", "entries", "close_only"].includes(String(value.authority)) &&
+    (value.orders === undefined ||
+      (Array.isArray(value.orders) &&
+        value.orders.length <= 100 &&
+        value.orders.every(
+          (o) =>
+            object(o) &&
+            /^alta-[a-f0-9]{32}$/.test(String(o.client_id)) &&
+            typeof o.symbol === "string" &&
+            o.symbol.length <= 40 &&
+            ["BUY", "SELL"].includes(String(o.side)) &&
+            decimal(o.quantity) &&
+            decimal(o.filled) &&
+            [
+              "prepared",
+              "unknown",
+              "working",
+              "filled",
+              "cancelled",
+              "rejected",
+            ].includes(String(o.state)),
+        ))) &&
     [
       "not_checked",
       "configuration_changed",
@@ -160,7 +196,7 @@ export function validBrokerAccountState(
         snapshot: v.snapshot,
       })) &&
     (!v.fresh || (v.status === "verified" && v.snapshot !== null)) &&
-    r.eligible === false &&
+    typeof r.eligible === "boolean" &&
     r.provider === value.provider &&
     r.environment === value.environment &&
     r.binding === value.binding &&
@@ -169,8 +205,11 @@ export function validBrokerAccountState(
     BROKER_CHECKS.every(
       (k) => typeof (r.checks as Record<string, unknown>)[k] === "boolean",
     ) &&
-    r.checks.runner_integration === false &&
-    r.checks.account_acceptance === false &&
+    (!r.eligible ||
+      (v.fresh === true &&
+        BROKER_CHECKS.every(
+          (k) => (r.checks as Record<string, unknown>)[k] === true,
+        ))) &&
     object(r.limits) &&
     decimal(r.limits.max_order_notional) &&
     decimal(r.limits.max_gross_notional) &&
@@ -207,6 +246,8 @@ export function brokerFieldKind(
 export function brokerConnectionError(code: string) {
   if (code === "broker_dependencies_not_installed")
     return "brokerInstallRequired";
+  if (/deselect_before|revoke_before|ledger_migration|fresh_flat/.test(code))
+    return "brokerEnvironmentBound";
   if (/conflict|credential_change|account_profile/.test(code))
     return "brokerConnectionConflict";
   if (/invalid|mismatch/.test(code)) return "brokerFieldsInvalid";

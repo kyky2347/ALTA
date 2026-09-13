@@ -50,6 +50,15 @@ def quote(**kwargs):
     ).model_copy(update=kwargs)
 
 
+def test_orphaned_research_worker_cannot_start_an_order(monkeypatch):
+    from alta_brokers.contracts import dispatch_guard
+
+    monkeypatch.setenv("ALTA_BROKER_PARENT_PID", "23456")
+    monkeypatch.setattr("os.getppid", lambda: 1)
+    with pytest.raises(BrokerError, match="dispatch_owner_lost"):
+        dispatch_guard(intent())
+
+
 class Broker:
     def __init__(self, config):
         self.config = config

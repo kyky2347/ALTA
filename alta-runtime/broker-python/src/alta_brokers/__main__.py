@@ -1,13 +1,10 @@
-"""Write-only operator RPC over stdin. This entrypoint never places orders.
-
-The execution engine is a separate library boundary pending research-runner
-integration and real-account acceptance. A dashboard button cannot bypass that.
-"""
+"""Account-bound operator control. No order/quote payload is accepted here."""
 
 import json
 import logging
 import os
 import sys
+from contextlib import nullcontext
 from pathlib import Path
 
 from pydantic import ValidationError
@@ -18,22 +15,48 @@ from .contracts import BrokerError, Profile, require
 from .engine import BrokerEngine
 from .storage import Profiles, owner
 from .verification import Verification
+from .routing import ExecutionRoute
 
 
 def handle(request, profiles):
     require(isinstance(request, dict), "broker_request_invalid")
     action = request.get("action")
     require(
-        action in ("catalog", "save", "verify", "state"), "broker_action_unavailable"
+        action
+        in (
+            "catalog",
+            "save",
+            "verify",
+            "state",
+            "route",
+            "select",
+            "authorize",
+            "revoke",
+            "reconcile",
+        ),
+        "broker_action_unavailable",
     )
     allowed = (
         {"action"}
-        if action == "catalog"
+        if action in ("catalog", "route")
+        else {"action", "provider", "revision", "profile_revision"}
+        if action == "select"
+        else {"action", "provider", "revision", "confirmation"}
+        if action == "authorize"
+        else {"action", "provider", "revision"}
+        if action in ("revoke", "reconcile")
         else {"action", "profile", "revision"}
         if action == "save"
         else {"action", "provider"}
     )
     require(set(request) == allowed, "broker_request_invalid")
+    route = ExecutionRoute(profiles)
+    if action == "route":
+        return route.state()
+    if action == "select":
+        return route.select(
+            request["provider"], request["revision"], request["profile_revision"]
+        )
     if action == "catalog":
         rows = []
         for entry in CATALOG:
@@ -72,12 +95,28 @@ def handle(request, profiles):
             "binding": profile.binding,
             "saved": True,
         }
+    # Route lock serializes selection with verification, authority and SDK
+    # sessions. A stale browser tab cannot authorize the previously selected lane.
+    with nullcontext() if action == "state" else owner(route.lock):
+        return account_action(request, profiles, route)
+
+
+def account_action(request, profiles, route):
+    action = request["action"]
     profile = profiles.load(request["provider"])
+    if action in ("authorize", "revoke", "reconcile"):
+        require(profile.revision == request["revision"], "broker_profile_conflict")
+    if action == "authorize":
+        route.selected(profile.provider, profile.revision)
     # Isolated process plus per-account lock bounds all SDK sessions. No raw
     # provider log, account response, or credential is returned on failure.
-    with owner(profiles.account_dir(profile) / "connection.lock"):
+    with (
+        nullcontext()
+        if action == "state"
+        else owner(profiles.account_dir(profile) / "connection.lock")
+    ):
         adapter = None
-        if action == "verify":
+        if action in ("verify", "authorize", "reconcile"):
             try:
                 adapter = connect(profile)
             except Exception:
@@ -85,12 +124,19 @@ def handle(request, profiles):
                 raise
         engine = BrokerEngine(profile, adapter, profiles.account_dir(profile))
         try:
+            if action == "authorize":
+                return engine.authorize(request["confirmation"])
+            if action == "revoke":
+                return engine.revoke()
+            if action == "reconcile":
+                engine.reconcile()
+                return engine.state()
             return engine.verify() if action == "verify" else engine.state()
         finally:
             engine.close()
 
 
-def main():
+def main(*, handler=handle):
     logging.disable(logging.CRITICAL)
     os.umask(0o077)
     project = Path(__file__).resolve().parents[4]
@@ -110,7 +156,7 @@ def main():
         raw = sys.stdin.buffer.read(65537)
         require(len(raw) <= 65536, "broker_request_too_large")
         result = {
-            "data": handle(json.loads(raw), Profiles(credentials, state, project))
+            "data": handler(json.loads(raw), Profiles(credentials, state, project))
         }
     except (ValidationError, ValueError, TypeError, KeyError):
         result = {"error": {"code": "broker_input_or_response_invalid"}}

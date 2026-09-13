@@ -22,6 +22,7 @@ from alta_asterism.alpha_feedback import AlphaFeedbackProjector
 from alta_asterism.agentic_deliberation import AgenticDeliberator
 from alta_asterism.agentic_expression import AgenticExpressionFlow
 from alta_asterism.agentic_roles import StructuredRoleRunner
+from alta_asterism.broker_handoff import prepare_handoff
 from alta_asterism.autonomous import AutonomousRunner
 from alta_asterism.b5_runtime import _append_event, _contract_event
 from alta_asterism.contracts import Environment, Event, Settings
@@ -875,9 +876,31 @@ def test_independent_expression_auditor_can_require_wait_before_shadow_open(
     assert "ranking" not in audit_input
 
 
+@pytest.mark.parametrize("broker_api", [False, True])
 def test_expression_auditor_selects_from_a_market_validated_payoff_slate(
     empty_b6_database: str,
+    broker_api: bool,
 ) -> None:
+    class AuditedHandoff:
+        """Real PostgreSQL evidence; no broker transport or account credential."""
+
+        route = {
+            "provider": "alpaca",
+            "environment": "LIVE",
+            "binding": "b" * 64,
+            "revision": "c" * 64,
+            "profile_revision": "d" * 64,
+        }
+
+        def __init__(self):
+            self.plans = []
+
+        def handoff(self, cycle_id, proposal):
+            self.plans.append(prepare_handoff(database, self.route, cycle_id, proposal))
+
+        def monitor_once(self):
+            return ()
+
     class TournamentMarket:
         @staticmethod
         def _quote(symbol: str, *, after: datetime | None = None) -> QuoteSnapshot:
@@ -963,6 +986,7 @@ def test_expression_auditor_selects_from_a_market_validated_payoff_slate(
         model_provider="fixture",
         model_id="fixture-agentic-model",
     )
+    broker = AuditedHandoff() if broker_api else None
     runtime = MvpOrchestrator(
         database,
         fixture,
@@ -972,6 +996,7 @@ def test_expression_auditor_selects_from_a_market_validated_payoff_slate(
             roles,
             fixture.universe,
             TournamentMarket(),
+            broker_executor=broker,
         ),
         research_config=ResearchRuntimeConfig(max_tool_calls=3),
         role_runner=roles,
@@ -991,6 +1016,10 @@ def test_expression_auditor_selects_from_a_market_validated_payoff_slate(
     assert (kind, symbol) == ("etf", "SPY"), payload.get("gate", payload)
     assert payload["selected_hypothesis_id"] == "liquid_proxy"
     assert len(payload["expression_slate"]) == 2
+    if broker is not None:
+        assert broker.plans, "audited real-database plan did not reach handoff"
+        assert all(plan["entry"]["symbol"] == "SPY" for plan, _ in broker.plans)
+        assert result.shadow_position_id is None
 
 
 def test_expression_market_failure_is_audited_wait_not_pipeline_failure(

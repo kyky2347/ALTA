@@ -334,6 +334,20 @@ class Database:
         with self.connect() as connection:
             connection.execute("SELECT 1")
 
+    @contextmanager
+    def autonomous_external_operation(self) -> Iterator[None]:
+        """Hold the owner's durable epoch across a bounded external operation.
+
+        A preflight SELECT alone leaves a gap before broker dispatch. Keeping
+        the fenced transaction open makes shutdown drain this operation before
+        releasing ownership. Unlike ordinary reads, no-owner mode is forbidden.
+        """
+        fence = self._fence_snapshot()
+        with self.connect():
+            if fence is None or self._fence_snapshot() is not fence:
+                raise AutonomousFenceLost("external operation requires active owner")
+            yield
+
     def _fence_snapshot(self) -> _AutonomousFence | None:
         with self._fence_lock:
             return self._autonomous_fence

@@ -1,12 +1,14 @@
-# Isolated broker connectors
+# Isolated broker execution
 
-Six concrete provider adapters, typed contracts, private credential profiles and
-a durable execution-engine library. This package is separate from the research
-runtime and from the existing Tiger Paper executor.
+Six provider adapters, private account-bound credentials and a durable execution
+kernel, separate from research and the older Tiger Paper package. The dashboard
+offers Shadow or Broker API; the selected account explicitly specifies Paper or
+Live. No automatic provider or environment fallback exists.
 
-**Current operator surface: configure and verify only.** The engine is not yet
-wired into autonomous research. No live order was used for development or testing.
-Account acceptance is not implied by a passing connector test.
+**Experimental, default off.** Tiger, Alpaca, IBKR and Futu have conditional
+execution paths. Longbridge identity proof and Schwab permission/history proof
+and OAuth renewal remain incomplete; their authorization stays blocked. No new
+live account has an acceptance record. Development tests send no live orders.
 
 ```shell
 uv sync --frozen --all-extras --project alta-runtime/broker-python
@@ -14,65 +16,42 @@ uv run --frozen --all-extras --project alta-runtime/broker-python \
   pytest -q alta-runtime/broker-python/tests
 ```
 
-Then open the dashboard's **API Trading → Broker connections**. Profiles are
-write-only, outside the repository, with owner-only permissions. Saving is
-allowed only while research is stopped. Verification performs actual broker
-reads when the selected profile and required local gateway are present.
+## Two separate process interfaces
 
-The operator subprocess accepts `catalog`, `save`, `state` and `verify` over
-stdin. It has no order-placement or authorization action. SDK output is discarded;
-only schema-validated account summaries and constant error codes are returned.
+| Interface                        | Accepted operations                                                                            | Caller                                                           |
+| -------------------------------- | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| Operator RPC (`__main__.py`)     | catalog, save, state, verify, route, select, authorize, revoke, reconcile                      | Authenticated local control service                              |
+| Research RPC (`research_rpc.py`) | stage an independently audited plan, inspect active plans, monitor a plan with a current quote | Trusted research backend; not exposed as browser order endpoints |
 
-Account checks persist a revision-bound, redacted response locally. The dashboard
-can inspect cash, equity, buying power, holdings, open orders and authorization
-prerequisites without opening another SDK session. Evidence older than 30 seconds
-is historical, not current permission. A failed verification invalidates the
-previous success; replacing credentials invalidates evidence from the old
-revision. The authorization review is **not an enable switch**: runner integration
-and account acceptance remain unreleased gates.
+Saving credentials never enables orders. Configuration changes require stopped
+research, no authority, a deselected route and settled exposure. Write-only
+profiles and prior ledgers remain outside the repository. SDK output is discarded;
+the console receives validated summaries and constant error codes.
 
-Each adapter reports a broker-issued order identity to the durable ledger before
-parsing or fetching further order details. If that later step fails, restart
-recovery uses the recorded identity; it never blindly repeats the submit request.
-Futu and Longport consult bounded prior-session history when a current-session
-lookup has no match. History absence still does not authorize a second order.
+## Responsibilities
 
-## Implementation boundaries
+| Module                       | Owns                                                                        |
+| ---------------------------- | --------------------------------------------------------------------------- |
+| `contracts.py`, `catalog.py` | Explicit environments, Decimal amounts and provider-specific requirements   |
+| `adapters/`, `transport.py`  | SDK/HTTP normalization, bounded calls and no blind POST retry               |
+| `storage.py`, `routing.py`   | Private atomic files, exact selected destination, account locks and ledger  |
+| `verification.py`            | Revision-bound account evidence and current authorization prerequisites     |
+| `engine.py`                  | Authorization, admission, durable intents and reconciliation                |
+| `lifecycle.py`               | Persistent single-plan entry, monitoring, exit and broker-confirmed closure |
+| `research_rpc.py`            | Immutable audit receipts and trusted quote/plan input                       |
 
-`lifecycle.py` adds a restartable, single-active-plan execution kernel. A trusted
-caller must implement both the independent-audit port and the realtime-quote port;
-there is no default approval, synthetic quote or browser-supplied approval flag.
-Plans, entry identities and exit terms are persisted before mutation. A target,
-stop, time limit or close-only authority can trigger an owned exit. Uncertain
-submissions reconcile by identity; an incomplete or expired exit requires review.
-Closure requires matching broker positions, not just a successful submit response.
-This kernel is not yet a launched worker or a production research integration.
+The application handoff in `alta-runtime/python/` verifies PostgreSQL artifacts
+and binds the exact opportunity and account revision before staging. Independent
+monitoring continues between LLM turns. The browser cannot supply its own quote,
+audit flag or raw order. Account checks older than 30 seconds are historical;
+failed verification invalidates the previous success.
 
-Settled history no longer prevents reauthorization after the account is flat.
-The entry notional cap cannot strand a profitable exit above that cap: sell orders
-remain restricted to the exact owned quantity, a fresh quote and the price band.
+Initial execution supports one active, long USD stock/ETF plan, whole shares and
+DAY limits. Stop, target, time and revocation exits are software-managed: keep the
+backend running. Native protective orders, options, shorts, multi-plan portfolios
+and automatic Schwab OAuth refresh are not implemented. An uncertain submission
+or incomplete exit can require manual review. A passing contract test is not
+real-account trading acceptance or production certification.
 
-| Module            | Owns                                                                             |
-| ----------------- | -------------------------------------------------------------------------------- |
-| `contracts.py`    | Decimal quantities, explicit environment, account binding, typed snapshots       |
-| `adapters/`       | Six provider-specific SDK/HTTP implementations and status normalization          |
-| `transport.py`    | Bounded TLS reads, no redirects, no automatic POST retries                       |
-| `storage.py`      | Private atomic profiles, kernel owner locks, SQLite WAL/full-sync ledger         |
-| `engine.py`       | Admission, persistent intent identity, ambiguous-outcome fencing, reconciliation |
-| `verification.py` | Revision-bound evidence, freshness and authorization prerequisite reporting      |
-| `__main__.py`     | Bounded write-only operator RPC, never order mutation                            |
-
-The execution library currently supports whole-share USD stock limit orders,
-DAY validity and regular hours. It does not claim options, leverage, shorting,
-all account structures or exchange-wide compatibility. Its quote input must
-come from an independently verified realtime source; it is not an LLM assertion.
-
-Pending integration includes a trusted audit-to-order handoff, fresh quote
-acquisition, durable position-monitor ownership, selected-account lifecycle,
-credential rotation with existing exposure, OAuth renewal, cross-application
-Tiger ownership and six real-account acceptance records. Longport proof and
-Schwab permission/history gaps keep their common-engine authorization blocked.
-Do not bypass these gates to demonstrate a trade.
-
-See [the provider matrix](../../docs/broker-expansion.md) and
-[attribution](../../ATTRIBUTION.md).
+See [setup, provider proof and operational limits](../../docs/broker-expansion.md)
+and [attribution](../../ATTRIBUTION.md).

@@ -49,7 +49,7 @@ class BrokerEngine:
         require(confirmation == phrase, "broker_confirmation_required")
         with owner(self.directory / "mutation.lock"):
             snapshot = self._snapshot()
-            require(snapshot.trading_permitted, "broker_permission_unverified")
+            self._permission(snapshot)
             require(
                 not snapshot.positions
                 and not snapshot.orders
@@ -82,7 +82,24 @@ class BrokerEngine:
                     "revoked_at": now().isoformat(),
                 },
             )
+            # A staged plan with no submitted intent must not come back to life
+            # if the operator subsequently re-authorizes this same account.
+            if self.ledger.db.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='broker_plans'"
+            ).fetchone():
+                with self.ledger.db:
+                    self.ledger.db.execute("""UPDATE broker_plans SET state='expired',
+                        reason='entry_revoked', updated_at=CURRENT_TIMESTAMP
+                        WHERE state='staged' AND NOT EXISTS
+                        (SELECT 1 FROM intents WHERE client_id=broker_plans.entry_id)""")
         return self.state()
+
+    def _permission(self, snapshot):
+        require(
+            snapshot.trading_permitted
+            or (self.profile.provider == "ibkr" and snapshot.order_preview_required),
+            "broker_permission_unverified",
+        )
 
     def state(self):
         rows = self.ledger.rows()
@@ -104,15 +121,22 @@ class BrokerEngine:
             "pending_count": sum(
                 r["state"] in ("prepared", "unknown", "working") for r in rows
             ),
-            "orders": [
-                {
-                    "client_id": r["client_id"],
-                    "state": r["state"],
-                    "updated_at": r["updated_at"],
-                    "error": r["error"],
-                }
-                for r in rows[-100:]
-            ],
+            "orders": [self._public_order(row) for row in rows[-100:]],
+        }
+
+    @staticmethod
+    def _public_order(row):
+        request = Intent.model_validate_json(row["request"])
+        result = Order.model_validate_json(row["result"]) if row["result"] else None
+        return {
+            "client_id": row["client_id"],
+            "state": row["state"],
+            "updated_at": row["updated_at"],
+            "error": row["error"],
+            "symbol": request.symbol,
+            "side": request.side,
+            "quantity": str(request.quantity),
+            "filled": str(result.filled) if result else "0",
         }
 
     def verify(self):
@@ -167,7 +191,7 @@ class BrokerEngine:
                 "broker_reconciliation_required",
             )
             snapshot = self._snapshot()
-            require(snapshot.trading_permitted, "broker_permission_unverified")
+            self._permission(snapshot)
             require(not snapshot.orders, "broker_open_orders_require_reconciliation")
             actual = {p.symbol: p.quantity for p in snapshot.positions if p.quantity}
             require(actual == self._position_book(), "broker_position_drift")

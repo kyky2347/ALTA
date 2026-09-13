@@ -6,6 +6,7 @@ import {
   saveExecutionMode,
   saveBrokerCredential,
   requestBrokerConnection,
+  requestBrokerExecution,
   mutateRuntime,
   refreshPaperCapital,
   replaceCredential,
@@ -588,6 +589,18 @@ export function useAltaConsole() {
     },
     [runSecureMutation, publishCapital, queueRefresh],
   );
+  const brokerExecution = useCallback(
+    async (
+      request: import("@/lib/broker-execution").BrokerExecutionRequest,
+    ) => {
+      const result = await runSecureMutation((token) =>
+        requestBrokerExecution(request, token),
+      );
+      queueRefresh();
+      return result;
+    },
+    [runSecureMutation, queueRefresh],
+  );
   const setBrokerCredential = useCallback(
     async (body: Parameters<typeof saveBrokerCredential>[0]) => {
       const next = await runSecureMutation((token) =>
@@ -668,6 +681,7 @@ export function useAltaConsole() {
     setExecutionMode,
     setBrokerCredential,
     brokerConnection,
+    brokerExecution,
     setCapitalAuthorization,
     loadOlderEvents,
     loadingOlder,

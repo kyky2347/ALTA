@@ -205,7 +205,13 @@ class Profiles:
         return self.state / profile.binding
 
     def save(self, profile, revision):
-        with owner(self.state / "profiles.lock"):
+        with owner(self.state / "route.lock"), owner(self.state / "profiles.lock"):
+            route_file = self.state / "execution-route.json"
+            require(
+                not route_file.exists()
+                or read_private(route_file).get("provider") != profile.provider,
+                "deselect_before_credential_change",
+            )
             file = self.file(profile.provider)
             previous = self.load(profile.provider) if file.exists() else None
             require(
@@ -213,10 +219,6 @@ class Profiles:
                 "broker_profile_conflict",
             )
             if previous:
-                require(
-                    previous.binding == profile.binding,
-                    "create_separate_account_profile_required",
-                )
                 authority = self.account_dir(previous) / "authority.json"
                 require(
                     not authority.exists()
@@ -226,9 +228,24 @@ class Profiles:
                 ledger = Ledger(self.account_dir(previous))
                 try:
                     require(
-                        not ledger.rows(),
+                        ledger.flat_and_settled(),
                         "ledger_migration_required_before_credential_change",
                     )
+                    if ledger.rows():
+                        from .verification import Verification
+
+                        proof = Verification(
+                            previous, self.account_dir(previous)
+                        ).state()
+                        snapshot = proof.get("snapshot") or {}
+                        require(
+                            proof["fresh"]
+                            and snapshot.get("account_verified")
+                            and snapshot.get("environment_verified")
+                            and not snapshot.get("positions")
+                            and not snapshot.get("orders"),
+                            "fresh_flat_snapshot_required_before_credential_change",
+                        )
                 finally:
                     ledger.close()
             value = profile.model_dump(mode="json")
@@ -236,4 +253,15 @@ class Profiles:
             value["credentials"] = {
                 k: v.get_secret_value() for k, v in profile.credentials.items()
             }
+            if previous and previous.binding == profile.binding:
+                # Rotation never carries old authority into a new credential
+                # revision. A crash between writes remains disabled/invalidated.
+                atomic_private(
+                    self.account_dir(profile) / "authority.json",
+                    {
+                        "mode": "off",
+                        "binding": profile.binding,
+                        "revision": profile.revision,
+                    },
+                )
             atomic_private(file, value)

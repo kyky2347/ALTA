@@ -310,6 +310,7 @@ test("mode and credential endpoints enforce session, CSRF, stopped runtime and s
     "/control/execution-mode",
     "/control/broker-credentials/tiger",
     "/control/broker-connections",
+    "/control/broker-connections/route",
   ]) {
     const endpoint = location.origin + route;
     assert.equal(
@@ -347,5 +348,5 @@ test("mode and credential endpoints enforce session, CSRF, stopped runtime and s
     assert.equal((await response.json()).data.execution.effective, "shadow");
     assert.equal(fs.existsSync(service.lockFile), false);
   }
-  assert.equal(calls, 3);
+  assert.equal(calls, 4);
 });

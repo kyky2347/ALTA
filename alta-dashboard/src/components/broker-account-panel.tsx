@@ -1,9 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ShieldCheck, Check, Minus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Input } from "@/components/ui/input";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import {
   Dialog,
   DialogTrigger,
@@ -14,7 +16,11 @@ import {
   DialogFooter,
   DialogClose,
 } from "@/components/ui/dialog";
-import { getJson } from "@/lib/api";
+import { getJson, ApiError } from "@/lib/api";
+import {
+  executionFailure,
+  type BrokerExecutionRequest,
+} from "@/lib/broker-execution";
 import {
   BROKER_CHECKS,
   validBrokerAccountState,
@@ -29,16 +35,36 @@ export function BrokerAccountPanel({
   broker,
   offline,
   refresh,
+  selected = false,
+  onAction,
 }: {
   broker: BrokerConnection;
   offline: boolean;
   refresh: unknown;
+  selected?: boolean;
+  onAction?: (request: BrokerExecutionRequest) => Promise<unknown>;
 }) {
   const { t, number, clock } = useI18n();
   const [state, setState] = useState<BrokerAccountState | null>(null);
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
   const [tick, setTick] = useState(() => Date.now());
+  const [open, setOpen] = useState(false);
+  const [revokeOpen, setRevokeOpen] = useState(false);
+  const [phrase, setPhrase] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<ReturnType<
+    typeof executionFailure
+  > | null>(null);
+  const acting = useRef(false);
+  const requestEpoch = useRef(0);
+  const alive = useRef(false);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
   useEffect(() => {
     if (!broker.configured || broker.profile_error || offline) return;
     const controller = new AbortController();
@@ -46,28 +72,46 @@ export function BrokerAccountPanel({
     setLoading(true);
     setState(null);
     setFailed(false);
-    getJson<unknown>(
-      `/control/broker-connections/state?provider=${encodeURIComponent(broker.provider)}`,
-      { signal: controller.signal, timeoutMs: 95_000 },
-    )
-      .then((value) => {
-        if (controller.signal.aborted) return;
-        if (
-          !validBrokerAccountState(value) ||
-          value.provider !== broker.provider ||
-          value.revision !== broker.revision
-        )
-          throw new Error("invalid_account_state");
-        setState(value);
-        setTick(Date.now());
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setFailed(true);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
+    let timer: ReturnType<typeof setTimeout>;
+    const read = () => {
+      if (acting.current) {
+        timer = setTimeout(read, 10000);
+        return;
+      }
+      const epoch = requestEpoch.current;
+      getJson<unknown>(
+        `/control/broker-connections/state?provider=${encodeURIComponent(broker.provider)}`,
+        { signal: controller.signal, timeoutMs: 95_000 },
+      )
+        .then((value) => {
+          if (controller.signal.aborted || epoch !== requestEpoch.current)
+            return;
+          if (
+            !validBrokerAccountState(value) ||
+            value.provider !== broker.provider ||
+            value.revision !== broker.revision
+          )
+            throw new Error("invalid_account_state");
+          setState(value);
+          setFailed(false);
+          setTick(Date.now());
+        })
+        .catch(() => {
+          if (!controller.signal.aborted && epoch === requestEpoch.current)
+            setFailed(true);
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) {
+            setLoading(false);
+            timer = setTimeout(read, 10000);
+          }
+        });
+    };
+    read();
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
   }, [
     broker.provider,
     broker.revision,
@@ -89,6 +133,55 @@ export function BrokerAccountPanel({
     Boolean(state?.verification.fresh) &&
     age >= 0 &&
     age <= 30_000;
+  const expected = `ENABLE ${broker.environment} ${broker.binding?.slice(-8)}`;
+  async function act(action: "verify" | "authorize" | "revoke" | "reconcile") {
+    if (!onAction || offline || busy || acting.current || !selected) return;
+    if (
+      action === "authorize" &&
+      (!fresh || !state?.authorization_review.eligible || phrase !== expected)
+    )
+      return;
+    acting.current = true;
+    requestEpoch.current += 1;
+    setBusy(true);
+    setActionError(null);
+    try {
+      const result = await onAction(
+        action === "verify"
+          ? { action, provider: broker.provider }
+          : action === "authorize"
+            ? {
+                action,
+                provider: broker.provider,
+                revision: broker.revision,
+                confirmation: phrase,
+              }
+            : { action, provider: broker.provider, revision: broker.revision },
+      );
+      if (
+        !validBrokerAccountState(result) ||
+        result.provider !== broker.provider ||
+        result.revision !== broker.revision
+      )
+        throw new Error("invalid_state");
+      if (alive.current) {
+        setState(result);
+        setFailed(false);
+        setTick(Date.now());
+        setPhrase("");
+        if (action === "authorize") setOpen(false);
+        if (action === "revoke") setRevokeOpen(false);
+      }
+    } catch (reason) {
+      if (alive.current)
+        setActionError(
+          executionFailure(reason instanceof ApiError ? reason.code : ""),
+        );
+    } finally {
+      acting.current = false;
+      if (alive.current) setBusy(false);
+    }
+  }
   const money = (value: string) =>
     number(Number(value), {
       style: "currency",
@@ -102,7 +195,17 @@ export function BrokerAccountPanel({
     >
       <header>
         <h3>{t("brokerAccountReviewTitle")}</h3>
-        <Badge variant="outline">{t("brokerTradingUnavailable")}</Badge>
+        <Badge variant="outline">
+          {t(
+            !state || failed || loading || offline
+              ? "unavailable"
+              : state.authority === "entries"
+                ? "brokerAuthorityEntries"
+                : state.authority === "close_only"
+                  ? "brokerAuthorityCloseOnly"
+                  : "brokerAuthorityOff",
+          )}
+        </Badge>
       </header>
       {loading && !offline && <Skeleton className="h-20 w-full" />}
       {failed && (
@@ -144,9 +247,115 @@ export function BrokerAccountPanel({
       {!snapshot && !loading && !failed && (
         <p className="execution-explainer">{t("brokerAccountReviewStart")}</p>
       )}
-      <Dialog>
+      {!!state?.orders?.length && (
+        <section aria-label={t("brokerOwnedOrders")}>
+          <h4>{t("brokerOwnedOrders")}</h4>
+          <ul className="broker-owned-orders">
+            {state.orders.map((order) => (
+              <li key={order.client_id}>
+                <strong>{order.symbol}</strong>
+                <span>
+                  {t(
+                    order.side === "BUY" ? "brokerOrderBuy" : "brokerOrderSell",
+                  )}{" "}
+                  · {number(Number(order.filled))} /{" "}
+                  {number(Number(order.quantity))}
+                </span>
+                <Badge variant="outline">
+                  {t(
+                    order.state === "prepared"
+                      ? "brokerOrderState_unknown"
+                      : `brokerOrderState_${order.state}`,
+                  )}
+                </Badge>
+                <small>{order.client_id}</small>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {actionError && (
+        <Alert variant="destructive">
+          <AlertDescription>{t(actionError)}</AlertDescription>
+        </Alert>
+      )}
+      {selected && onAction && (
+        <div className="execution-actions">
+          <Button
+            variant="outline"
+            disabled={offline || busy || loading}
+            onClick={() => void act("verify")}
+          >
+            {busy ? t("loading") : t("brokerRefreshAccount")}
+          </Button>
+          <Dialog
+            open={revokeOpen}
+            onOpenChange={(value) => !busy && setRevokeOpen(value)}
+          >
+            <DialogTrigger asChild>
+              <Button
+                variant="outline"
+                disabled={
+                  offline ||
+                  busy ||
+                  loading ||
+                  !state ||
+                  state.authority === "off"
+                }
+              >
+                {t("brokerRevokeEntries")}
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>
+                  {t("brokerRevokeEntries")} · {broker.name}
+                </DialogTitle>
+                <DialogDescription>
+                  {t("brokerRevokeExplanation")}
+                </DialogDescription>
+              </DialogHeader>
+              {actionError && (
+                <Alert variant="destructive">
+                  <AlertDescription>{t(actionError)}</AlertDescription>
+                </Alert>
+              )}
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button variant="outline" disabled={busy}>
+                    {t("cancel")}
+                  </Button>
+                </DialogClose>
+                <Button
+                  disabled={busy || offline}
+                  onClick={() => void act("revoke")}
+                >
+                  {busy ? t("loading") : t("brokerRevokeEntries")}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+          <Button
+            variant="outline"
+            disabled={offline || busy || loading || !state}
+            onClick={() => void act("reconcile")}
+          >
+            {t("brokerReconcileAccount")}
+          </Button>
+        </div>
+      )}
+      <Dialog
+        open={open}
+        onOpenChange={(value) => {
+          if (!busy) {
+            setOpen(value);
+            setPhrase("");
+            setActionError(null);
+          }
+        }}
+      >
         <DialogTrigger asChild>
-          <Button variant="outline">
+          <Button variant="outline" disabled={busy}>
             <ShieldCheck data-icon="inline-start" />
             {t("brokerReviewAuthorization")}
           </Button>
@@ -157,7 +366,7 @@ export function BrokerAccountPanel({
               {t("brokerReviewAuthorization")} · {broker.name}
             </DialogTitle>
             <DialogDescription>
-              {t("brokerAuthorizationBoundary")}
+              {t("brokerAuthorizationScope")}
             </DialogDescription>
           </DialogHeader>
           <p>
@@ -203,10 +412,55 @@ export function BrokerAccountPanel({
           )}
           <Alert>
             <AlertDescription>
-              {t("brokerAuthorizationNotReleased")}
+              {t(
+                selected
+                  ? "brokerAuthorizationScope"
+                  : "brokerSelectBeforeAuthorize",
+              )}
             </AlertDescription>
           </Alert>
+          {selected && onAction && (
+            <FieldGroup>
+              <Field>
+                <FieldLabel htmlFor={`broker-authorize-${broker.provider}`}>
+                  {t("executionTypePhrase", { phrase: expected })}
+                </FieldLabel>
+                <Input
+                  id={`broker-authorize-${broker.provider}`}
+                  value={phrase}
+                  onChange={(e) => setPhrase(e.target.value)}
+                  disabled={busy || offline}
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </Field>
+            </FieldGroup>
+          )}
+          {snapshot?.order_preview_required && (
+            <p className="execution-explainer">{t("brokerPreviewRequired")}</p>
+          )}
+          {actionError && (
+            <Alert variant="destructive">
+              <AlertDescription>{t(actionError)}</AlertDescription>
+            </Alert>
+          )}
           <DialogFooter>
+            {selected && onAction && (
+              <Button
+                disabled={
+                  offline ||
+                  busy ||
+                  loading ||
+                  !fresh ||
+                  !state?.authorization_review.eligible ||
+                  phrase !== expected ||
+                  state.authority !== "off"
+                }
+                onClick={() => void act("authorize")}
+              >
+                {busy ? t("loading") : t("brokerAuthorizeSelected")}
+              </Button>
+            )}
             <DialogClose asChild>
               <Button variant="outline">{t("close")}</Button>
             </DialogClose>

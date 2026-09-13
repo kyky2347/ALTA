@@ -111,7 +111,7 @@ test("broker verification requires typed account proof and complete collection s
   );
 });
 
-test("authorization review is account-bound and cannot claim unreleased execution", () => {
+test("authorization review is account-bound and cannot skip prerequisite checks", () => {
   const binding = "a".repeat(64);
   const revision = "b".repeat(64);
   const review = {
@@ -142,7 +142,6 @@ test("authorization review is account-bound and cannot claim unreleased executio
     { binding: "c".repeat(64) },
     { revision: "c".repeat(64) },
     { environment: "LIVE" },
-    { checks: { ...review.checks, account_acceptance: true } },
     { limits: { ...review.limits, max_order_notional: "Infinity" } },
   ])
     assert.equal(

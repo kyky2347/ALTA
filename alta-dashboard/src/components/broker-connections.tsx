@@ -39,14 +39,18 @@ export function BrokerConnections({
   offline,
   runtimeActive,
   onRequest,
+  initialProvider,
+  onContinue,
 }: {
   offline: boolean;
   runtimeActive: boolean;
   onRequest: (request: BrokerConnectionRequest) => Promise<BrokerVerification>;
+  initialProvider?: string;
+  onContinue?: (provider: string) => void;
 }) {
   const { t } = useI18n();
   const [brokers, setBrokers] = useState<BrokerConnection[]>([]);
-  const [provider, setProvider] = useState("alpaca");
+  const [provider, setProvider] = useState(initialProvider ?? "alpaca");
   const [draftEnvironment, setEnvironment] = useState<"PAPER" | "LIVE" | null>(
     null,
   );
@@ -66,8 +70,8 @@ export function BrokerConnections({
   const mounted = useRef(false);
   const selected = brokers.find((b) => b.provider === provider);
   const environment =
-    selected?.environment ??
     draftEnvironment ??
+    selected?.environment ??
     selected?.environments[0] ??
     "PAPER";
   const fields = brokerCredentialFields(selected, environment);
@@ -255,11 +259,18 @@ export function BrokerConnections({
             <div className="broker-profile" key={provider}>
               <header>
                 <h3>{selected.name}</h3>
-                <Badge variant="outline">{t("brokerReadOnly")}</Badge>
+                <Badge variant="outline">{t("brokerCredentialSetup")}</Badge>
               </header>
               <p className="execution-explainer">
                 {t(`brokerAuth_${selected.authentication}`)}
               </p>
+              {selected.proof !== "account_bound" && (
+                <Alert>
+                  <AlertDescription>
+                    {t("brokerProofIncomplete")}
+                  </AlertDescription>
+                </Alert>
+              )}
               {selected.profile_error && (
                 <Alert variant="destructive">
                   <AlertDescription>
@@ -282,7 +293,7 @@ export function BrokerConnections({
                     <select
                       id="broker-environment"
                       value={environment}
-                      disabled={editLocked || selected.configured}
+                      disabled={editLocked}
                       onChange={(e) => {
                         clear();
                         setEnvironment(e.target.value as "PAPER" | "LIVE");
@@ -432,6 +443,21 @@ export function BrokerConnections({
                 offline={offline}
                 refresh={`${busy}:${verification?.snapshot?.verified_at ?? ""}`}
               />
+              {onContinue && (
+                <div className="execution-actions">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={unavailable || !selected.configured}
+                    onClick={() => onContinue(provider)}
+                  >
+                    {t("brokerContinueToExecution")}
+                  </Button>
+                  <span className="execution-explainer">
+                    {t("brokerContinueHelp")}
+                  </span>
+                </div>
+              )}
               <a
                 className="broker-docs-link"
                 href={selected.docs}
