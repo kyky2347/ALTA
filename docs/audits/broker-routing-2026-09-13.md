@@ -65,6 +65,26 @@ The managed dashboard, research service, PostgreSQL and Redis were then stopped.
 No listener remained on the console, backend or managed database/cache ports.
 Local account credentials and state were not deleted or published.
 
+## Clean-source and publication checks
+
+The implementation commit `2f87521` was cloned into a separate directory with no
+copied credentials or runtime state. Locked pnpm installation and the complete
+frontend format/lint/build check passed. Frozen uv installation passed separately
+for research, legacy Paper and all optional broker SDKs; the clean clone's broker
+suite also passed all 84 tests. Dependency caches were available; this was not a
+cold-network installation or a cross-operating-system certification.
+
+Gitleaks 8.30.1 found no secrets in the complete pre-release Git history or the
+full staged source export, using the repository's existing reviewed upstream
+fixture exceptions. Publication was scoped to application code, tests, operations
+documentation and the three reviewed UI images. Local credentials, generated
+state, market-data responses and unrelated website/marketing configuration were
+not staged. These checks are evidence of the scan scope, not a guarantee that a
+scanner can recognize every possible secret.
+
+The main branch requires a reviewed pull request. This change is published on a
+separate branch for review; branch protections are not bypassed.
+
 ## Screenshot record
 
 Only the broker workflow images were refreshed in this review. Other research
