@@ -18,6 +18,7 @@ import {
 import { PaperCapitalControl } from "./capital-control.mjs";
 import { executionMode, validateModeRequest } from "./execution-mode.mjs";
 import { brokerConnectionRequest } from "./broker-connections.mjs";
+import { brokerRouteSummary } from "./broker-route-state.mjs";
 import { replaceTigerCredentials } from "./tiger-credential-settings.mjs";
 import { AgentModelSettings } from "./agent-model-settings.mjs";
 import {
@@ -330,12 +331,35 @@ export class OpportunityService {
     return { ...status, execution: executionMode(status) };
   }
 
-  brokerConnection(request) {
+  brokerExecutionSummary() {
+    return brokerRouteSummary();
+  }
+
+  async brokerConnection(request) {
+    if (["select", "authorize"].includes(request.action)) {
+      const paper = this.paperCapital.status();
+      if (
+        paper.requestedEnabled ||
+        paper.enabled ||
+        paper.closeOnly ||
+        paper.drainRequired
+      )
+        throw Object.assign(new Error("legacy_paper_must_be_disarmed"), {
+          code: "legacy_paper_must_be_disarmed",
+          statusCode: 409,
+        });
+    }
     return brokerConnectionRequest(this.rootDir, this.sourceEnv, request);
   }
 
   async setExecutionMode(body) {
     const mode = validateModeRequest(body, this.paperCapital.status());
+    const route = await this.brokerConnection({ action: "route" });
+    if (route.provider !== null)
+      throw Object.assign(new Error("selected_broker_route_active"), {
+        code: "selected_broker_route_active",
+        statusCode: 409,
+      });
     if (mode === "broker_paper" || this.paperCapital.status().requestedEnabled)
       await this.paperCapital.setEnabled(mode === "broker_paper");
     return this.capitalStatus();
@@ -352,6 +376,14 @@ export class OpportunityService {
   }
 
   async setCapitalAuthorization(enabled) {
+    if (enabled) {
+      const route = await this.brokerConnection({ action: "route" });
+      if (route.provider !== null)
+        throw Object.assign(new Error("selected_broker_route_active"), {
+          code: "selected_broker_route_active",
+          statusCode: 409,
+        });
+    }
     await this.paperCapital.setEnabled(enabled);
     return this.capitalStatus();
   }
@@ -607,6 +639,7 @@ export class OpportunityService {
         ready = false;
       }
     }
+    const executionRoute = this.brokerExecutionSummary();
     return {
       installed: this.installed(),
       platformActive: platform.code === 0,
@@ -621,9 +654,13 @@ export class OpportunityService {
         : null,
       ready,
       endpoint: `http://${configured.ALTA_SERVICE_HOST}:${configured.ALTA_SERVICE_PORT}`,
-      capitalMode: this.paperCapital.status().enabled
-        ? "tiger_paper_acceptance"
-        : "disabled",
+      executionRoute,
+      capitalMode:
+        executionRoute.mode !== "shadow"
+          ? executionRoute.mode
+          : this.paperCapital.status().enabled
+            ? "tiger_paper_acceptance"
+            : "disabled",
       credentials,
     };
   }

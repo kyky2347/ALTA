@@ -127,9 +127,11 @@ The acceptance result may be `Wait` or `MVP_IDLE`. Those are valid research
 outcomes, not test failures. The optional Tiger path may submit only audited,
 risk-sized whole-share Paper orders under the documented quantity, notional,
 liquidity, freshness, account-binding, and authorization boundaries. Release
-verification does not authorize live orders. The separate experimental connector
-library is not wired into autonomous research; read-only account checks and mock
-tests are not evidence of real-account order acceptance.
+verification does not authorize live orders. The separate experimental broker
+boundary now accepts trusted audited research handoffs and runs an independent
+monitor for the explicitly selected account. Read-only checks and injected
+transport tests are not real-account order acceptance. Longbridge and Schwab
+authorization remain blocked by the [documented gaps](docs/broker-expansion.md).
 
 ## Release gate
 

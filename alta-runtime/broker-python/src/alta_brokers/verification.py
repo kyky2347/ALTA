@@ -90,22 +90,29 @@ def authorization_review(profile, verification, rows, *, flat_and_settled=None):
     """Expose the actual release gates, never a client-supplied readiness flag."""
     snapshot = verification.get("snapshot") or {}
     fresh = verification["fresh"]
+    permission = snapshot.get("trading_permitted") is True or (
+        profile.provider == "ibkr" and snapshot.get("order_preview_required") is True
+    )
     checks = {
         "fresh_account": fresh,
         "account_identity": fresh and snapshot.get("account_verified") is True,
         "environment_identity": fresh and snapshot.get("environment_verified") is True,
-        "trade_permission": fresh and snapshot.get("trading_permitted") is True,
+        "trade_permission": fresh and permission,
         "empty_account": fresh
         and not snapshot.get("positions")
         and not snapshot.get("orders"),
         "clear_ledger": not rows if flat_and_settled is None else flat_and_settled,
-        # Kept false deliberately: this release has no accepted research runner
-        # for the new boundary. No UI field or credential can override this.
-        "runner_integration": False,
-        "account_acceptance": False,
+        "runner_integration": True,
+        # Read-only acceptance evidence, not a claim that a live order was tested.
+        "account_acceptance": fresh
+        and permission
+        and all(
+            snapshot.get(k) is True
+            for k in ("account_verified", "environment_verified")
+        ),
     }
     return {
-        "eligible": False,
+        "eligible": all(checks.values()),
         "checks": checks,
         "provider": profile.provider,
         "environment": profile.environment,

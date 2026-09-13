@@ -133,8 +133,10 @@ def test_advisory_lock_loss_rejects_next_transaction(fencing_database: str) -> N
         release_autonomous_owner(owner)
 
 
+@pytest.mark.parametrize("external", [False, True])
 def test_release_drains_fenced_transaction_without_deadlock(
     fencing_database: str,
+    external: bool,
 ) -> None:
     database = Database(fencing_database)
     database.upgrade()
@@ -146,8 +148,12 @@ def test_release_drains_fenced_transaction_without_deadlock(
 
     def transaction() -> None:
         try:
-            with database.connect() as connection:
-                connection.execute("SELECT 1")
+            context = (
+                database.autonomous_external_operation()
+                if external
+                else database.connect()
+            )
+            with context:
                 entered.set()
                 assert allow_exit.wait(5)
         except BaseException as error:
@@ -179,6 +185,21 @@ def test_release_drains_fenced_transaction_without_deadlock(
     assert not release_thread.is_alive()
     assert release_done.is_set()
     assert errors == []
+
+
+def test_external_broker_operation_requires_active_owner(fencing_database: str) -> None:
+    database = Database(fencing_database)
+    database.upgrade()
+    with pytest.raises(AutonomousFenceLost, match="requires active owner"):
+        with database.autonomous_external_operation():
+            pytest.fail("unowned broker operation entered")
+    owner = acquire_autonomous_owner(database)
+    with database.autonomous_external_operation():
+        pass
+    release_autonomous_owner(owner)
+    with pytest.raises(AutonomousFenceLost, match="requires active owner"):
+        with database.autonomous_external_operation():
+            pytest.fail("released owner could still dispatch")
 
 
 def test_mutating_cli_entrypoints_share_writer_exclusion_and_confirm_downgrade(

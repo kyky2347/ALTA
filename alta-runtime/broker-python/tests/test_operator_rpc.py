@@ -95,7 +95,7 @@ def test_catalog_and_write_only_save_do_not_connect_or_authorize(tmp_path, monke
     catalog = handle({"action": "catalog"}, profiles)
     assert secret not in str(catalog) and "test-account" not in str(catalog)
     assert not list((tmp_path / "state").glob("*/authority.json"))
-    for action in ("submit", "authorize", "cancel", "delete"):
+    for action in ("submit", "cancel", "delete", "stage", "tick"):
         with pytest.raises(BrokerError, match="action_unavailable"):
             handle({"action": action}, profiles)
 

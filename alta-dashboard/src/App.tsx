@@ -143,7 +143,6 @@ export default function App() {
     credentials,
     credentialsError,
     capital,
-    capitalError,
     events,
     preview,
     loading,
@@ -153,11 +152,9 @@ export default function App() {
     controlRuntime,
     verifyCredentials,
     setProviderCredential,
-    refreshCapital,
     setCapitalAuthorization,
-    setExecutionMode,
-    setBrokerCredential,
     brokerConnection,
+    brokerExecution,
     loadOlderEvents,
     loadingOlder,
     historyError,
@@ -480,9 +477,7 @@ export default function App() {
           <div className="workspace-context">
             <span>
               {view === "capital"
-                ? capital?.execution?.effective === "broker_paper"
-                  ? t("tigerPaper")
-                  : t("shadowSimulation")
+                ? t("brokerAccountBoundControl")
                 : domain(status?.environment ?? "shadow")}
             </span>
             <Separator orientation="vertical" />
@@ -527,14 +522,11 @@ export default function App() {
           ) : view === "capital" ? (
             <CapitalConsole
               capital={capital}
-              error={capitalError}
               control={control}
               preview={preview}
               online={connection.status === "online"}
-              onRefresh={refreshCapital}
               onAuthorization={setCapitalAuthorization}
-              onMode={setExecutionMode}
-              onCredentials={setBrokerCredential}
+              onBrokerExecution={brokerExecution}
               onBrokerConnection={brokerConnection}
             />
           ) : !status ? (

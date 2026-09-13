@@ -56,7 +56,7 @@ export type ControlState = {
   safety: {
     environment: string;
     capitalMode: string;
-    brokerEnvironment: "PAPER";
+    brokerEnvironment: "PAPER" | "LIVE" | null;
     dashboardBinding: string;
   };
 };

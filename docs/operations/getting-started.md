@@ -7,7 +7,9 @@ source tree.
 
 > [!WARNING]
 > ALTA is research-only software. Use Replay and internal Shadow mode. Do not
-> connect live brokerage credentials, real accounts, or real capital.
+> connect live brokerage credentials or send live orders during development and
+> verification. Optional operator-authorized Broker API execution has a separate
+> [setup, account-proof and risk boundary](../broker-expansion.md).
 
 ## Choose the right path
 

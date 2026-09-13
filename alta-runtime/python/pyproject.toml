@@ -35,6 +35,8 @@ package = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Long tracebacks print fixture arguments, including local database URLs.
+addopts = "--tb=short"
 
 [tool.ruff]
 target-version = "py312"

@@ -139,6 +139,7 @@ test("invalid broker authority cannot silently start internal Shadow execution",
 
 test("all capital mutation responses retain execution mode and revision", async (t) => {
   const { service } = fixture(t);
+  service.brokerConnection = async () => ({ provider: null });
   let enabled = false;
   service.paperCapital.status = () => ({ requestedEnabled: enabled, enabled });
   service.paperCapital.setEnabled = async (value) => {

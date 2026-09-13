@@ -115,6 +115,7 @@ class InteractiveBrokers:
             # A connected read-only TWS session is not trade authorization.
             # Instrument-level what-if belongs to dispatch, not this read probe.
             trading_permitted=False,
+            order_preview_required=True,
         )
 
     def submit(self, intent, *, acknowledge=None):

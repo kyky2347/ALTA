@@ -6,6 +6,102 @@ import test from "node:test";
 import http from "node:http";
 import { createOperatorConsole } from "../operator-console.mjs";
 
+test("broker authority endpoints require session, CSRF and exact requests; browser plans stay unavailable", async (t) => {
+  const directory = fs.mkdtempSync(
+    path.join(os.tmpdir(), "alta-broker-authority-"),
+  );
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(directory, "index.html"), "<h1>Fixture</h1>");
+  const tokenFile = path.join(directory, "token");
+  fs.writeFileSync(tokenFile, "local-test-session", { mode: 0o600 });
+  const calls = [];
+  const operator = createOperatorConsole({
+    port: 0,
+    staticDir: directory,
+    service: {
+      tokenFile,
+      stateDir: directory,
+      status: async () => ({ ready: false }),
+      brokerConnection: async (request) => {
+        calls.push(request);
+        return { authority: "off" };
+      },
+    },
+  });
+  const location = await operator.listen();
+  t.after(() => operator.close());
+  const open = await fetch(location.openUrl, { redirect: "manual" });
+  const cookie = open.headers.get("set-cookie").split(";", 1)[0];
+  const bootstrap = await (
+    await fetch(`${location.origin}/control/bootstrap`, {
+      headers: { Cookie: cookie },
+    })
+  ).json();
+  const headers = {
+    "Cookie": cookie,
+    "Origin": location.origin,
+    "Content-Type": "application/json",
+    "X-ALTA-CSRF": bootstrap.data.csrfToken,
+  };
+  for (const action of ["authorize", "revoke", "reconcile"]) {
+    const url = `${location.origin}/control/broker-connections/${action}`;
+    const body = {
+      provider: "alpaca",
+      revision: "a".repeat(64),
+      ...(action === "authorize"
+        ? { confirmation: "ENABLE LIVE aaaaaaaa" }
+        : {}),
+    };
+    assert.equal(
+      (await fetch(url, { method: "POST", body: JSON.stringify(body) })).status,
+      401,
+    );
+    assert.equal(
+      (
+        await fetch(url, {
+          method: "POST",
+          headers: { Cookie: cookie },
+          body: JSON.stringify(body),
+        })
+      ).status,
+      403,
+    );
+    assert.equal(
+      (
+        await fetch(url, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ ...body, plan: {} }),
+        })
+      ).status,
+      400,
+    );
+    assert.equal(
+      (
+        await fetch(url, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(body),
+        })
+      ).status,
+      200,
+    );
+    assert.deepEqual(calls.at(-1), { ...body, action });
+  }
+  for (const action of ["submit", "stage", "tick", "cancel"])
+    assert.equal(
+      (
+        await fetch(`${location.origin}/control/broker-connections/${action}`, {
+          method: "POST",
+          headers,
+          body: "{}",
+        })
+      ).status,
+      405,
+    );
+  assert.equal(calls.length, 3);
+});
+
 test("broker account state is authenticated and uses a local-state RPC only", async (context) => {
   const temporary = fs.mkdtempSync(
     path.join(os.tmpdir(), "alta-broker-state-"),

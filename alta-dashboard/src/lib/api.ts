@@ -157,6 +157,22 @@ export function saveExecutionMode(
   );
 }
 
+export function requestBrokerExecution(
+  body: import("@/lib/broker-execution").BrokerExecutionRequest,
+  csrfToken: string,
+) {
+  const { action, ...payload } = body;
+  return requestJson<unknown>(
+    `/control/broker-connections/${action === "select" ? "route" : action}`,
+    {
+      method: action === "select" ? "PUT" : "POST",
+      headers: { "Content-Type": "application/json", "X-ALTA-CSRF": csrfToken },
+      body: JSON.stringify(payload),
+    },
+    { timeoutMs: 95_000 },
+  );
+}
+
 export async function requestBrokerConnection(
   body: import("@/lib/broker-connections").BrokerConnectionRequest,
   csrfToken: string,

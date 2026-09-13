@@ -246,6 +246,7 @@ class AgenticExpressionFlow:
         position_runner: StructuredRoleRunner | None = None,
         max_open_positions: int = 8,
         paper_executor: TigerPaperExecutor | None = None,
+        broker_executor=None,
         acceptance_hold_seconds: int | None = None,
         portfolio_policy: PortfolioRiskPolicy | None = None,
     ) -> None:
@@ -255,6 +256,9 @@ class AgenticExpressionFlow:
         self.universe = universe
         self.market_data = market_data
         self.paper_executor = paper_executor
+        if paper_executor is not None and broker_executor is not None:
+            raise ValueError("broker and Tiger Paper execution are mutually exclusive")
+        self.broker_executor = broker_executor
         self.portfolio = PortfolioConstructor(
             database,
             portfolio_policy,
@@ -275,9 +279,26 @@ class AgenticExpressionFlow:
 
     @property
     def capital_mode(self) -> str:
+        if self.broker_executor is not None:
+            return "broker_api"
         return (
             "tiger_paper_mirror" if self.paper_executor else self.runtime.capital_mode
         )
+
+    def broker_context(self):
+        broker = getattr(self, "broker_executor", None)
+        if broker is None:
+            return None
+        return {
+            key: broker.route[key]
+            for key in (
+                "provider",
+                "environment",
+                "binding",
+                "revision",
+                "profile_revision",
+            )
+        }
 
     def express(
         self, cycle_id: str, opportunity: OpportunityDraft, _wake_at: datetime
@@ -289,6 +310,7 @@ class AgenticExpressionFlow:
                     cycle_id,
                     opportunity.opportunity_id,
                     self.PROMPT_VERSION,
+                    self.broker_context(),
                     self.expression_runner.model_provider,
                     self.expression_runner.model_id,
                     self.AUDIT_PROMPT_VERSION,
@@ -307,6 +329,7 @@ class AgenticExpressionFlow:
                     cycle_id,
                     opportunity.opportunity_id,
                     self.PROMPT_VERSION,
+                    self.broker_context(),
                     self.expression_runner.model_provider,
                     self.expression_runner.model_id,
                 ]
@@ -324,16 +347,19 @@ class AgenticExpressionFlow:
                 mode="json"
             ),
             "capabilities": {
+                "selected_broker": self.broker_context(),
                 "trusted_realtime_quote": market_available,
                 "option_chain": market_available,
                 "capital_mode": (
-                    "tiger_paper_mirror"
+                    "broker_api"
+                    if self.broker_context()
+                    else "tiger_paper_mirror"
                     if self.paper_executor is not None
                     else "shadow_only"
                 ),
                 "allowed_expression_kinds": (
                     ("stock", "etf", "wait")
-                    if self.paper_executor is not None
+                    if self.paper_executor is not None or self.broker_context()
                     else ("stock", "etf", "option", "wait")
                 ),
                 "tiger_paper_mirror": self.paper_executor is not None,
@@ -390,6 +416,7 @@ class AgenticExpressionFlow:
                     "Compare thesis purity, catalyst timing, convexity, premium at risk, factor contamination, path dependence, liquidity, and exit feasibility; best expression is not automatically the issuer's common stock.",
                     "The current Shadow boundary supports one bounded long leg. If the thesis truly requires a short, pair, spread, basket, dynamic hedge, or uncovered option, choose wait instead of approximating it with a different bet.",
                     "When tiger_paper_mirror is true, choose only a long stock or ETF; options are not admitted by the acceptance boundary.",
+                    "When selected_broker is present, plan only whole-share, long USD stock or ETF DAY limit orders. The broker ledger admits one active plan per account; no options, shorts, rotation, leverage or cross-account fallback. Respect its explicitly selected Paper or LIVE environment.",
                     "For a negative thesis in Tiger Paper, use only a supplied paper_inverse_etf whose underlying matches the Opportunity; account explicitly for daily reset and path dependence, otherwise choose wait.",
                 ],
             },
@@ -763,6 +790,8 @@ class AgenticExpressionFlow:
         if hypothesis.symbol is None:
             return InstrumentSelection(None, "precise_symbol_unavailable")
         if hypothesis.kind == "option":
+            if self.broker_context():
+                return InstrumentSelection(None, "broker_execution_equity_only")
             if self.paper_executor is not None:
                 return InstrumentSelection(None, "paper_acceptance_equity_only")
             return self.market_data.option(
@@ -901,6 +930,7 @@ class AgenticExpressionFlow:
                     cycle_id,
                     opportunity.opportunity_id,
                     self.AUDIT_PROMPT_VERSION,
+                    self.broker_context(),
                     self.audit_runner.model_provider,
                     self.audit_runner.model_id,
                 ]
@@ -1006,6 +1036,13 @@ class AgenticExpressionFlow:
             )
         frozen_input = {
             "opportunity": audit_opportunity,
+            "broker_execution": self.broker_context(),
+            "broker_opportunity_binding": {
+                "version": opportunity.version,
+                "snapshot_hash": opportunity.snapshot_hash,
+            }
+            if self.broker_context()
+            else None,
             "locked_underwriting": self._locked_underwriting(
                 opportunity.opportunity_id, compact=True
             ),
@@ -1048,7 +1085,9 @@ class AgenticExpressionFlow:
             },
             "open_shadow_portfolio": portfolio,
             "capital_mode": (
-                "tiger_paper_mirror"
+                "broker_api"
+                if self.broker_context()
+                else "tiger_paper_mirror"
                 if self.paper_executor is not None
                 else "shadow_only"
             ),
@@ -1216,11 +1255,18 @@ class AgenticExpressionFlow:
         proposal: ExpressionProposal,
         _wake_at: datetime,
     ) -> tuple[PositionThesis, LedgerTransaction] | None:
+        if self.broker_executor is not None:
+            self.broker_executor.handoff(cycle_id, proposal)
+            # Broker receipts belong to the isolated broker ledger, never to a
+            # manufactured Shadow fill or a Paper-only result contract.
+            return None
         return self.positions.open_shadow(cycle_id, opportunity, proposal)
 
     def monitor_existing(
         self, cycle_id: str, _wake_at: datetime, frozen_input
     ) -> tuple[str, ...]:
+        if self.broker_executor is not None:
+            return self.broker_executor.monitor_once()
         return self.positions.monitor_existing(cycle_id, frozen_input)
 
     def monitor_and_exit(self, *_args, **_kwargs):

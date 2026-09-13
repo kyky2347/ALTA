@@ -104,6 +104,16 @@ def test_open_monitor_restart_target_exit_and_reauthorize(context):
     assert engine.state()["verification"]["fresh"]
 
 
+def test_revoked_unsubmitted_plan_cannot_resurrect_on_reauthorization(context):
+    config, broker, engine, worker, *_ = context
+    request = plan(config)
+    worker.stage(request)
+    assert engine.revoke()["authority"] == "off"
+    arm(config, engine)
+    assert worker.tick(request.plan_id)["state"] == "expired"
+    assert broker.calls == 0
+
+
 def test_unknown_exit_after_broker_fill_recovers_without_second_sell(context):
     config, broker, engine, worker, feed, audit, quotes = context
     request = plan(config)

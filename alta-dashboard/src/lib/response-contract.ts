@@ -70,7 +70,9 @@ export function validConsolePayload(path: string, value: unknown): boolean {
       isRecord(value.runtime) &&
       typeof value.runtime.ready === "boolean" &&
       isRecord(value.safety) &&
-      value.safety.brokerEnvironment === "PAPER" &&
+      ["PAPER", "LIVE", null].includes(
+        value.safety.brokerEnvironment as string | null,
+      ) &&
       (value.operation === null || isRecord(value.operation)) &&
       (route !== "/control/bootstrap" || typeof value.csrfToken === "string")
     );

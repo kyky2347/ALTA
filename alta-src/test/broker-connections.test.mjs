@@ -65,7 +65,7 @@ test("broker subprocess has a narrow environment, stdin credentials and allowlis
     "PYTHONUNBUFFERED",
   ]);
   assert.equal(observed.body.action, "save");
-  for (const action of ["submit", "authorize", "cancel", "live"])
+  for (const action of ["submit", "stage", "tick", "cancel", "live"])
     assert.throws(
       () => runBrokerProcess("python", "/project", {}, { action }),
       { code: "broker_action_unavailable" },

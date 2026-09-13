@@ -299,6 +299,10 @@ export function createOperatorConsole({
     const runtime = await runtimeStatus();
     const environment = await environmentStatus();
     const capital = publicCapitalStatus();
+    const execution = service.brokerExecutionSummary?.() ?? {
+      mode: "shadow",
+      environment: null,
+    };
     reconcileOperation(runtime, environment);
     return {
       runtime,
@@ -315,8 +319,14 @@ export function createOperatorConsole({
       operation: publicOperation(),
       safety: {
         environment: "shadow",
-        capitalMode: capital.enabled ? "tiger_paper_acceptance" : "disabled",
-        brokerEnvironment: "PAPER",
+        capitalMode:
+          execution.mode !== "shadow"
+            ? execution.mode
+            : capital.enabled
+              ? "tiger_paper_acceptance"
+              : "disabled",
+        brokerEnvironment:
+          execution.environment ?? (capital.enabled ? "PAPER" : null),
         dashboardBinding: `${host}:${port}`,
       },
     };
@@ -785,6 +795,58 @@ export function createOperatorConsole({
       }
       if (
         request.method === "GET" &&
+        url.pathname === "/control/broker-connections/route"
+      ) {
+        json(response, 200, {
+          data: await service.brokerConnection({ action: "route" }),
+        });
+        return;
+      }
+      if (
+        request.method === "POST" &&
+        [
+          "/control/broker-connections/authorize",
+          "/control/broker-connections/revoke",
+          "/control/broker-connections/reconcile",
+        ].includes(url.pathname)
+      ) {
+        if (!permittedMutation(request)) {
+          json(response, 403, { error: { code: "mutation_forbidden" } });
+          return;
+        }
+        if (
+          capitalOperation ||
+          modelConfiguration ||
+          credentialVerification ||
+          operation?.status === "running"
+        ) {
+          json(response, 409, { error: { code: "operation_in_progress" } });
+          return;
+        }
+        capitalOperation = true;
+        try {
+          const action = url.pathname.split("/").at(-1);
+          const body = await readJsonBody(request, 2048);
+          if (
+            Object.keys(body).sort().join() !==
+            (action === "authorize"
+              ? "confirmation,provider,revision"
+              : "provider,revision")
+          ) {
+            json(response, 400, { error: { code: "broker_request_invalid" } });
+            return;
+          }
+          json(response, 200, {
+            data: await service.brokerConnection({ ...body, action }),
+          });
+          runtimeCache = null;
+        } finally {
+          capitalOperation = false;
+        }
+        return;
+      }
+      if (
+        request.method === "GET" &&
         url.pathname === "/control/broker-connections/state"
       ) {
         const provider = url.searchParams.get("provider");
@@ -842,6 +904,7 @@ export function createOperatorConsole({
           "/control/execution-mode",
           "/control/broker-credentials/tiger",
           "/control/broker-connections",
+          "/control/broker-connections/route",
         ].includes(url.pathname)
       ) {
         if (!permittedMutation(request)) {
@@ -879,11 +942,13 @@ export function createOperatorConsole({
             return;
           }
           const data =
-            url.pathname === "/control/broker-connections"
-              ? await service.brokerConnection({ ...body, action: "save" })
-              : url.pathname === "/control/execution-mode"
-                ? await service.setExecutionMode(body)
-                : service.replaceBrokerCredential(body);
+            url.pathname === "/control/broker-connections/route"
+              ? await service.brokerConnection({ ...body, action: "select" })
+              : url.pathname === "/control/broker-connections"
+                ? await service.brokerConnection({ ...body, action: "save" })
+                : url.pathname === "/control/execution-mode"
+                  ? await service.setExecutionMode(body)
+                  : service.replaceBrokerCredential(body);
           runtimeCache = null;
           json(response, 200, { data });
         } finally {
