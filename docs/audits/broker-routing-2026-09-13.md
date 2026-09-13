@@ -82,8 +82,13 @@ state, market-data responses and unrelated website/marketing configuration were
 not staged. These checks are evidence of the scan scope, not a guarantee that a
 scanner can recognize every possible secret.
 
-The main branch requires a reviewed pull request. This change is published on a
-separate branch for review; branch protections are not bypassed.
+Initial publication used a separate pull-request branch because main requires a
+code-owner review. The maintainer subsequently explicitly authorized merging to
+main using their administrator permission after release checks. This is a
+maintainer override, not an independent approval; the repository rules remain
+enabled. The publication pass also reorganizes all three READMEs around setup,
+research, execution boundaries and dated verification, retaining language-matched
+screenshots and the unverified-account limitations.
 
 ## Screenshot record
 
