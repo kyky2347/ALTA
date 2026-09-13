@@ -5,6 +5,17 @@ because a fixed analyst roster must produce a trade. Deterministic software
 protects time, evidence, budgets, auditability, and the capital boundary; LLMs
 retain freedom over research interpretation and expression choice.
 
+The console has exactly two execution modes: **Shadow** and **Broker API**.
+The detailed research diagrams below describe the Shadow lifecycle and its
+isolated legacy Tiger Paper acceptance path; that legacy path is not a third
+selectable mode. The separate Broker API boundary consumes trusted persisted
+expressions and independent audits for an explicitly selected provider, account,
+environment and configuration revision. Its independent monitor owns quote
+refresh, reconciliation and software-managed exits. See the
+[current provider matrix and execution limits](../broker-expansion.md): four
+paths are conditional on account verification, while Longbridge and Schwab
+authorization remain blocked. No live-account acceptance is claimed.
+
 ```mermaid
 flowchart TB
   host["[Code] Host service<br/>launchd · systemd-user · dependency restore"]
@@ -157,25 +168,27 @@ the outcome to a durable `Wait` or an idle cycle.
 | Execution    | Frozen arrival benchmark, absolute limit, shortfall budget, participation cap, timeout cancellation, one attempt, no automatic repricing, and append-only round-trip TCA                                                                                                                             |
 | Underwriting | Evidence-bound ex-ante estimates, disagreement reserve, and the entry-frozen cost-adjusted forecast stay distinct from realized Alpha; only 30+ comparable closes may create a downside-only forecast reserve                                                                                        |
 | Feedback     | Entry-frozen Mind/archetype/route/mode credit; strict PIT cutoff; 30-Mind/10-slice maturity; no auto-policy                                                                                                                                                                                          |
-| Capital      | Shadow by default; optional exact-account risk-sized Paper acceptance with fresh-quote, broker-capacity, preview, and durable-recovery gates; no live mode                                                                                                                                           |
+| Capital      | Shadow by default; the legacy Tiger executor remains Paper-only. The separate Broker API boundary requires an explicitly selected Paper/Live account, current proof, account-bound authorization, risk admission and durable reconciliation. Missing provider proof blocks authorization.            |
 | Operations   | Boot-managed host, loopback API, one owner, split Scout/judgment deadlines, two watchdogs, capped backoff, clean stop                                                                                                                                                                                |
 | Evaluation   | Immutable configuration, Run attribution, cohort projection, latest-measurement deduplication, explicitly small-sample Alpha statistics, observed MFE/MAE/drawdown/exit capture, per-carrier execution-cost calibration, negative-evidence-only capital throttling, and visible calibration maturity |
 
 ## Runtime components
 
-| Path                           | Responsibility                                                |
-| ------------------------------ | ------------------------------------------------------------- |
-| `alta-src/`                    | project-local Codex launcher, provider gateway, bounded tools |
-| `alta-dashboard/`              | responsive React operator console and production static build |
-| `alta-runtime/python/`         | Opportunity OS domain, agents, orchestration, API             |
-| `alta-runtime/capital-python/` | isolated Tiger Paper-only acceptance executor                 |
-| `alta-runtime/compose.yaml`    | loopback PostgreSQL and Redis                                 |
-| `vendor/openai-codex/`         | pinned and attributed Codex Rust substrate                    |
+| Path                           | Responsibility                                                  |
+| ------------------------------ | --------------------------------------------------------------- |
+| `alta-src/`                    | project-local Codex launcher, provider gateway, bounded tools   |
+| `alta-dashboard/`              | responsive React operator console and production static build   |
+| `alta-runtime/python/`         | Opportunity OS domain, agents, orchestration, API               |
+| `alta-runtime/capital-python/` | isolated Tiger Paper-only acceptance executor                   |
+| `alta-runtime/broker-python/`  | separate account-bound broker connectors, ledgers and execution |
+| `alta-runtime/compose.yaml`    | loopback PostgreSQL and Redis                                   |
+| `vendor/openai-codex/`         | pinned and attributed Codex Rust substrate                      |
 
 PostgreSQL is the system of record. Redis is disposable support state. The
 dashboard contract remains the read-only `/api/v1` JSON/event surface. The
 bundled frontend is served by a separate loopback operator-console process,
-which keeps the bearer token server-side and owns only lifecycle controls. It
+which keeps the bearer token server-side and owns lifecycle, configuration and
+account-authorization controls—not raw order submission. It
 does not run inside the autonomous research process. Its own user-level service
 manager provides login startup and crash recovery without coupling console
 availability to autonomous research. An owner-only atomic hand-off exposes an
