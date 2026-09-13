@@ -24,9 +24,10 @@ ticker. The test is whether an idea survives evidence, disagreement, costs and t
 
 > [!IMPORTANT]
 > Experimental, research-only software. Not investment advice, an order-management
-> system or evidence of profitable Alpha. Autonomous execution supports internal
-> **Shadow Paper** and explicitly authorized **Tiger Paper**. Additional broker
-> connectors are a separate, incomplete integration—not enabled autonomous live trading.
+> system or evidence of profitable Alpha. There are two execution modes: **Shadow**
+> and **Broker API**. Broker execution requires an explicitly selected account,
+> verified prerequisites and separate authorization. Six connectors exist; not all
+> can pass authorization yet, and no live-account acceptance is claimed.
 
 ## See the work
 
@@ -43,11 +44,12 @@ Open an image for the full view. Research hypotheses are not approved trades.
 | Broker connections                                                                                                | Model routing                                                                                             |
 | ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
 | [![Broker configuration](docs/assets/alta-broker-connections-en.jpg)](docs/assets/alta-broker-connections-en.jpg) | [![Agent model settings](docs/assets/alta-model-settings-en.jpg)](docs/assets/alta-model-settings-en.jpg) |
-| Six provider-specific forms; credentials and execution authority stay separate.                                   | Assign models by role while preserving independent review.                                                |
+| Two modes and an explicit broker destination; saving a choice does not grant authority.                           | Assign models by role while preserving independent review.                                                |
 
-September 12, 2026 · English interface · original Agent artifacts retain their
-authored language. Capture scope, record IDs and image hashes are in the
-[release review](docs/audits/console-readability-2026-09-12.md).
+Research captures: September 12, 2026 · broker workflow: September 13 · English
+interface. Agent artifacts retain their authored language. Capture scope and
+hashes: [research review](docs/audits/console-readability-2026-09-12.md) ·
+[broker workflow review](docs/audits/broker-routing-2026-09-13.md).
 No credentials or account details are included.
 
 ## How the firm works
@@ -145,7 +147,9 @@ flowchart TB
     N <--> P["Python research service<br/>scheduler · research lifecycle · API/SSE"]
     P <--> C["Codex App Server<br/>specialized LLM sessions"]
     P <--> DB[("PostgreSQL<br/>records · events · checkpoints")]
-    P --> X["Isolated execution boundary<br/>Shadow / authorized Tiger Paper"]
+    P --> X{"Execution mode"}
+    X --> S["Shadow<br/>internal positions & fills"]
+    X --> B["Broker API<br/>selected account · separate authority · durable ledger"]
 ```
 
 The console does not orchestrate research in a browser tab. A managed backend
@@ -212,20 +216,35 @@ Integration tests require the managed PostgreSQL environment; a plain `pytest`
 invocation without `DATABASE_URL` is not the full acceptance command.
 See [Reproducibility](REPRODUCIBILITY.md) for deterministic demo/replay and clean-source verification.
 
-## Execution: capability is not permission
+## Two modes, one explicit destination
 
-| Mode / boundary             | Actual support                                                                                                                                                  |
-| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Shadow Paper                | ALTA-managed fills, costs, positions, monitoring and exits; no broker mutation                                                                                  |
-| Tiger Paper                 | Existing adapted executor; exact account binding, explicit authorization, fresh audit and restart reconciliation                                                |
-| Five pre-adapted connectors | Alpaca, IBKR, Futu/moomoo, Longbridge/Longport and Schwab: private profiles, provider-specific code and read-only checks; end-to-end account acceptance pending |
+| Mode           | What happens                                                                                                          |
+| -------------- | --------------------------------------------------------------------------------------------------------------------- |
+| **Shadow**     | ALTA manages internal fills, costs, positions and exits. No broker orders.                                            |
+| **Broker API** | Audited plans go to the selected broker and explicitly configured Paper or Live account. No automatic Tiger fallback. |
 
-The new Tiger live connector is also unaccepted. The independent six-provider
-package now includes a durable entry–monitor–exit kernel, but is **not wired into
-autonomous research**. Its offline tests cover recovery without duplicate orders,
-revoked entries and broker-confirmed closure; they do not prove live trading.
-Broker gateways, OAuth, account permissions and verification cannot
-be replaced by a generic API-key field. [Provider matrix and remaining work →](docs/broker-expansion.md)
+```text
+Configure credentials → Verify account → Save destination → Authorize → Start
+                          Paper / Live belongs to the account, not a third mode
+```
+
+The trusted backend binds the persisted expression and independent audit to that
+exact account revision. A separate monitor refreshes quotes and reconciles orders
+while LLM research continues. The initial broker lifecycle supports one active
+long USD stock/ETF plan, whole shares and DAY limit orders. Selection and saving
+credentials never enable trading.
+
+Tiger, Alpaca, IBKR and Futu have conditional execution paths; IBKR also requires
+a non-executing preview before every order. **Longbridge identity proof and Schwab
+permission/history proof and OAuth renewal remain incomplete**, so their automatic
+order authorization stays blocked. Six connector implementations are not six
+accepted live accounts. The older Tiger Paper executor remains isolated for
+compatibility, not a third selectable mode.
+
+Start with an empty, dedicated account. Revoke and reconcile existing exposure
+before switching. Keep the backend running to manage exits: stopping it does
+**not** liquidate broker holdings, and native protective broker orders are not
+implemented. [Provider matrix, setup and limits →](docs/broker-expansion.md)
 
 ## Built for interruption
 

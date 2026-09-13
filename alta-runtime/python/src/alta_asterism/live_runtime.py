@@ -6,6 +6,7 @@ from pathlib import Path
 from .agentic_deliberation import AgenticDeliberator
 from .agentic_expression import AgenticExpressionFlow
 from .agentic_roles import StructuredRoleRunner
+from .broker_bridge import BrokerResearchBridge
 from .contracts import Environment, Settings
 from .database import Database
 from .finlight import FinlightAdapter, PostgresSourceCursorStore, PostgresSourceOwner
@@ -196,6 +197,12 @@ class LiveRuntime:
                 massive_adapter,
                 max_notional=settings.shadow_max_position_notional,
             )
+        self.broker_executor = BrokerResearchBridge.configured(
+            database, repo_root, market_data, paper_enabled=settings.tiger_paper_enabled
+        )
+        broker_snapshot = (
+            self.broker_executor.snapshot() if self.broker_executor else None
+        )
         portfolio_policy = PortfolioRiskPolicy(
             reference_nav=settings.shadow_reference_nav,
             per_trade_loss_budget_bps=settings.shadow_trade_loss_budget_bps,
@@ -207,6 +214,15 @@ class LiveRuntime:
             adv_participation_bps=settings.shadow_adv_participation_bps,
             min_net_alpha_bps=settings.shadow_min_net_alpha_bps,
         )
+        if broker_snapshot and broker_snapshot.get("snapshot"):
+            from decimal import Decimal
+
+            nav = Decimal(broker_snapshot["snapshot"]["equity"])
+            if nav <= 0:
+                raise ValueError("selected broker has no positive USD equity")
+            portfolio_policy = portfolio_policy.model_copy(
+                update={"reference_nav": nav}
+            )
         source_flow = IngestingSourceFlow(
             DatabaseSourceFlow(
                 database,
@@ -253,6 +269,7 @@ class LiveRuntime:
                 settings.tiger_paper_max_open_positions if paper_executor else 8
             ),
             paper_executor=paper_executor,
+            broker_executor=self.broker_executor,
             acceptance_hold_seconds=settings.acceptance_hold_seconds,
             portfolio_policy=portfolio_policy,
         )
@@ -336,6 +353,8 @@ class LiveRuntime:
             ),
             deliberator=deliberator,
         )
+        if self.broker_executor is not None:
+            self.broker_executor.start()
 
     def run_acceptance(self, cycle_id: str) -> dict[str, object]:
         """Runs discovery once, then performs one bounded Paper exit observation."""
@@ -434,10 +453,14 @@ class LiveRuntime:
 
     def close(self) -> None:
         try:
-            self.client.close()
+            if self.broker_executor is not None:
+                self.broker_executor.close()
         finally:
-            for client in (*self._role_clients, *self._scout_clients):
-                client.close()
+            try:
+                self.client.close()
+            finally:
+                for client in (*self._role_clients, *self._scout_clients):
+                    client.close()
 
     def __enter__(self) -> "LiveRuntime":
         return self

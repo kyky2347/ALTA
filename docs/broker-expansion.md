@@ -1,133 +1,135 @@
-# Broker execution expansion
+# Broker execution: explicit destination, separate authority
 
-Status: **1 verified adaptation (Tiger Paper) + 5 pre-adapted connectors**.
+ALTA exposes **two modes: Shadow and Broker API**. Paper or Live is an explicit
+attribute of the chosen broker account, not a third mode. A failed connection
+never changes the destination to Tiger or fabricates a Shadow fill.
 
-"Pre-adapted" means provider-specific connection and order-method code exists;
-it does not mean that an account has passed end-to-end acceptance. Tiger's
-existing Paper executor is the verified adaptation. Its new live connector is
-also pending acceptance; none of these counts implies verified live trading.
+This integration is experimental. No live order was sent during development.
+Six adapter implementations are not six accepted live accounts. The historical
+Tiger Paper acceptance applies to its older isolated executor, not these new
+live connectors.
 
-The local account-review flow now retains revision-bound broker evidence across
-page reloads and exposes balances, holdings, orders, and individual authorization
-prerequisites. It performs no SDK request when reading cached state. A failed
-connection check clears its previous success; a 30-second age limit prevents old
-evidence from appearing current. Reviewing prerequisites does not grant authority.
+## Provider matrix
 
-All six execution adapters support durable broker-ID acknowledgments before
-fallible detail reads. Futu and Longport also support bounded prior-session order
-lookup. These recovery contracts are tested offline; they are not evidence of
-real-account order acceptance, automatic OAuth renewal, or runner integration.
+| Provider              | Required setup                                                                   | Current execution boundary                                                                                                                                                    |
+| --------------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tiger                 | Tiger ID, registered RSA private key, exact account and Paper/Live choice        | Conditional on SDK account, environment and permission proof; live account not accepted                                                                                       |
+| Alpaca                | Environment-specific key pair and exact account UUID                             | Conditional v2 execution path; live account not accepted                                                                                                                      |
+| Interactive Brokers   | Locally signed-in TWS/IB Gateway, dedicated client ID, exact U/DU account        | Conditional path with mandatory non-executing `whatIfOrder` before each order; live account not accepted                                                                      |
+| Futu / moomoo         | Signed-in OpenD, firm, port, account and environment; live trade-unlock password | Conditional SDK execution path; live account not accepted                                                                                                                     |
+| Longbridge / Longport | App key, secret and access token                                                 | Connection/order methods exist, but consumed SDK responses do not prove account and environment identity. **Authorization blocked.**                                          |
+| Charles Schwab        | Valid OAuth access token, exact account number and account hash                  | Account/order methods exist; automatic OAuth renewal, complete open-order history and trade-permission proof remain incomplete. **Authorization blocked.** No Paper endpoint. |
 
-The current runnable execution routes are internal Shadow and the existing
-Tiger Paper boundary. The dashboard mode selector controls that real authority;
-it is not a switch that converts Paper into live trading. No live order was
-submitted in this review. The new `alta-runtime/broker-python/` package is a
-separate boundary. Its operator RPC exposes configuration and read-only account
-verification, not order mutation or an autonomous live mode.
+"Conditional" means the code can reach the real adapter only after its account
+checks and operator authorization pass. It is not an account acceptance record.
+Neither a key field nor an operator assertion replaces a broker login, permission
+or account-identity response. Do not bypass an incomplete check to obtain a trade.
 
-## Current provider matrix
+## Operator flow
 
-| Provider              | Required connection model                                                                     | ALTA implementation status                                                                                                                                  |
-| --------------------- | --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Tiger                 | Tiger ID, registered RSA key and exact account                                                | Existing Paper executor remains operational; new separate Prime/Paper SDK adapter, not live-account accepted                                                |
-| Alpaca                | Environment-specific key pair and account UUID                                                | v2 account, positions, orders, limit submission, client-ID lookup and cancellation code; contract-tested, not account accepted                              |
-| Interactive Brokers   | Operator-owned TWS/IB Gateway on loopback, dedicated nonzero client ID, explicit U/DU account | `ib_async` adapter, account summary, qualified stock limits, permanent-order-ID recovery; connection alone does not prove permission; authorization blocked |
-| Longbridge / Longport | App key, secret and token through `longport` SDK                                              | Balance/positions/order SDK code; account and environment proof unavailable in consumed responses; authorization blocked                                    |
-| Futu / moomoo         | Operator-owned OpenD, explicit security firm, port, account and environment                   | SDK account/position/order queries, limit submission, cancellation; not account accepted                                                                    |
-| Charles Schwab        | OAuth access token plus exact account number and account hash                                 | HTTP account/order adapter; no Paper endpoint; refresh flow and complete-order/permission proof pending; authorization blocked                              |
+1. Open **API Trading → Broker connections**. Select the provider and explicitly
+   choose Paper or Live. Enter the exact account and provider-specific credentials.
+   The local control service works while research is stopped.
+2. **Save connection**, then **Verify connection**. Saving is write-only and never
+   authorizes an order. Verification reads the broker; local state views reuse
+   redacted, revision-bound evidence rather than opening repeated SDK sessions.
+3. **Continue to execution → Broker API → Save destination**. The displayed saved
+   destination is distinct from the draft selector. Account switching is locked
+   while research runs or any lane still has authority or unsettled ALTA exposure.
+4. Refresh the selected account, review prerequisites and limits, then enter the
+   account-bound confirmation phrase. Initial authorization requires a dedicated
+   account with no holdings or open orders. Live means real money.
+5. Start the backend. Independently audited eligible plans can enter the selected
+   account's durable ledger. The monitor checks order/position evidence without
+   waiting for slow LLM turns. The console shows authority, evidence age, balances,
+   holdings and the local owned-order ledger.
+6. **Revoke & exit** blocks new entries and invalidates queued plans. Keep the
+   backend running while it cancels pending entries and exits ALTA-owned exposure.
+   Inspect reconciliation; only a broker-confirmed flat account permits switching.
+   Stopping the service does **not** liquidate holdings at the broker.
 
-No new provider has a real-account order acceptance record in this change. The
-execution library is not connected to ALTA's automatic proposal/monitor/exit
-loop. Adapter methods alone must not be advertised as that complete lifecycle.
+Changing credentials or the account environment requires disarming, settling
+exposure and deselecting the lane first. Atomic owner-only files invalidate old
+authorization/evidence. Previous account ledgers are preserved, not reassigned.
+An unavailable status is unknown, not proof that trading has stopped.
 
-## Configure and verify
+The old Tiger Paper lane has drain-only compatibility controls in the new UI. It
+must be drained before selecting the new route; it is not a third mode and cannot
+silently receive another provider's order.
 
-Install the isolated optional dependencies from the project directory:
+## From research to the broker
+
+```mermaid
+flowchart TB
+    UI["Operator: configure → verify → select → authorize"] --> R["Exact provider / environment / account revision"]
+    P["Persisted expression + independent audit in PostgreSQL"] --> H["Trusted handoff: opportunity, artifact, quantity and age"]
+    H --> I["Private process pipe · no credentials in Agent context"]
+    R --> E["Isolated broker engine · authority + risk admission"]
+    I --> E
+    E <--> L[("Account-owned SQLite ledger")]
+    E <--> B["Selected broker adapter only"]
+    M["Independent monitor · current quotes · bounded calls"] --> E
+    L --> O["Reconcile → monitor → owned exit → confirmed closure"]
+```
+
+The trusted handoff reads the exact persisted `expression.validated` event and
+successful independent auditor artifact. The audit binds provider, account
+revision, opportunity version and snapshot. A stale or mismatched audit blocks
+dispatch; an artifact from Shadow cannot authorize a broker plan. Quantities
+come from the audited research plan, without an artificial one-share clamp or
+size inflation. The broker engine applies its own cash and notional admission.
+
+The separate `research_rpc` accepts staged plans and monitor ticks only from the
+trusted local application pipe. The browser RPC accepts account controls, not
+arbitrary order, quote or approval payloads. Research Agents receive no broker
+credentials or repository capabilities.
+
+Mutations hold both the autonomous owner's database fence and the account's
+execution locks. Shutdown drains bounded operations before releasing ownership.
+Dispatch also checks parent-process identity and quote-derived expiry. Account
+intents precede submission; broker-issued IDs are recorded before fallible detail
+reads. Unknown submission results are reconciled by identity, never blindly
+retried. These defenses reduce race and duplication risk; they do not make a
+network request atomic with a database commit.
+
+## Supported scope and operational limits
+
+- One active plan per account; long, whole-share USD stocks/ETFs, DAY limit orders.
+  No shorting, options, leveraged multi-leg plans or portfolio rotation.
+- Fresh provider-timestamped quotes are checked again at execution, independently
+  of LLM latency. Missing/stale quotes block submission, not safe reconciliation
+  and cancellation. The monitor has its own four-reads/minute market-data budget.
+- Stop, target, time expiry and close-only authority can trigger an owned exit.
+  These are **software-managed exits**, not native protective broker orders.
+- Monitoring depends on a running backend, valid broker session and usable data.
+  Restart can recover durable work; downtime is not continuous protection.
+- Interrupted or partial exits and unresolved order identities can require manual
+  review. Revocation can return busy during an in-flight operation; inspect its
+  confirmed result rather than assuming a button click completed it.
+- Schwab OAuth login/refresh and Longbridge identity proof are unresolved. Token
+  expiry does not permit fallback or automatic reauthorization.
+- Full real-account acceptance, prolonged live soak, outage/failover coverage and
+  profitability are **not verified** by this release.
+
+## Reproduce without broker access
 
 ```shell
 uv sync --frozen --all-extras --project alta-runtime/broker-python
+uv run --frozen --all-extras --project alta-runtime/broker-python \
+  pytest -q alta-runtime/broker-python/tests
+./alta env python -m pytest -q alta-runtime/python/tests
+node --test alta-dashboard/tests/*.test.mjs
 ```
 
-Open **API Trading → Broker connections**, select a provider and explicitly
-choose its supported account environment. Stop research before saving. Enter
-the exact account and its provider-specific credentials, save, then verify.
-The account UUID is required for Alpaca; the account number and separately
-issued account hash are required for Schwab. Local gateway ports are not API keys.
+Broker tests inject transports and account books; they send no real orders. They
+cover exact routing for all six provider IDs, wrong-account/revision rejection,
+read-only order endpoints, durable entry/exit, revocation, quote expiry and restart
+recovery. See the [release evidence](audits/broker-routing-2026-09-13.md) for the
+tested scope. Account testing must be a separate authorized procedure.
 
-These profiles are separate from the existing Tiger Paper configuration. Saving
-a new Tiger profile never replaces or enables the current Paper executor.
-Schwab access-token expiry requires renewed operator credentials; automatic
-OAuth login/refresh is not implemented. Futu Paper does not use a live trade
-unlock; unsupported permissions never silently fall back to another environment.
-
-```mermaid
-flowchart LR
-    UI[Operator console] --> P[Private profile + revision]
-    P --> V[Isolated read-only broker verification]
-    V --> S[Account / environment / permission evidence]
-    S --> G{Acceptance gate}
-    G -. pending integration .-> E[Durable execution engine]
-    E --> L[Intent ledger + reconciliation]
-    R[Audited research decisions] -. not connected yet .-> E
-```
-
-The common engine has tested admission, quote expiry, notional/cash limits,
-kernel ownership locks, durable pre-submit intents, partial-fill accounting,
-close-only revocation and restart reconciliation. It never retries an unknown
-submission merely because a history query returns no matching order. The new
-operator process cannot call these mutation methods.
-
-The maintainer has authorized publication of default-off live execution code,
-conditional on account verification and explicit operator authority. That policy
-change does not itself enable an account. The new lifecycle kernel persists an
-audited plan and its exit intent, survives restart without duplicate submission,
-and requires broker reconciliation before reporting closure. Production audit and
-quote ports, the supervised worker and dashboard enablement are still pending;
-the read-only operator RPC has not been replaced with an unverified trading route.
-
-An API-key form cannot replace OpenD, an IBKR login session, an OAuth callback,
-exchange permission or a broker's account eligibility checks. A missing Paper
-product must not be emulated by sending an order to a live endpoint.
-
-Primary integration references: [Tiger](https://docs-en.itigerup.com/docs/prepare),
+Primary references: [Tiger](https://docs-en.itigerup.com/docs/prepare),
 [Alpaca](https://docs.alpaca.markets/us/docs/getting-started-with-trading-api),
 [IBKR](https://www.interactivebrokers.com/docs/tws-api/doc/introduction),
-[Longport SDK](https://longportapp.github.io/openapi/python/reference_all/),
+[Longbridge](https://open.longbridge.com/docs/getting-started),
 [Futu](https://openapi.futunn.com/futu-api-doc/en/trade/place-order.html),
 [Schwab developer portal](https://developer.schwab.com/).
-
-## Required vertical slice before enabling any additional broker
-
-1. A typed adapter reports instrument, environment, order and recovery capabilities.
-   Provider-specific code lives outside the research orchestrator and outside the
-   existing Paper-only package.
-2. A write-only external credential profile has an immutable provider/environment/
-   account binding and a revision. Saving it never grants order authority.
-3. A read-only verification proves the expected account, currency, balances,
-   positions, pending orders and permission state. Unknown data blocks enablement.
-4. The operator explicitly selects the profile and approves its trading authority.
-   Live authorization is separate from Paper authorization. Existing exposure
-   prevents changing accounts until it is reconciled and explicitly transferred
-   or closed; it is never abandoned by a mode switch.
-5. Audited expressions become durable broker intents in a separate capital ledger.
-   Decimal quantities, limits, currency and instrument identifiers are validated.
-   Fresh quotes and available buying power are checked again immediately before
-   dispatch; the price seen before an LLM turn is not sufficient.
-6. One fenced owner controls mutations per account. Intent IDs precede submission.
-   Timeouts become unresolved intents, not permission to resubmit. Recovery reads
-   broker order and fill state before continuing; an ambiguous response blocks new
-   risk. Partial fills, cancellation, expiry and session loss have explicit states.
-7. Monitoring and exit ownership survives restarts. Shadow cash and fills never
-   substitute for broker account evidence. Turning off new entry authority must
-   preserve the ability to reconcile existing exposure and outstanding orders.
-8. The dashboard shows requested versus effective mode, proof age, permissions,
-   currency, balances, positions, orders and reconciliation exceptions. Account
-   identifiers, credentials and raw provider errors stay outside public artifacts.
-9. Offline adapter tests cover malformed responses, stale prices, quantity and
-   currency precision, rejected orders, uncertain submission, duplicate IDs,
-   partial fills, lost authorization, disconnect and restart recovery. A real
-   authorized test account is then required for an end-to-end acceptance record.
-
-An adapter becomes available for autonomous trading only after this slice is implemented. Contract-test
-coverage and actual account verification are separate statuses. This document is
-the implementation boundary, not a claim of profitability or production certification.

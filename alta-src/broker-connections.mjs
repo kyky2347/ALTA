@@ -62,7 +62,19 @@ export function runBrokerProcess(
   request,
   launch = spawn,
 ) {
-  if (!["catalog", "save", "verify", "state"].includes(request?.action))
+  if (
+    ![
+      "catalog",
+      "save",
+      "verify",
+      "state",
+      "route",
+      "select",
+      "authorize",
+      "revoke",
+      "reconcile",
+    ].includes(request?.action)
+  )
     throw Object.assign(new Error("broker_action_unavailable"), {
       code: "broker_action_unavailable",
       statusCode: 400,

@@ -83,9 +83,10 @@ automated operation.
 
 ## What each view shows
 
-The sidebar uses **API Trading**. Its current operational adapter is Tiger Paper;
-five additional providers are pre-adapted, not live-account accepted. The two
-autonomous execution modes remain internal Shadow and authorized Tiger Paper.
+The sidebar uses **API Trading**. There are exactly two modes: **Shadow** and
+**Broker API**. Provider and Paper/Live account environment belong inside Broker
+API, not to additional mode tabs. The selected destination never falls back to
+Tiger. See [provider eligibility and limits](../broker-expansion.md).
 
 **API Trading** separates **Execution & account** from **Broker connections**.
 The latter is also available inside **API connections**, alongside—not mixed
@@ -100,11 +101,14 @@ these protocols. Saved credentials are write-only. Switching broker clears
 unsaved secrets, and running research locks credential replacement.
 
 **Save connection** stores the profile without enabling trading. **Verify
-connection** is a separate, explicit read-only account request. The experimental
-six-provider boundary does not expose order submission or live authorization in
-this console. Tiger Paper execution remains separately account-bound and audited.
-Selecting a different execution mode displays its confirmation; an already-saved
-mode does not ask the operator to apply it again.
+connection** is a separate, explicit read-only account request. **Continue to
+execution** returns to the provider's draft selection without applying it.
+**Save destination** binds the route; **Review authorization requirements** grants
+permission only after fresh prerequisites and the exact confirmation phrase.
+The browser does not accept raw orders or caller-supplied audits/quotes.
+**Revoke & exit** blocks entries and lets the running backend handle owned exits;
+do not stop the service and assume broker holdings were closed. The previous
+Tiger Paper lane has drain-only compatibility controls, not a third mode.
 
 Opening broker configuration prepares the isolated SDK environment from its
 lockfile using `uv`, even before the research backend has started. The first

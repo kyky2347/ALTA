@@ -114,6 +114,9 @@ class Snapshot(Contract):
     account_verified: bool
     environment_verified: bool
     trading_permitted: bool
+    # IBKR proves instrument-level permission with a mandatory what-if before
+    # every submission. This flag is not evidence that an order has succeeded.
+    order_preview_required: bool = False
 
     @model_validator(mode="after")
     def validate_snapshot(self):
@@ -181,6 +184,11 @@ def require(condition: bool, code: str):
 
 def dispatch_guard(intent: Intent):
     """The engine shortens this deadline to the dispatch quote's expiry."""
+    import os
+
+    parent = os.environ.get("ALTA_BROKER_PARENT_PID")
+    if parent is not None:
+        require(parent.isdigit() and os.getppid() == int(parent), "dispatch_owner_lost")
     require(now() < intent.expires_at, "dispatch_deadline_expired")
 
 

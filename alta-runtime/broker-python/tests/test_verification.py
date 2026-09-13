@@ -31,7 +31,8 @@ def test_old_proof_remains_visible_but_is_not_authorization(tmp_path, monkeypatc
     try:
         response = engine.verify()
         assert response["authorization_review"]["checks"]["fresh_account"]
-        assert not response["authorization_review"]["eligible"]
+        assert response["authorization_review"]["eligible"]
+        assert response["authority"] == "off"
         monkeypatch.setattr(
             "alta_brokers.verification.now", lambda: now() + timedelta(minutes=2)
         )
