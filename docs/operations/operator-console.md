@@ -1,7 +1,8 @@
 # Local operator console
 
 The ALTA operator console is a loopback-only control and observability surface
-for the Shadow research runtime. It combines a live opportunity topology with a
+for research, Shadow simulation and the separate experimental Broker API
+boundary. It combines a live opportunity topology with a
 chronological decision ledger so an operator can see both what the system is
 doing and how it reached the present state.
 
@@ -152,10 +153,13 @@ invalidate the startup build check.
   same-carrier empirical Alpha reserve. Both panels are explicitly separated
   from brokerage, cannot auto-tune execution, and never label Shadow evidence
   as proven performance.
-- **Capital desk** — The durable Tiger Paper authorization gate, exact-account
-  and configuration fingerprints, explicit broker snapshot refresh, sanitized
-  assets, positions, recent orders, and the bounded authorization audit. It has
-  no manual order-entry surface and no live-account path.
+- **API Trading** — Two execution modes, selected-provider connection setup,
+  exact account/environment binding, separate authorization, sanitized assets,
+  positions, recent orders and reconciliation state. Eligible broker paths can
+  use an explicitly verified Paper or Live account; missing proof blocks
+  authorization. There is no raw manual order-entry surface. The legacy Tiger
+  Paper lane is isolated compatibility, not another selectable mode. See
+  [provider-specific readiness and limits](../broker-expansion.md).
 - **Credentials** — Safe configuration state for every supported external
   token slot, grouped by model, market data, news, and research. Secret values
   are write-only and replacement is available only while the complete research

@@ -29,6 +29,21 @@ a thesis must survive disagreement, costs and time before it deserves capital.
 > and separate authorization. Six connectors exist; live-account acceptance is
 > not established. [Current execution limits ↓](#two-modes-one-explicit-destination)
 
+## What you get
+
+ALTA brings three normally disconnected jobs into one local workspace. The
+output is not just a list of securities: it is a research trail you can challenge,
+an explicit decision, and a way to compare that decision with what happened next.
+
+| Investigate                                                               | Decide                                                                              | Follow through                                                                     |
+| ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Autonomous Scouts search for changes, anomalies and unanswered questions. | Separate reviewers test the thesis; a strategy desk compares instruments and costs. | Persistent records connect monitoring, exits, forward outcomes and later research. |
+
+For researchers, this makes disagreement and source quality inspectable. For
+developers, it separates Agent judgment from scheduling, data contracts and
+execution. For an operator, it provides one place to see what ran, what remains
+uncertain and what—if anything—has permission to act.
+
 ## See the work
 
 Follow an opportunity from its source evidence to reviewer decisions. Open any
@@ -83,6 +98,24 @@ waiting for its next cycle; a `Wait` decision can be the correct result.
 [Operator guide](docs/operations/operator-console.md) ·
 [Reproducibility](REPRODUCIBILITY.md)
 
+### Read the console like a research desk
+
+Start with a question, not a counter. The views share record IDs, so a discovery
+can be followed into the exact Run, review and event that changed its state.
+
+| Your question                       | Where to look                                                                            |
+| ----------------------------------- | ---------------------------------------------------------------------------------------- |
+| Why is this opportunity here?       | **Research radar → detail:** source references, timestamps, thesis and decision records. |
+| What are the Agents actually doing? | **Agent desk:** role, model, saved output, tool activity, context usage and latency.     |
+| What changed since I last looked?   | **Activity & history:** ordered events, older pages and the replay ribbon.               |
+| What is held, and why?              | **Shadow book** for internal positions; **API Trading** for the selected broker account. |
+| What needs attention?               | **System overview / API connections:** source posture, health and verification results.  |
+
+The inspector exposes submitted summaries, structured artifacts and provenance,
+not a model's hidden chain-of-thought. Switching the interface language does not
+rewrite the underlying research record. Historical playback and the live edge
+remain distinct, so an old decision is not mistaken for new activity.
+
 ## How the firm works
 
 ```mermaid
@@ -117,6 +150,29 @@ Event time stays separate from retrieval time: a newly fetched page may describe
 an old event. Bounded budgets, source pacing and recorded partial results keep
 research inspectable. [Retrieval design and limits →](docs/audits/research-retrieval-review.md)
 
+### Who owns each decision
+
+```mermaid
+flowchart TB
+    O["One versioned opportunity<br/>same cited evidence"] --> A["Thesis assessor<br/>private, locked view"]
+    O --> B["Independent challenger<br/>private, locked view"]
+    A --> M["Moderator<br/>surface disagreements"]
+    B --> M
+    M --> R["Code-based ranking<br/>quality, uncertainty and edge gates"]
+    R --> E["Expression Agent<br/>compare up to three payoff plans"]
+    E --> U["Independent auditor<br/>select one plan or Wait"]
+```
+
+The assessors commit their views before seeing the other assessment. The
+moderator works from those saved records; it cannot replace a missing source
+with consensus. Ranking is software, not an extra Agent voting for its favorite.
+Market and portfolio checks sit between a proposed expression and its audit.
+
+Only structured, versioned artifacts cross these handoffs—not an ever-growing
+shared chat. Models are configurable by role, with separate choices required
+for opposing assessments and for expression versus audit. Model diversity is a
+useful control, not proof that the reviewers are statistically independent.
+
 ### From an idea to an accountable decision
 
 | Stage              | What must remain inspectable                                                              |
@@ -135,6 +191,41 @@ reason and next research question instead of forcing a trade.
 The three-language console links evidence, Agent work, decisions and event
 history by record ID. Counts of saved records, completed work and currently
 running Agents are separate; none is a proxy for investment performance.
+
+### What travels with an opportunity
+
+An Opportunity is the durable research identity; a Candidate is an incoming
+lead, and an Expression is a proposed way to act. Deduplication and later
+versions keep follow-ups attached to the original question instead of turning
+every wake into another apparently new idea.
+
+```text
+Opportunity · stable identity, versioned thesis
+├── Evidence     sources · event/observation times · content hashes
+├── Hypothesis   causal claim · falsifier · expected horizon
+├── Reviews      locked assessments · disagreement · decision
+├── Expression   instrument · size · cost · independent audit
+└── Follow-up    open questions · observations · exit/outcome records
+```
+
+These are linked records, not fields that an Agent can freely rewrite. A reader
+can trace what was known at the decision time without silently importing later
+knowledge. Several headlines about one event need not become several trades.
+
+### An opportunity can outlive a research cycle
+
+The research agenda retains unanswered questions and catalyst deadlines.
+Later wakes can assign a focused follow-up while other Scouts continue exploring.
+Closing a tab does not cancel that agenda; the durable backend owns it. This is
+how the design accommodates a thesis that needs days or weeks to resolve,
+without keeping one chat session alive throughout.
+
+Trader Mind experience and portfolio context guide attention, but are not
+promoted into source Evidence. Forward results are attributed to the frozen
+entry decision; feedback and forecast calibration have maturity gates. Existing
+calibration can reduce risk when evidence deteriorates, not autonomously relax
+the execution policy after a few lucky outcomes. Long-horizon reliability and
+investment skill still require sustained observation.
 
 ## Two modes, one explicit destination
 
@@ -202,6 +293,25 @@ ALTA is useful for studying multi-agent judgment and building inspectable
 financial workflows. It is not a low-latency trading engine or a turnkey
 institutional stack. Recovery mechanisms are not a 24×7 uptime certification.
 
+### When reality interrupts
+
+Research progress, browser connectivity and broker state are separate concerns.
+The system should not infer that an order failed merely because a response was
+lost, or infer that research stopped merely because a tab disconnected.
+
+| Interruption                          | Designed response                                                                                                                               |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Browser loses its connection          | Retain the last valid in-memory snapshot, mark it stale and back off retries. Reloading a stopped backend cannot recover that browser snapshot. |
+| A tool or model times out             | Use bounded retries and recorded failures; incomplete evidence cannot silently advance to execution.                                            |
+| A worker or host restarts             | Recover durable work with ownership checks and restart backoff; do not create a second owner for the same work.                                 |
+| An order acknowledgement is uncertain | Reconcile the persisted identity with the broker instead of submitting another order blindly.                                                   |
+| Price moves while an LLM responds     | Refresh the selected instrument and rerun admission checks; a stale proposal is not permission to chase.                                        |
+
+These are engineering mechanisms with test coverage, not a promise that every
+outage is recoverable unattended. Broker sessions, fresh data and a running
+backend remain necessary for software-managed exits. Unresolved positions or
+ambiguous orders may require operator review before work can safely continue.
+
 ## Verify the work
 
 The [September 13 review](docs/audits/broker-routing-2026-09-13.md) records
@@ -209,6 +319,18 @@ The [September 13 review](docs/audits/broker-routing-2026-09-13.md) records
 suites, plus lint/build checks, clean-source installation and sampled browser
 checks. No real account was authorized and no broker order was sent in that
 review. [Earlier no-order research run →](docs/audits/operator-scout-reliability-2026-09-12.md)
+
+Three kinds of evidence answer different questions:
+
+| Evidence                       | What it can establish                                                                    |
+| ------------------------------ | ---------------------------------------------------------------------------------------- |
+| **Software checks**            | Deterministic contracts, state transitions, recovery behavior and clean installation.    |
+| **Recorded research runs**     | Which sources were reached, what Agents submitted and where a decision stopped.          |
+| **Forward investment results** | Outcomes after the frozen decision, net of recorded costs and compared with a benchmark. |
+
+A successful search is not a verified thesis; an approved thesis is not a fill;
+a profitable observation is not established Alpha. Keep those measurements
+separate when evaluating or extending the project.
 
 Run the offline/contract checks without paid APIs:
 
