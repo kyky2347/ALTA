@@ -63,6 +63,7 @@ test("shared plugins register fifteen unique read-only tools", () => {
     "treasury",
     "sec",
     "finnhub",
+    "adanos",
     "fred",
     "bls",
     "nyfed",

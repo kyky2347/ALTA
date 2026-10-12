@@ -116,6 +116,7 @@ export class InternetService {
     this.jinaKey = options.jinaKey ?? this.readerKey;
     this.openAlexKey = options.openAlexKey ?? null;
     this.finnhubKey = options.finnhubKey ?? null;
+    this.adanosKey = options.adanosKey ?? null;
     this.crossrefMailto = options.crossrefMailto ?? null;
     this.lemmyUrl = options.lemmyUrl ?? "https://lemmy.world";
     this.mastodonUrl = options.mastodonUrl ?? "https://mastodon.social";

@@ -163,6 +163,7 @@ function isolatedEnvironment(extra = {}) {
   delete env.JINA_API_KEY;
   delete env.OPENALEX_API_KEY;
   delete env.FINNHUB_API_KEY;
+  delete env.ADANOS_API_KEY;
   delete env.CROSSREF_MAILTO;
   return process.env.ALTA_AGENT_SAFE_APP_SERVER === "1"
     ? agentSafeChildEnvironment(env)
@@ -313,6 +314,7 @@ async function startUnifiedGateway(state, storage) {
       jinaKey: state.resourceCredentials.values.JINA_API_KEY,
       openAlexKey: state.resourceCredentials.values.OPENALEX_API_KEY,
       finnhubKey: state.resourceCredentials.values.FINNHUB_API_KEY,
+      adanosKey: state.resourceCredentials.values.ADANOS_API_KEY,
       crossrefMailto: process.env.CROSSREF_MAILTO,
       lemmyUrl: process.env.ALTA_LEMMY_URL,
       mastodonUrl: process.env.ALTA_MASTODON_URL,

@@ -6,6 +6,11 @@ import {
 } from "./credential-files.mjs";
 
 export const RESOURCE_CREDENTIALS = Object.freeze({
+  ADANOS_API_KEY: {
+    directoryName: "resources",
+    hints: ["adanos"],
+    patterns: [/\b(sk_live_[A-Za-z0-9_-]{16,128})\b/],
+  },
   MASSIVE_API_KEY: {
     directoryName: "resources",
     hints: ["massive", "polygon"],
@@ -45,6 +50,7 @@ export const RESOURCE_CREDENTIALS = Object.freeze({
 });
 
 export const TOOL_CREDENTIAL_KEYS = Object.freeze([
+  "ADANOS_API_KEY",
   "BRAVE_SEARCH_API_KEY",
   "JINA_API_KEY",
   "OPENALEX_API_KEY",

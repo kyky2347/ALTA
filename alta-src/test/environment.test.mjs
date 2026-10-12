@@ -80,6 +80,7 @@ test("agent-safe child environment is an allowlist without business secrets", ()
     MASSIVE_API_KEY: "fixture-secret",
     FINLIGHT_API_KEY: "fixture-secret",
     FINNHUB_API_KEY: "gateway-finance-fixture-secret",
+    ADANOS_API_KEY: "gateway-sentiment-fixture-secret",
     ALTA_WEB_TIMEOUT_MS: "20000",
     ALTA_SEC_USER_AGENT: "Research Operator contact@example.test",
     TIGER_PRIVATE_KEY: "fixture-secret",
