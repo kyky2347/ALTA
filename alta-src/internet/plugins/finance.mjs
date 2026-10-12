@@ -33,6 +33,7 @@ import {
 } from "./finance-global.mjs";
 import { runSource } from "./source-runtime.mjs";
 import { finnhub } from "./finance-finnhub.mjs";
+import { adanos, ADANOS_DATASETS } from "./finance-adanos.mjs";
 
 const BASE_SOURCES = [
   "nasdaq",
@@ -41,6 +42,7 @@ const BASE_SOURCES = [
   "treasury",
   "sec",
   "finnhub",
+  "adanos",
 ];
 const SOURCE_NAMES = [
   ...BASE_SOURCES,
@@ -60,6 +62,7 @@ const SOURCE_INTERVALS = {
   treasury: 250,
   sec: 150,
   finnhub: 1_000,
+  adanos: 1_000,
   ...MACRO_INTERVALS,
   ...REGULATORY_INTERVALS,
   ...GLOBAL_FINANCE_INTERVALS,
@@ -73,6 +76,7 @@ const SOURCE_DEADLINES = {
   // then submissions. Keep the pair inside one bounded but realistic deadline.
   sec: 30_000,
   finnhub: 15_000,
+  adanos: 15_000,
   ...MACRO_DEADLINES,
   ...REGULATORY_DEADLINES,
   ...GLOBAL_FINANCE_DEADLINES,
@@ -489,6 +493,7 @@ const ADAPTERS = {
   treasury,
   sec,
   finnhub,
+  adanos,
   ...MACRO_ADAPTERS,
   ...REGULATORY_ADAPTERS,
   ...GLOBAL_FINANCE_ADAPTERS,
@@ -566,7 +571,7 @@ export const financePlugin = {
     defineTool(
       "alta_finance_data",
       "ALTA Public Finance Data",
-      "Read bounded, sourced markets, macro, filings and company data. Finnhub requires a key. company_profile locates issuer sites; earnings_surprises is historical EPS, not current consensus.",
+      "Bounded markets, macro and issuer data. Finnhub/Adanos need keys; company_profile gives locators; earnings_surprises is historical EPS, not current consensus.",
       {
         type: "object",
         properties: {
@@ -574,7 +579,7 @@ export const financePlugin = {
             type: "string",
             enum: SOURCE_NAMES,
             description:
-              "Markets: nasdaq/coinbase/kraken; issuer: finnhub/sec/sec_xbrl; others: official macro/regulatory sources.",
+              "Adanos: dataset, symbol, UTC dates; News company key. Others: market, macro, issuer data.",
           },
           symbol: { type: "string" },
           product: { type: "string" },
@@ -623,6 +628,7 @@ export const financePlugin = {
           dataset: {
             type: "string",
             enum: [
+              ...Object.keys(ADANOS_DATASETS),
               "avg_interest_rates",
               "debt_to_penny",
               "institutions",
